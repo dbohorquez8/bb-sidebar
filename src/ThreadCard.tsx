@@ -25,7 +25,11 @@ import { SnoozeSelect } from "./SnoozeSelect";
 import { cn } from "./lib/utils";
 import { RowContextMenu } from "./RowContextMenu";
 import { ProviderGlyph, type SidebarProvider } from "./ProviderGlyph";
-import { STATUS_SLOT_CLASS, StatusOrTime } from "./StatusSlot";
+import {
+  STATUS_SLOT_CLASS,
+  StatusOrTime,
+  statusRowWashClass,
+} from "./StatusSlot";
 import { threadDisplayTitle } from "./inbox";
 import { InlineThreadTitle } from "./InlineThreadTitle";
 import type { ConfiguredSnoozePreset } from "./lifecycle";
@@ -134,6 +138,12 @@ export function ThreadCard({
           className={cn(
             "group/card relative rounded-md px-2.5 py-2 transition-colors duration-150 ease-out motion-reduce:transition-none",
             isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+            // A faint status wash across the whole card for the two states the
+            // user must not miss (needs-you amber, unread emerald). Suppressed
+            // while active/selected so those highlights read cleanly.
+            !isActive &&
+              !isSelected &&
+              statusRowWashClass(thread.indicator, isActive),
             isSelected &&
               "bg-sidebar-accent ring-1 ring-inset ring-primary/60",
             // A thread open in another pane gets a weaker tint than the active
@@ -183,7 +193,7 @@ export function ThreadCard({
           <div className="pointer-events-none relative flex h-5 items-center gap-1.5">
             <span className="flex min-w-0 flex-1 items-center gap-1.5 text-2xs font-medium text-muted-foreground">
               {projectName ? (
-                <ProjectFavicon src={projectIconUrl} className="size-3" />
+                <ProjectFavicon src={projectIconUrl} className="size-4" />
               ) : null}
               <span className="min-w-0 truncate">{projectName ?? " "}</span>
             </span>

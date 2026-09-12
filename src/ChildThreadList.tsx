@@ -6,6 +6,7 @@ import { Disc } from "./Disc";
 import { cn } from "./lib/utils";
 import { relativeTimeLabel } from "./relative-time";
 import { StatusGlyph } from "./StatusGlyph";
+import { statusRowWashClass } from "./StatusSlot";
 import { threadDisplayTitle } from "./inbox";
 import { canParkThread } from "./lifecycle";
 import { RowContextMenu } from "./RowContextMenu";
@@ -390,10 +391,18 @@ function ChildThreadRow({
           variant === "header"
             ? "hover:bg-accent"
             : "h-7 hover:bg-sidebar-accent/60",
+          // A faint status wash across the whole child row: amber for a raised
+          // hand, emerald for finished-but-unread. `needsYou` here is broader
+          // than the indicator (it also covers a pending interaction), so it
+          // stays; unread borrows the shared wash so cards and child rows agree.
           variant === "sidebar" &&
             needsYou &&
             !isActive &&
-            "bg-amber-50 hover:bg-amber-50 dark:bg-amber-950/30 dark:hover:bg-amber-950/40",
+            "bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-950/30 dark:hover:bg-amber-950/45",
+          variant === "sidebar" &&
+            !needsYou &&
+            !isActive &&
+            statusRowWashClass(thread.indicator, isActive),
           // The open chat gets the same tint as an active parent card, so the
           // eye finds it in a long tree the way it finds a card in the list.
           isActive &&

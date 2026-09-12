@@ -108,7 +108,7 @@ export function SlimRow({
           >
             {projectName && !isRenaming ? (
               <>
-                <ProjectFavicon src={projectIconUrl} className="size-3" />
+                <ProjectFavicon src={projectIconUrl} className="size-4" />
                 <span
                   className={cn(
                     "max-w-[40%] shrink truncate",

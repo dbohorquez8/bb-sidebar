@@ -120,6 +120,33 @@ function isMonitoringLabel(label: string | null): boolean {
   return label?.toLocaleLowerCase().includes("monitoring") ?? false;
 }
 
+/**
+ * A faint background wash across a whole row container, for the two states the
+ * user must not miss: a raised hand (amber) and finished-but-unread (emerald).
+ * No border — the tint alone carries it. Returns "" for every other state so a
+ * normal row keeps its default background.
+ *
+ * `isActive` suppresses the wash: an open thread already has the accent tint,
+ * and stacking the status wash on top muddies it.
+ */
+export function statusRowWashClass(
+  indicator: PluginSidebarThreadIndicator,
+  isActive: boolean,
+): string {
+  if (isActive) return "";
+  // Dark mode uses a MID green/amber at low alpha, not the near-black 950: a
+  // 950 base barely shifts hue over the dark sidebar and just reads as a muddy
+  // dark patch. A 500-ish base at ~10-15% alpha adds visible colour instead.
+  switch (indicator) {
+    case "waiting-for-input":
+      return "bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-500/10 dark:hover:bg-amber-500/15";
+    case "unread-success":
+      return "bg-emerald-50/60 hover:bg-emerald-100/50 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15";
+    default:
+      return "";
+  }
+}
+
 /** Status palette shared by cards and child-thread chips. */
 export function statusToneClass(
   indicator: PluginSidebarThreadIndicator,
