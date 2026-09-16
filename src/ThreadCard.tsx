@@ -34,6 +34,8 @@ import { threadDisplayTitle } from "./inbox";
 import { InlineThreadTitle } from "./InlineThreadTitle";
 import type { ConfiguredSnoozePreset } from "./lifecycle";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { OpenPortsIndicator } from "./OpenPorts";
+import "./settle-button.css";
 
 export interface ThreadReorderControls {
   disabled: boolean;
@@ -117,6 +119,33 @@ export function ThreadCard({
         ? "read-idle"
         : "active";
 
+  const showParkActions = !isWoke && canPark && snoozePresets.length > 0;
+  const unpinButton = thread.isPinned ? (
+    <Tooltip label="Unpin thread">
+      <button
+        type="button"
+        aria-label={`Unpin ${threadDisplayTitle(thread)}`}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void actions.setPinned(thread.id, false).catch((error) => {
+            toast.error("Could not unpin thread", {
+              description:
+                error instanceof Error ? error.message : undefined,
+            });
+          });
+        }}
+        className={cn(
+          "shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground",
+          !showParkActions &&
+            "pointer-events-auto opacity-0 transition-opacity duration-150 ease-out focus-visible:opacity-100 group-hover/card:opacity-100 motion-reduce:transition-none",
+        )}
+      >
+        <Icon name="PinOff" className="size-3.5" />
+      </button>
+    </Tooltip>
+  ) : null;
+
   return (
     <RowContextMenu
       thread={thread}
@@ -197,70 +226,51 @@ export function ThreadCard({
               ) : null}
               <span className="min-w-0 truncate">{projectName ?? " "}</span>
             </span>
-            {thread.isPinned ? (
-              <Tooltip label="Unpin thread">
-                <button
-                  type="button"
-                  aria-label={`Unpin ${threadDisplayTitle(thread)}`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    void actions.setPinned(thread.id, false).catch((error) => {
-                      toast.error("Could not unpin thread", {
-                        description:
-                          error instanceof Error ? error.message : undefined,
-                      });
-                    });
-                  }}
-                  className="pointer-events-auto rounded p-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out hover:text-foreground focus-visible:opacity-100 group-hover/card:opacity-100 motion-reduce:transition-none"
-                >
-                  <Icon name="PinOff" className="size-3.5" />
-                </button>
-              </Tooltip>
-            ) : null}
             {isWoke ? (
-              <Tooltip label="Dismiss Woke marker">
-                <button
-                  type="button"
-                  aria-label="Dismiss Woke marker"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onAcknowledgeWake();
-                  }}
-                  className={cn(
-                    STATUS_SLOT_CLASS,
-                    "pointer-events-auto justify-end text-2xs font-medium text-amber-700 hover:underline dark:text-amber-300",
-                  )}
-                >
-                  Woke
-                </button>
-              </Tooltip>
+              <span className={cn(STATUS_SLOT_CLASS, "w-auto min-w-20 gap-0.5")}>
+                {unpinButton}
+                <Tooltip label="Dismiss Woke marker">
+                  <button
+                    type="button"
+                    aria-label="Dismiss Woke marker"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onAcknowledgeWake();
+                    }}
+                    className="pointer-events-auto text-2xs font-medium text-amber-700 hover:underline dark:text-amber-300"
+                  >
+                    Woke
+                  </button>
+                </Tooltip>
+              </span>
             ) : (
               <span
                 className={cn(
                   STATUS_SLOT_CLASS,
                   "group/status-slot pointer-events-auto relative h-5",
+                  !showParkActions && "w-auto min-w-20",
                 )}
               >
                 <span
                   className={cn(
-                    "absolute inset-y-0 right-0 flex items-center justify-end transition-opacity duration-150 ease-out group-has-[:focus-visible]/status-slot:opacity-0 motion-reduce:transition-none",
-                    canPark &&
-                      snoozePresets.length > 0 &&
-                      "group-hover/card:opacity-0",
+                    "flex items-center justify-end gap-0.5 transition-opacity duration-150 ease-out motion-reduce:transition-none",
+                    showParkActions &&
+                      "absolute inset-y-0 right-0 group-hover/card:opacity-0 [@media(hover:none)]:opacity-0 group-has-[:focus-visible]/status-slot:opacity-0",
                     isSnoozeOpen && "opacity-0",
                   )}
                 >
+                  {!showParkActions ? unpinButton : null}
                   <StatusOrTime thread={thread} now={now} />
                 </span>
-                {canPark && snoozePresets.length > 0 ? (
+                {showParkActions ? (
                   <span
                     className={cn(
-                      "pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 ease-out has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100 motion-reduce:transition-none",
+                      "pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 ease-out has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 motion-reduce:transition-none",
                       isSnoozeOpen && "pointer-events-auto opacity-100",
                     )}
                   >
+                    {unpinButton}
                     <SnoozeSelect
                       label="Snooze thread"
                       snoozePresets={snoozePresets}
@@ -299,6 +309,7 @@ export function ThreadCard({
                 machine takes the branch's place rather than leaving the line
                 blank. */}
             <ThreadLocation thread={thread} />
+            <OpenPortsIndicator thread={thread} />
             {childThreads.length > 0 ? (
               <ChildThreadBadge
                 threads={childThreads}
@@ -478,20 +489,45 @@ function ParkButton({
   onActivate: () => void;
 }) {
   return (
-    <Tooltip label={label}>
-      <button
-        type="button"
-        aria-label={label}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onActivate();
-        }}
-        className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+    <button
+      type="button"
+      aria-label={label}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onActivate();
+      }}
+      className={cn(
+        "bb-sidebar-settle group/settle relative flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground",
+        "transition-colors duration-200 ease-out hover:text-emerald-700 dark:hover:text-emerald-300",
+        "focus-visible:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:focus-visible:text-emerald-300",
+        "motion-reduce:transition-none",
+      )}
+    >
+      {/* Move only the artwork so hovering an edge cannot move the hit area. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none relative flex size-full items-center justify-center rounded-[inherit]",
+          "transition-[background-color,box-shadow,transform] duration-200 ease-out motion-reduce:transition-none",
+          "group-hover/settle:bg-emerald-500/15 group-hover/settle:shadow-[0_0_0_3px_rgb(16_185_129_/_0.08)] group-focus-visible/settle:bg-emerald-500/15",
+          "motion-safe:group-hover/settle:-translate-y-0.5 motion-safe:group-focus-visible/settle:-translate-y-0.5 motion-safe:group-active/settle:translate-y-0 motion-safe:group-active/settle:scale-90 group-active/settle:bg-emerald-500/25",
+        )}
       >
-        <Icon name="Check" className="size-3.5" />
-      </button>
-    </Tooltip>
+        <Icon
+          name="Check"
+          aria-hidden
+          className="size-3.5 transition-transform duration-200 ease-out motion-safe:group-hover/settle:rotate-[-8deg] motion-safe:group-hover/settle:scale-110 motion-safe:group-focus-visible/settle:rotate-[-8deg] motion-safe:group-focus-visible/settle:scale-110 motion-reduce:transition-none"
+        />
+        {[0, 1, 2, 3, 4].map((sparkle) => (
+          <span
+            key={sparkle}
+            aria-hidden="true"
+            className="bb-sidebar-settle-sparkle"
+          />
+        ))}
+      </span>
+    </button>
   );
 }
 

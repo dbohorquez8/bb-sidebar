@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-bb-sidebar",
-  "version": "0.2.11",
+  "version": "0.2.14",
   "type": "module",
   "description": "A bb thread sidebar with manual and automatic sorting, snooze, settle, and bulk actions.",
   "license": "MIT",
@@ -24,7 +24,8 @@
       "icon": "PanelLeft"
     },
     "app": "./app.tsx",
-    "server": "./src/server.ts"
+    "server": "./src/server.ts",
+    "host": "./src/ports-host.ts"
   },
   "keywords": [
     "bb-plugin",

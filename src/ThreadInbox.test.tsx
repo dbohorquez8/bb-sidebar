@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   screen,
@@ -136,6 +137,110 @@ const listProps = {
   Original: () => null,
 };
 
+it("shows port details in the thread hover card", async () => {
+  localStorage.setItem("bb-sidebar:port-link-host:v1", "host_local");
+  const openUrl = vi.fn(() => true);
+  renderSlot(inbox, listProps, {
+    openUrl,
+    sidebarThreads: {
+      status: "ready",
+      threads: [thread({ title: "Port details", host: { id: "host_local", name: "Local" }, environment: {
+        id: "env_ports", name: null, branchName: "main", workspaceDisplayKind: "other",
+      } })],
+      projects: [],
+    },
+    rpc: {
+      listLifecycle: () => ({ rows: [] }),
+      getOpenPorts: () => ({ groups: [{ environmentId: "env_ports", ports: [
+        { port: 3000, processName: "node", pid: 1234, address: "127.0.0.1", source: "process" },
+        { port: 5432, service: "postgres", container: "app-db-1", address: "0.0.0.0", source: "docker" },
+      ] }] }),
+      getThreadExecutionDetails: () => null,
+    },
+  });
+  fireEvent.pointerMove(screen.getByRole("link", { name: "Port details" }), { pointerType: "mouse" });
+  const details = await screen.findByRole("dialog", { name: "Thread details" });
+  expect(details.textContent).toContain("Workspace ports (2)");
+  expect(details.textContent).toContain(":3000 node");
+  expect(details.textContent).toContain("127.0.0.1 · PID 1234");
+  expect(details.textContent).toContain(":5432 postgres");
+  expect(details.textContent).toContain("Docker · app-db-1");
+  expect(screen.queryByRole("img", { name: "Open ports started by this thread" })).toBeNull();
+  const portLink = screen.getAllByRole("link", { name: "Open port 3000" })[0]!;
+  expect(portLink.getAttribute("href")).toBe("http://127.0.0.1:3000/");
+  fireEvent.click(portLink);
+  expect(openUrl).toHaveBeenCalledWith("http://127.0.0.1:3000/");
+  const row = screen.getByRole("link", { name: "Port details" });
+  act(() => row.focus());
+  fireEvent.keyDown(row, { key: "Tab" });
+  expect(document.activeElement).toBe(portLink);
+  fireEvent.keyDown(portLink, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Thread details" })).toBeNull());
+  expect(document.activeElement).toBe(row);
+
+});
+
+it("keeps a long workspace port list accessible even without local links", async () => {
+  renderSlot(inbox, listProps, {
+    sidebarThreads: { status: "ready", projects: [], threads: [thread({ title: "Many ports", environment: {
+      id: "env_ports", name: null, branchName: "main", workspaceDisplayKind: "other",
+    } })] },
+    rpc: {
+      listLifecycle: () => ({ rows: [] }), getThreadExecutionDetails: () => null,
+      getOpenPorts: () => ({ groups: [{ environmentId: "env_ports", ports: Array.from({ length: 20 }, (_, i) => ({ port: 8000 + i })) }] }),
+    },
+  });
+  const row = screen.getByRole("link", { name: "Many ports" });
+  act(() => row.focus());
+  const list = await screen.findByRole("region", { name: "Workspace port list" });
+  expect(within(list).getByText(":8019")).toBeDefined();
+  fireEvent.keyDown(row, { key: "Tab" });
+  expect(document.activeElement).toBe(list);
+  fireEvent.keyDown(list, { key: "Tab", shiftKey: true });
+  await waitFor(() => expect(document.activeElement).toBe(row));
+});
+
+it("marks only the owning thread without a count and clears its icon when the port closes", async () => {
+  const environment = { id: "env_ports", name: null, branchName: "main", workspaceDisplayKind: "other" as const };
+  let groups = [{ environmentId: environment.id, ports: [{ port: 3000, ownerThreadId: "ports_a" }, { port: 8080, ownerThreadId: "" }] }];
+  renderSlot(inbox, listProps, {
+    sidebarThreads: {
+      status: "ready",
+      threads: [
+        thread({ id: "ports_a", environment }),
+        thread({ id: "ports_b", environment }),
+        thread({ id: "no_ports" }),
+      ],
+      projects: [{ id: "proj_1", name: "bb", isPersonal: false }],
+    },
+    rpc: {
+      listLifecycle: () => ({ rows: [] }),
+      getOpenPorts: () => ({ groups }),
+    },
+  });
+  const label = "Open ports started by this thread";
+  await waitFor(() => expect(screen.getAllByRole("img", { name: label })).toHaveLength(1));
+  expect(screen.getByRole("img", { name: label }).textContent).toBe("");
+  expect(screen.getByRole("img", { name: label }).className).toContain("text-muted-foreground/60");
+  vi.useFakeTimers();
+  // Trigger a fresh provider mount so its next poll uses the fake clock.
+  cleanup();
+  renderSlot(inbox, listProps, {
+    sidebarThreads: { status: "ready", threads: [thread({ id: "ports_a", environment })], projects: [] },
+    rpc: {
+      listLifecycle: () => ({ rows: [] }),
+      getOpenPorts: () => ({ groups }),
+    },
+  });
+  await act(async () => {});
+  expect(screen.getByRole("img", { name: label })).toBeTruthy();
+  groups = [];
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+  expect(screen.queryByRole("img", { name: label })).toBeNull();
+  cleanup();
+  vi.useRealTimers();
+});
+
 function render(
   threads: PluginSidebarThread[],
   projects = [{ id: "proj_1", name: "bb", isPersonal: false }],
@@ -236,6 +341,16 @@ describe("BB Sidebar registration", () => {
 });
 
 describe("sidebar settings", () => {
+  it("lists device hosts in settings and saves the local port-link choice", async () => {
+    renderSlot(sidebarSettings, {}, {
+      sidebarThreads: { status: "ready", projects: [], threads: [thread({ host: { id: "host_local", name: "Local Mac" } })] },
+      rpc: { getSidebarSettings: () => defaultSidebarSettings, listProjectIconSettings: () => ({ projects: [] }) },
+    });
+    const select = await screen.findByLabelText("Port links on this device");
+    expect(within(select).getByRole("option", { name: "Local Mac" })).toBeDefined();
+    fireEvent.change(select, { target: { value: "host_local" } });
+    expect(localStorage.getItem("bb-sidebar:port-link-host:v1")).toBe("host_local");
+  });
   it("groups related controls and saves them together", async () => {
     let saved: typeof defaultSidebarSettings | null = null;
     renderSlot(sidebarSettings, {}, {
@@ -2643,6 +2758,12 @@ describe("parking threads", () => {
     expect(controls).not.toBeNull();
     expect(controls!.classList.contains("opacity-0")).toBe(true);
     expect(controls!.classList.contains("pointer-events-none")).toBe(true);
+    expect(
+      controls!.classList.contains("[@media(hover:none)]:opacity-100"),
+    ).toBe(true);
+    expect(
+      controls!.classList.contains("[@media(hover:none)]:pointer-events-auto"),
+    ).toBe(true);
 
     fireEvent.keyDown(snooze, { key: "Enter" });
     await screen.findByRole("option", { name: "30 minutes" });
@@ -3454,12 +3575,18 @@ describe("row context menu", () => {
     const rendered = render([
       thread({ id: "thr_rename", title: "Original title" }),
     ]);
-    fireEvent.contextMenu(await screen.findByText("Original title"));
+    const row = await screen.findByRole("link", { name: "Original title" });
+    act(() => row.focus());
+    fireEvent.contextMenu(row);
     fireEvent.click(within(await screen.findByRole("menu")).getByText("Rename"));
 
     const input = await screen.findByRole("textbox", {
       name: "Rename Original title",
     });
+    // Let the menu's deferred focus restoration finish before typing.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(document.activeElement).toBe(input);
+    expect(input.isConnected).toBe(true);
     fireEvent.change(input, { target: { value: "Updated title" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() =>
@@ -3731,7 +3858,7 @@ describe("card metadata", () => {
 
     expect(screen.queryByLabelText("Thread details")).toBeNull();
     fireEvent.pointerMove(await screen.findByRole("link", { name: "Thread metadata" }), { pointerType: "mouse" });
-    const details = await screen.findByRole("tooltip");
+    const details = await screen.findByRole("dialog", { name: "Thread details" });
     expect(details.textContent).toContain("Project: bb");
     expect(details.textContent).toContain("Environment: Feature worktree");
     expect(details.textContent).toContain("Branch: bb/details");

@@ -14,6 +14,7 @@ import type { ConfiguredSnoozePreset } from "./lifecycle";
 import { InlineThreadTitle } from "./InlineThreadTitle";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ThreadDetailsTooltip } from "./ThreadDetailsTooltip";
+import { OpenPortsIndicator } from "./OpenPorts";
 
 /**
  * A parked thread: one line instead of a card. Density comes from the user
@@ -144,6 +145,7 @@ export function SlimRow({
               )}
             />
           </span>
+          <OpenPortsIndicator thread={thread} />
           {/* The same slot as a card, so a shelf keeps the card's column. A
               snoozed row spends it on the wake time: when the thread comes
               BACK is that shelf's whole question, and it outranks an age the
@@ -152,14 +154,15 @@ export function SlimRow({
               The restore button shares this one cell instead of following it.
               A button of its own would sit between the age and the row's edge
               and push the whole column off the card's, which is the one thing
-              the fixed slot exists to prevent. */}
+              the fixed slot exists to prevent. On touch devices, keep both
+              visible side by side so the wake countdown stays readable. */}
           <span
             className={cn(
               STATUS_SLOT_CLASS,
-              "pointer-events-none relative tabular-nums text-2xs text-muted-foreground/60",
+              "pointer-events-none relative tabular-nums text-2xs text-muted-foreground/60 [@media(hover:none)]:w-auto [@media(hover:none)]:min-w-20 [@media(hover:none)]:gap-2",
             )}
           >
-            <span className="flex items-center transition-opacity duration-150 ease-out group-hover/slim:opacity-0 motion-reduce:transition-none">
+            <span className="flex items-center transition-opacity duration-150 ease-out [@media(hover:hover)]:group-hover/slim:opacity-0 motion-reduce:transition-none">
               {shelf === "snoozed" && wakeAt !== null ? (
                 snoozeWakeLabel(wakeAt, now)
               ) : (
@@ -185,7 +188,7 @@ export function SlimRow({
                 }}
                 // Pulled right by its own padding, so the icon — not the hit
                 // area — lands on the column.
-                className="pointer-events-auto absolute -right-0.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out hover:text-foreground focus-visible:opacity-100 group-hover/slim:opacity-100 motion-reduce:transition-none"
+                className="pointer-events-auto absolute -right-0.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 ease-out hover:text-foreground focus-visible:opacity-100 group-hover/slim:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100 motion-reduce:transition-none"
               >
                 <Icon
                   name={shelf === "snoozed" ? "Clock" : "ArrowTurnBackward"}

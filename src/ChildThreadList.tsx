@@ -12,6 +12,7 @@ import { canParkThread } from "./lifecycle";
 import { RowContextMenu } from "./RowContextMenu";
 import { InlineThreadTitle } from "./InlineThreadTitle";
 import { ThreadDetailsTooltip } from "./ThreadDetailsTooltip";
+import { OpenPortsIndicator } from "./OpenPorts";
 import {
   childStatusIndicator,
   childStatusPhrase,
@@ -448,6 +449,7 @@ function ChildThreadRow({
                 </span>
               ) : null}
             </span>
+            <OpenPortsIndicator thread={thread} />
             {variant === "header" ? (
               <span className="shrink-0">
                 <StatusGlyph

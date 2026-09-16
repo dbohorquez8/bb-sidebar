@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## [0.2.14] - 2026-09-15
+
+### Improved
+
+- Add a green glow, gentle checkmark tilt, and five sparkles to the settle button, with light and dark styling, keyboard focus, and reduced-motion support.
+- Keep the settle button's hit area fixed so hovering near a corner does not cause flickering.
+- Remove the settle tooltip while preserving its accessible label.
+
+## [0.2.12] - 2026-09-12
+
+### Fixed
+
+- Keep snooze, settle, and restore actions visible on touch devices, with parked thread labels and snooze countdowns beside the restore button.
+- Group the unpin button with card actions, or with the status and Woke label when parking actions are unavailable.
+- Keep the status visible when focusing Unpin on cards without parking actions.
+
 ## [0.2.11] - 2026-09-11
 
 ### Added
