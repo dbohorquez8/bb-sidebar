@@ -236,13 +236,13 @@ export function statusRowWashClass(
   isActive: boolean,
 ): string {
   if (isActive) return "";
-  // Dark mode uses a MID green at low alpha, not the near-black 950: a 950 base
-  // barely shifts hue over the dark sidebar and just reads as a muddy patch.
+  // Both tints are theme tokens in theme.css; the dark unread tint uses a mid
+  // green at low alpha so it tints the row instead of reading as a muddy patch.
   switch (indicator) {
     case "waiting-for-input":
       return "bg-[color:var(--bb-sidebar-needs-you-tint)] hover:bg-[color:var(--bb-sidebar-needs-you-tint-hover)]";
     case "unread-success":
-      return "bg-emerald-50/60 hover:bg-emerald-100/50 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15";
+      return "bg-[color:var(--bb-sidebar-unread-tint)] hover:bg-[color:var(--bb-sidebar-unread-tint-hover)]";
     default:
       return "";
   }

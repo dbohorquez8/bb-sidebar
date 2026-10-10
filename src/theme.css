@@ -98,6 +98,8 @@
    */
   --bb-sidebar-needs-you-tint: var(--bb-sidebar-amber-50);
   --bb-sidebar-needs-you-tint-hover: var(--bb-sidebar-amber-50);
+  --bb-sidebar-unread-tint: color-mix(in oklab, var(--bb-sidebar-emerald-100) 50%, transparent);
+  --bb-sidebar-unread-tint-hover: color-mix(in oklab, var(--bb-sidebar-emerald-100) 80%, transparent);
   --bb-sidebar-needs-you-accent: transparent;
 
   --bb-sidebar-settle-active: var(--bb-sidebar-emerald-700);
@@ -159,6 +161,8 @@
    */
   --bb-sidebar-needs-you-tint: color-mix(in oklab, var(--bb-sidebar-amber-950) 60%, transparent);
   --bb-sidebar-needs-you-tint-hover: color-mix(in oklab, var(--bb-sidebar-amber-950) 80%, transparent);
+  --bb-sidebar-unread-tint: color-mix(in oklab, var(--bb-sidebar-emerald-500) 10%, transparent);
+  --bb-sidebar-unread-tint-hover: color-mix(in oklab, var(--bb-sidebar-emerald-500) 15%, transparent);
   --bb-sidebar-needs-you-accent: color-mix(in oklab, var(--bb-sidebar-amber-300) 55%, transparent);
 
   --bb-sidebar-settle-active: var(--bb-sidebar-emerald-300);
