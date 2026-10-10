@@ -1,82 +1,227 @@
-.bb-sidebar-settle-sparkle {
+/*
+ * Settle. While hovered the check lifts and tilts and three sparkles spring
+ * in and shimmer. A click pops the check, throws the sparkles off, sweeps the
+ * row green from the button, passes a glint across it and dims the text; the
+ * card holds the settle itself until the sweep is done (SETTLE_SWEEP_MS).
+ */
+
+.bb-sidebar-settle {
+  --bb-sidebar-settle-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --bb-sidebar-settle-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bb-sidebar-settle-art {
+  transition:
+    background-color 160ms ease-out,
+    box-shadow 220ms ease-out;
+}
+
+.bb-sidebar-settle:is(:hover, :focus-visible, [data-settling]) .bb-sidebar-settle-art {
+  background: color-mix(in oklab, var(--bb-sidebar-settle-accent) 14%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--bb-sidebar-settle-accent) 7%, transparent),
+    0 3px 8px -3px color-mix(in oklab, var(--bb-sidebar-settle-accent) 55%, transparent);
+}
+
+.bb-sidebar-settle-stars {
   position: absolute;
-  width: 19%;
-  height: 19%;
-  min-width: 4px;
-  min-height: 4px;
-  background: currentColor;
-  clip-path: polygon(50% 0, 62% 37%, 100% 50%, 62% 62%, 50% 100%, 37% 62%, 0 50%, 37% 37%);
-  opacity: 0;
+  inset: 0;
   pointer-events: none;
 }
 
-.bb-sidebar-settle-sparkle:nth-of-type(1) {
-  top: -17%;
-  right: -12%;
-  --sparkle-delay: 0ms;
-  --sparkle-x: 3px;
-  --sparkle-y: -3px;
+/* A four-point star with curved sides; clip-path cannot draw the curves. */
+.bb-sidebar-settle-star {
+  position: absolute;
+  width: var(--star-size);
+  height: var(--star-size);
+  background: var(--star-color, currentColor);
+  -webkit-mask: var(--bb-sidebar-settle-star-shape) center / contain no-repeat;
+  mask: var(--bb-sidebar-settle-star-shape) center / contain no-repeat;
+  opacity: 0;
+  --bb-sidebar-settle-star-shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M5 0Q6.2 3.8 10 5Q6.2 6.2 5 10Q3.8 6.2 0 5Q3.8 3.8 5 0Z'/%3E%3C/svg%3E");
 }
 
-.bb-sidebar-settle-sparkle:nth-of-type(2) {
-  top: 26%;
-  right: -25%;
-  width: 14%;
-  height: 14%;
-  --sparkle-delay: 100ms;
-  --sparkle-x: 4px;
-  --sparkle-y: 0px;
+.bb-sidebar-settle-star:nth-child(1) {
+  top: -5px;
+  right: -5px;
+  --star-size: 9px;
+  --star-color: var(--bb-sidebar-settle-spark);
+  --star-delay: 0ms;
+  --star-x: 9px;
+  --star-y: -6px;
 }
 
-.bb-sidebar-settle-sparkle:nth-of-type(3) {
-  bottom: -18%;
-  right: 9%;
-  --sparkle-delay: 160ms;
-  --sparkle-x: 2px;
-  --sparkle-y: 3px;
+.bb-sidebar-settle-star:nth-child(2) {
+  top: -3px;
+  left: -6px;
+  --star-size: 6px;
+  --star-delay: 70ms;
+  --star-x: -4px;
+  --star-y: -8px;
 }
 
-.bb-sidebar-settle-sparkle:nth-of-type(4) {
-  bottom: 2%;
-  left: -23%;
-  width: 15%;
-  height: 15%;
-  --sparkle-delay: 70ms;
-  --sparkle-x: -3px;
-  --sparkle-y: 2px;
+.bb-sidebar-settle-star:nth-child(3) {
+  bottom: -5px;
+  right: 0;
+  --star-size: 5px;
+  --star-delay: 130ms;
+  --star-x: 6px;
+  --star-y: 7px;
 }
 
-.bb-sidebar-settle-sparkle:nth-of-type(5) {
-  top: -21%;
-  left: 9%;
-  width: 14%;
-  height: 14%;
-  --sparkle-delay: 130ms;
-  --sparkle-x: -2px;
-  --sparkle-y: -3px;
-}
-
-.bb-sidebar-settle:is(:hover, :focus-visible) .bb-sidebar-settle-sparkle {
+.bb-sidebar-settle:is(:hover, :focus-visible) .bb-sidebar-settle-star {
   opacity: 0.85;
 }
 
+.bb-sidebar-settle-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.bb-sidebar-settle-sweep::before,
+.bb-sidebar-settle-sweep::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+}
+
+/* The wash grows out of the button at the row's trailing edge. */
+.bb-sidebar-settle-sweep::before {
+  inset-inline: 0;
+  background: linear-gradient(
+    to left,
+    color-mix(in oklab, var(--bb-sidebar-settle-accent) 14%, transparent),
+    color-mix(in oklab, var(--bb-sidebar-settle-accent) 6%, transparent)
+  );
+  transform-origin: right;
+  animation: bb-sidebar-settle-wash 340ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.bb-sidebar-settle-sweep::after {
+  left: 0;
+  width: 45%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--bb-sidebar-settle-spark) 30%, transparent) 45%,
+    var(--bb-sidebar-settle-glint) 50%,
+    color-mix(in oklab, var(--bb-sidebar-settle-spark) 30%, transparent) 55%,
+    transparent
+  );
+  transform: translateX(240%) skewX(-20deg);
+  animation: bb-sidebar-settle-glint 560ms 60ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+[data-parent-card][data-settling] [data-settle-fade] {
+  animation: bb-sidebar-settle-fade 380ms 160ms cubic-bezier(0.55, 0, 0.75, 0.2) forwards;
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  .bb-sidebar-settle:is(:hover, :focus-visible) .bb-sidebar-settle-sparkle {
-    animation: bb-sidebar-settle-sparkle 750ms var(--sparkle-delay) ease-out both;
+  .bb-sidebar-settle-art {
+    transition:
+      transform 360ms var(--bb-sidebar-settle-spring),
+      background-color 160ms ease-out,
+      box-shadow 220ms ease-out;
+  }
+
+  .bb-sidebar-settle:is(:hover, :focus-visible, [data-settling]) .bb-sidebar-settle-art {
+    transform: translateY(-1px);
+  }
+
+  .bb-sidebar-settle:active .bb-sidebar-settle-art {
+    transform: scale(0.86);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--bb-sidebar-settle-accent) 10%, transparent);
+    transition-duration: 70ms;
+  }
+
+  .bb-sidebar-settle-check {
+    transition: transform 420ms var(--bb-sidebar-settle-spring);
+  }
+
+  .bb-sidebar-settle:is(:hover, :focus-visible) .bb-sidebar-settle-check {
+    transform: rotate(-10deg) scale(1.1);
+  }
+
+  .bb-sidebar-settle:is(:hover, :focus-visible) .bb-sidebar-settle-star {
+    animation:
+      bb-sidebar-settle-star-in 480ms var(--star-delay) var(--bb-sidebar-settle-spring) both,
+      bb-sidebar-settle-star-shimmer 1800ms calc(480ms + var(--star-delay)) ease-in-out infinite;
+  }
+
+  .bb-sidebar-settle[data-settling] .bb-sidebar-settle-check {
+    animation: bb-sidebar-settle-pop 380ms var(--bb-sidebar-settle-spring) forwards;
+  }
+
+  .bb-sidebar-settle[data-settling] .bb-sidebar-settle-star {
+    animation: bb-sidebar-settle-star-fly 520ms var(--bb-sidebar-settle-ease) forwards;
   }
 }
 
-@keyframes bb-sidebar-settle-sparkle {
+@keyframes bb-sidebar-settle-star-in {
   0% {
     opacity: 0;
-    transform: scale(0.15) rotate(-35deg);
-  }
-  40% {
-    opacity: 1;
-    transform: translate(var(--sparkle-x), var(--sparkle-y)) scale(1.45) rotate(15deg);
+    transform: scale(0) rotate(-45deg);
   }
   100% {
-    opacity: 0.85;
-    transform: translate(var(--sparkle-x), var(--sparkle-y)) scale(0.9) rotate(45deg);
+    opacity: 0.9;
+    transform: scale(1) rotate(0);
+  }
+}
+
+/* `scale`, not `transform`, so the shimmer stacks on the spring-in. */
+@keyframes bb-sidebar-settle-star-shimmer {
+  0%,
+  100% {
+    scale: 1;
+    opacity: 0.9;
+  }
+  50% {
+    scale: 0.7;
+    opacity: 0.55;
+  }
+}
+
+@keyframes bb-sidebar-settle-star-fly {
+  0% {
+    opacity: 1;
+    transform: scale(1.15) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--star-x), var(--star-y)) scale(0.2) rotate(120deg);
+  }
+}
+
+@keyframes bb-sidebar-settle-pop {
+  0% {
+    transform: rotate(-10deg) scale(0.7);
+  }
+  100% {
+    transform: rotate(0) scale(1);
+  }
+}
+
+@keyframes bb-sidebar-settle-wash {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes bb-sidebar-settle-glint {
+  100% {
+    transform: translateX(-140%) skewX(-20deg);
+  }
+}
+
+@keyframes bb-sidebar-settle-fade {
+  100% {
+    transform: translateX(-6px);
+    opacity: 0.35;
   }
 }

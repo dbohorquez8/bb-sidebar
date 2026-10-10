@@ -1,7 +1,15 @@
 import type { PluginSidebarThreadIndicator } from "@get-bb/plugin-sdk";
+import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { Icon } from "./components/Icon";
 import { cn } from "./lib/utils";
-import { statusToneClass } from "./StatusSlot";
+import { relativeTimeLabel } from "./relative-time";
+import {
+  shortStatusLabel,
+  statusToneClass,
+  threadShortStatus,
+  useThreadWithDraft,
+} from "./StatusSlot";
+import { useWorkingSinceContext } from "./useWorkingSince";
 
 /**
  * This plugin's status glyphs, matching bb's own sidebar shape for shape: the
@@ -174,5 +182,41 @@ function ShineIcon({
       aria-label={label}
       className={cn("animate-shine-icon opacity-75", className)}
     />
+  );
+}
+
+/**
+ * The live-status glyph and how long the work has run ("◌ 5m"), for rows too
+ * narrow for the card's "Working · 5m". The full label stays readable to
+ * assistive tech; the duration is left off under a minute, as on the card.
+ */
+export function CompactLiveStatus({
+  thread: listedThread,
+  now,
+}: {
+  thread: PluginSidebarThread;
+  /** Quantized clock, shared by every row in one render. */
+  now: number;
+}) {
+  const thread = useThreadWithDraft(listedThread);
+  const workingSince = useWorkingSinceContext();
+  const status = threadShortStatus(thread);
+  if (status === null) return null;
+  const startedAt = workingSince.get(thread.id);
+  const elapsed =
+    startedAt === undefined ? "now" : relativeTimeLabel(startedAt, now);
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center gap-1 tabular-nums text-2xs font-medium",
+        status.className,
+      )}
+    >
+      <span aria-hidden="true" className="flex items-center">
+        <StatusGlyph indicator={thread.indicator} label={null} className="size-3" />
+      </span>
+      {elapsed === "now" ? null : <span aria-hidden="true">{elapsed}</span>}
+      <span className="sr-only">{shortStatusLabel(status, startedAt, now)}</span>
+    </span>
   );
 }

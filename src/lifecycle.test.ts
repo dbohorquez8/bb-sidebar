@@ -1,14 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   configuredSnoozePresetError,
   canPark,
+  combineSnoozeDateTime,
+  defaultPickedSnooze,
+  formatPickedSnooze,
   formatSnoozeWakeTime,
   DEFAULT_SNOOZE_PRESET_CONFIG,
   nextWakeDelayMs,
   parseConfiguredSnoozePresets,
   resolveShelf,
   resolveWakeReason,
-  resolveSnoozePresets,
+  resolveConfiguredSnoozePreset,
   snoozeWakeLabel,
   MAX_TIMEOUT_MS,
   type ThreadActivitySignals,
@@ -17,6 +20,7 @@ import {
 
 const quiet: ThreadActivitySignals = {
   hasPendingInteraction: false,
+  hasQueuedWork: false,
   isWorking: false,
   isUnread: false,
   latestAttentionAt: 0,
@@ -41,6 +45,10 @@ describe("canPark", () => {
   // than a session status, and parking any of them hides running work.
   it("refuses while any work is running", () => {
     expect(canPark({ ...quiet, isWorking: true })).toBe(false);
+  });
+
+  it("refuses while a message waits to send or failed to send", () => {
+    expect(canPark({ ...quiet, hasQueuedWork: true })).toBe(false);
   });
 
   it("allows a quiet thread", () => {
@@ -180,45 +188,78 @@ describe("formatSnoozeWakeTime", () => {
   });
 });
 
-describe("resolveSnoozePresets", () => {
-  it("offers this evening while it is still well before evening", () => {
-    const presets = resolveSnoozePresets(new Date(2026, 0, 5, 9, 0, 0));
-    expect(presets.map((preset) => preset.id)).toEqual([
-      "hour",
-      "evening",
-      "tomorrow",
-      "next-week",
+describe("picked snooze", () => {
+  it("starts tomorrow at 9:00, across a month boundary", () => {
+    const { date, time } = defaultPickedSnooze(new Date(2026, 0, 31, 22));
+    expect(date.getTime()).toBe(new Date(2026, 1, 1).getTime());
+    expect(time).toBe("09:00");
+  });
+
+  it("combines a day and a local time", () => {
+    expect(combineSnoozeDateTime(new Date(2026, 2, 8), "14:05")).toBe(
+      new Date(2026, 2, 8, 14, 5).getTime(),
+    );
+    expect(combineSnoozeDateTime(new Date(2026, 2, 8), "")).toBeNull();
+    expect(combineSnoozeDateTime(new Date(2026, 2, 8), "24:00")).toBeNull();
+  });
+
+  it("previews the wake time, naming the year only when it differs", () => {
+    const now = new Date(Date.UTC(2026, 9, 3, 12));
+    expect(formatPickedSnooze(Date.UTC(2026, 9, 4, 9), now, "en-US", "UTC")).toBe(
+      "Sun, Oct 4, 9:00 AM",
+    );
+    expect(formatPickedSnooze(Date.UTC(2027, 0, 4, 9), now, "en-US", "UTC")).toBe(
+      "Mon, Jan 4, 2027, 9:00 AM",
+    );
+  });
+});
+
+describe("resolveConfiguredSnoozePreset", () => {
+  const resolve = (config: string, now: Date) =>
+    resolveConfiguredSnoozePreset(parseConfiguredSnoozePresets(config)[0]!, now);
+
+  it("offers the five default choices in the requested order", () => {
+    const now = new Date(2026, 0, 5, 10);
+    const presets = parseConfiguredSnoozePresets(DEFAULT_SNOOZE_PRESET_CONFIG);
+    expect(presets.map((preset) => preset.label)).toEqual([
+      "1 hour", "Wait refresh (5 hours)", "This evening", "Tomorrow morning", "Next week",
+    ]);
+    expect(presets.map((preset) => resolveConfiguredSnoozePreset(preset, now))).toEqual([
+      new Date(2026, 0, 5, 11).getTime(),
+      new Date(2026, 0, 5, 15).getTime(),
+      new Date(2026, 0, 5, 18).getTime(),
+      new Date(2026, 0, 6, 9).getTime(),
+      new Date(2026, 0, 12, 9).getTime(),
     ]);
   });
 
-  it("drops this evening once evening is near", () => {
-    const presets = resolveSnoozePresets(new Date(2026, 0, 5, 17, 30, 0));
-    expect(presets.map((preset) => preset.id)).toEqual([
-      "hour",
-      "tomorrow",
-      "next-week",
-    ]);
+  it("makes this evening unavailable at or after the configured time", () => {
+    expect(resolve("evening@19:30", new Date(2026, 0, 5, 19, 29))).toBe(new Date(2026, 0, 5, 19, 30).getTime());
+    expect(resolve("evening@19:30", new Date(2026, 0, 5, 19, 30))).toBeNull();
+    expect(resolve("evening@19:30", new Date(2026, 0, 5, 23))).toBeNull();
   });
 
-  // Calendar arithmetic, not +24h: a fixed offset lands on the wrong local
-  // day across a daylight-saving change.
-  it("puts tomorrow at 9am on the next calendar day", () => {
-    const presets = resolveSnoozePresets(new Date(2026, 0, 5, 23, 30, 0));
-    const tomorrow = new Date(
-      presets.find((preset) => preset.id === "tomorrow")!.snoozedUntil,
-    );
-    expect(tomorrow.getDate()).toBe(6);
-    expect(tomorrow.getHours()).toBe(9);
+  it("uses editable calendar times and recalculates across midnight and year boundaries", () => {
+    const preset = parseConfiguredSnoozePresets("Morning=tomorrow@08:15")[0]!;
+    expect(resolveConfiguredSnoozePreset(preset, new Date(2026, 11, 31, 23, 59))).toBe(new Date(2027, 0, 1, 8, 15).getTime());
+    expect(resolveConfiguredSnoozePreset(preset, new Date(2027, 0, 1, 0, 1))).toBe(new Date(2027, 0, 2, 8, 15).getTime());
+    expect(resolve("next-week@10:30", new Date(2026, 0, 4, 23))).toBe(new Date(2026, 0, 5, 10, 30).getTime());
   });
 
-  it("puts next week on the coming Monday", () => {
-    // 2026-01-05 is a Monday, so "next week" is the following Monday.
-    const presets = resolveSnoozePresets(new Date(2026, 0, 5, 10, 0, 0));
-    const nextWeek = new Date(
-      presets.find((preset) => preset.id === "next-week")!.snoozedUntil,
-    );
-    expect(nextWeek.getDay()).toBe(1);
-    expect(nextWeek.getDate()).toBe(12);
+  it.each([
+    [2, 7, 23],
+    [9, 31, 25],
+  ])("preserves local morning through a DST change in month %i", (month, day, hours) => {
+    vi.stubEnv("TZ", "America/New_York");
+    try {
+      const now = new Date(2026, month, day, 9);
+      const wake = resolve("tomorrow", now)!;
+      expect(new Date(wake).getHours()).toBe(9);
+      expect(wake - now.getTime()).toBe(hours * 3_600_000);
+      expect(resolve("1d", now)! - now.getTime()).toBe(24 * 3_600_000);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -239,6 +280,18 @@ describe("resolveSnoozePresets", () => {
     expect(parseConfiguredSnoozePresets("nope, 10m, 0m")).toEqual([
       { id: "preset-1", label: "10 minutes", durationMs: 10 * 60_000 },
     ]);
+  });
+
+  it("accepts editable calendar labels and times", () => {
+    expect(parseConfiguredSnoozePresets("Tonight=evening@20:45, Morning=tomorrow@08:30, Monday=next-week@10:00")).toEqual([
+      { id: "preset-0", label: "Tonight", calendar: "evening", hour: 20, minute: 45 },
+      { id: "preset-1", label: "Morning", calendar: "tomorrow", hour: 8, minute: 30 },
+      { id: "preset-2", label: "Monday", calendar: "next-week", hour: 10, minute: 0 },
+    ]);
+  });
+
+  it.each(["tomorrow@24:00", "evening@18:60", "next-week@-1:00", "tomorrow@9", "tomorrow@09:00extra"])("rejects invalid calendar time %s", (value) => {
+    expect(configuredSnoozePresetError(value)).not.toBeNull();
   });
 
     it("falls back to defaults when every entry is invalid", () => {
@@ -278,5 +331,19 @@ describe("nextWakeDelayMs", () => {
   // immediately, turning one snooze into a tight re-arm loop.
   it("clamps a far-future wake to the maximum timeout", () => {
     expect(nextWakeDelayMs([Number.MAX_SAFE_INTEGER], 0)).toBe(MAX_TIMEOUT_MS);
+  });
+});
+
+
+describe("parked shelf", () => {
+  it("waits indefinitely, including when already unread", () => {
+    expect(resolveShelf(row({ parkedAt: 100 }), { ...quiet, isUnread: true }, 1e12)).toBe("parked");
+  });
+  it.each([
+    { latestAttentionAt: 101 },
+    { isWorking: true },
+    { hasPendingInteraction: true },
+  ])("returns to Active for fresh activity: %j", (signals) => {
+    expect(resolveShelf(row({ parkedAt: 100 }), { ...quiet, ...signals }, 200)).toBe("active");
   });
 });

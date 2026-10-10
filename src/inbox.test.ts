@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
+import { idleSidebarThreadFields } from "./test-fixtures";
 import {
   childNeedsYouCount,
   childThreadsByParent,
@@ -9,7 +10,6 @@ import {
   ALL_PROJECTS,
   filterByProject,
   hideChildrenOfVisibleParents,
-  nextThreadAfterParking,
   parentOf,
   partitionPinned,
   reconcileProjectScope,
@@ -25,6 +25,7 @@ function thread(
   overrides: Partial<PluginSidebarThread> = {},
 ): PluginSidebarThread {
   return {
+    ...idleSidebarThreadFields,
     id: "thr_1",
     projectId: "proj_1",
     title: "A thread",
@@ -227,20 +228,6 @@ describe("filtering", () => {
   });
 });
 
-describe("nextThreadAfterParking", () => {
-  const threads = [{ id: "first" }, { id: "middle" }, { id: "last" }];
-
-  it("prefers the next row and falls back to the previous row", () => {
-    expect(nextThreadAfterParking(threads, "middle")?.id).toBe("last");
-    expect(nextThreadAfterParking(threads, "last")?.id).toBe("middle");
-  });
-
-  it("returns the first row for an unknown id and null for an empty list", () => {
-    expect(nextThreadAfterParking(threads, "missing")?.id).toBe("first");
-    expect(nextThreadAfterParking([], "missing")).toBeNull();
-  });
-});
-
 describe("child threads", () => {
   it("hides a child whose parent is on screen", () => {
     const visible = hideChildrenOfVisibleParents([
@@ -270,6 +257,73 @@ describe("child threads", () => {
       "parent",
     );
     expect(children.map((t) => t.id)).toEqual(["a", "b"]);
+  });
+
+  it("lists a thread's children by the configured sort", () => {
+    const threads = [
+      thread({ id: "parent" }),
+      thread({
+        id: "a",
+        parentThreadId: "parent",
+        createdAt: 10,
+        updatedAt: 30,
+      }),
+      thread({
+        id: "b",
+        parentThreadId: "parent",
+        createdAt: 20,
+        updatedAt: 25,
+      }),
+      thread({
+        id: "c",
+        parentThreadId: "parent",
+        createdAt: 30,
+        updatedAt: 40,
+      }),
+    ];
+
+    expect(
+      childrenOf(threads, "parent", {
+        field: "created",
+        direction: "descending",
+      }).map((t) => t.id),
+    ).toEqual(["c", "b", "a"]);
+    expect(
+      childrenOf(threads, "parent", {
+        field: "activity",
+        direction: "ascending",
+      }).map((t) => t.id),
+    ).toEqual(["b", "a", "c"]);
+    expect(
+      childrenOf(threads, "parent", {
+        field: "activity",
+        direction: "descending",
+      }).map((t) => t.id),
+    ).toEqual(["c", "a", "b"]);
+  });
+
+  it("groups children by parent in the configured sort", () => {
+    const children = childThreadsByParent(
+      [
+        thread({ id: "parent" }),
+        thread({ id: "a", parentThreadId: "parent", createdAt: 10 }),
+        thread({ id: "b", parentThreadId: "parent", createdAt: 20 }),
+      ],
+      { field: "created", direction: "descending" },
+    );
+    expect(children.get("parent")?.map((t) => t.id)).toEqual(["b", "a"]);
+  });
+
+  it("breaks child sort ties by id, whatever the input order", () => {
+    const threads = [
+      thread({ id: "parent" }),
+      thread({ id: "b", parentThreadId: "parent", createdAt: 10 }),
+      thread({ id: "a", parentThreadId: "parent", createdAt: 10 }),
+    ];
+    expect(childrenOf(threads, "parent").map((t) => t.id)).toEqual(["a", "b"]);
+    expect(
+      childrenOf([...threads].reverse(), "parent").map((t) => t.id),
+    ).toEqual(["a", "b"]);
   });
 
   it("excludes archived children from child helpers and attention counts", () => {

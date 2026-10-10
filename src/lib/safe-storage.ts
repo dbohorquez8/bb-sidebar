@@ -6,8 +6,10 @@ export const MAX_CHILD_EXPANSION = 100;
 // Keys managed by this plugin — ordered least-critical first for eviction.
 const PLUGIN_STORAGE_KEYS = [
   "bb-sidebar:working-since:v1",
+  "bb-sidebar:inbox-order-cache:v1",
   "bb-sidebar:lifecycle-cache:v1",
   "bb-sidebar:child-expansion:v1",
+  "bb-sidebar:project-collapse:v1",
   "bb-sidebar:shelf-expansion:v1",
   "bb-sidebar:active-sort:v1",
   "bb-sidebar:settings-cache:v1",
@@ -63,7 +65,7 @@ export function safeSetItem(key: string, value: string): boolean {
 }
 
 function lifecycleRecency(row: ThreadLifecycleRow): number {
-  let max = 0;
+  let max = row.parkedAt ?? 0;
   if (typeof row.snoozedUntil === "number" && Number.isFinite(row.snoozedUntil)) {
     max = Math.max(max, row.snoozedUntil);
   }

@@ -1,9 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  experimental_useProviders as useProviders,
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
+import { useSidebarSettings } from "./useSidebarSettings";
 import {
   ChildThreadDots,
   ChildThreadList,
@@ -11,8 +13,13 @@ import {
   childNeedsYouCount,
   childrenOf,
 } from "./ChildThreadList";
+import {
+  ChildThreadDisplayContext,
+  useChildThreadDisplayValue,
+} from "./ChildThreadDisplay";
 import { cn } from "./lib/utils";
 import { Tooltip } from "./components/Tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/Popover";
 
 /**
  * The home for child threads the flat list hides: a chip in the thread header
@@ -29,13 +36,21 @@ export function SubagentsChip({
   const { threads } = useSidebarThreads();
   const actions = useSidebarThreadActions();
   const [open, setOpen] = useState(false);
-  const popupId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const sidebarSettings = useSidebarSettings();
 
-  const children = childrenOf(threads, threadId);
+  const { providers } = useProviders();
+  const providerById = useMemo(
+    () => new Map(providers.map((provider) => [provider.id, provider])),
+    [providers],
+  );
+  const childDisplay = useChildThreadDisplayValue(
+    sidebarSettings,
+    providerById,
+  );
+  const children = childrenOf(threads, threadId, childDisplay.sort);
   const childrenByParent = useMemo(
-    () => childThreadsByParent(threads),
-    [threads],
+    () => childThreadsByParent(threads, childDisplay.sort),
+    [threads, childDisplay.sort],
   );
   useEffect(() => {
     setOpen(false);
@@ -43,17 +58,6 @@ export function SubagentsChip({
   useEffect(() => {
     if (children.length === 0) setOpen(false);
   }, [children.length]);
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
   if (children.length === 0) return null;
 
   const needsYou = childNeedsYouCount(children) > 0;
@@ -65,51 +69,54 @@ export function SubagentsChip({
     : `${children.length} ${children.length === 1 ? "child" : "children"}`;
 
   return (
-    <span className="relative">
-      <Tooltip label={threadCountLabel} side="bottom">
-        <button
-          ref={triggerRef}
-          type="button"
-          aria-expanded={open}
-          aria-controls={popupId}
-          aria-label={threadCountLabel}
-          onClick={() => setOpen((value) => !value)}
-          className={cn(
-            "flex h-7 items-center gap-1.5 rounded-full border border-border px-2 text-2xs text-muted-foreground",
-            "hover:bg-accent hover:text-foreground",
-            open && "bg-accent text-foreground",
-          )}
+    <ChildThreadDisplayContext.Provider value={childDisplay}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <Tooltip label={threadCountLabel} side="bottom">
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={threadCountLabel}
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-full border border-border px-2 text-2xs text-muted-foreground",
+                "hover:bg-accent hover:text-foreground",
+                open && "bg-accent text-foreground",
+              )}
+            >
+              <ChildThreadDots threads={children} />
+              {isCompactViewport ? null : (
+                <span className="truncate">{label}</span>
+              )}
+            </button>
+          </PopoverTrigger>
+        </Tooltip>
+        {/* Portaled and collision-aware, so a long list scrolls inside the
+            viewport instead of running off it. */}
+        <PopoverContent
+          role="region"
+          aria-label="Child threads"
+          align="end"
+          sideOffset={6}
+          collisionPadding={8}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => {
+            // An inline rename owns Escape; it cancels the edit, not the popup.
+            if (event.target instanceof HTMLInputElement) event.preventDefault();
+          }}
+          className="flex max-h-[var(--radix-popover-content-available-height)] w-80 flex-col overflow-hidden rounded-xl border-border p-0 shadow-lg"
         >
-          <ChildThreadDots threads={children} />
-          {isCompactViewport ? null : (
-            <span className="truncate">{label}</span>
-          )}
-        </button>
-      </Tooltip>
-      {open ? (
-        <>
-          {/* Click-away. The header is a short row, so the list itself is
-              absolutely positioned rather than inline. */}
-          <span
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
-            aria-hidden
-          />
-          <div
-            id={popupId}
-            role="region"
-            aria-label="Child threads"
-            className="absolute right-0 top-9 z-50 w-80 overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
-          >
-            <div className="flex items-center gap-2 px-3 pb-1 pt-2.5">
-              <span className="text-xs font-semibold">Children</span>
-              <span className="ml-auto text-2xs text-muted-foreground">
-                {children.length}
-              </span>
-            </div>
+          <div className="flex shrink-0 items-center gap-2 px-3 pb-1 pt-2.5">
+            <span className="text-xs font-semibold">Children</span>
+            <span className="ml-auto text-2xs text-muted-foreground">
+              {children.length}
+            </span>
+          </div>
+          <div className="min-h-0 overflow-y-auto">
             <ChildThreadList
               threads={children}
               childrenByParent={childrenByParent}
+              parentProjectId={
+                threads.find((thread) => thread.id === threadId)?.projectId
+              }
               variant="header"
               onOpenThread={(childId) => {
                 setOpen(false);
@@ -117,8 +124,8 @@ export function SubagentsChip({
               }}
             />
           </div>
-        </>
-      ) : null}
-    </span>
+        </PopoverContent>
+      </Popover>
+    </ChildThreadDisplayContext.Provider>
   );
 }

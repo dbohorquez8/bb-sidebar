@@ -1,7 +1,9 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useId, useState, type ReactElement } from "react";
 import {
   experimental_useProviders as useProviders,
+  experimental_useSidebarThreadSplit,
   experimental_useSidebarThreads as useSidebarThreads,
+  experimental_useSidebarThreadActions as useSidebarThreadActions,
   useRpc,
   useRealtime,
   type PluginSidebarThread,
@@ -12,9 +14,13 @@ import { threadDisplayTitle } from "./inbox";
 import { Icon, type IconName } from "./components/Icon";
 import { ProviderGlyph } from "./ProviderGlyph";
 import { StatusGlyph } from "./StatusGlyph";
+import { useThreadWithDraft } from "./StatusSlot";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { PROJECT_ICONS_CHANNEL, projectIconUrl } from "./project-icons";
 import { OpenPortDetails } from "./OpenPorts";
+import { ThreadPullRequestDetails } from "./ThreadPullRequests";
+import { compareChildThreads, useChildThreadDisplay } from "./ChildThreadDisplay";
+import { cn } from "./lib/utils";
 
 export function ThreadDetailsTooltip({
   thread,
@@ -26,17 +32,21 @@ export function ThreadDetailsTooltip({
   children: ReactElement;
 }) {
   const { providers } = useProviders();
-  const { projects } = useSidebarThreads();
+  const { projects, threads } = useSidebarThreads();
+  const actions = useSidebarThreadActions();
   const { call } = useRpc<typeof bbSidebarRpcContract>();
   const [iconRevision, setIconRevision] = useState(0);
   useRealtime(PROJECT_ICONS_CHANNEL, () => {
     setIconRevision((revision) => revision + 1);
   });
   const [open, setOpen] = useState(false);
+  const [subthreadsExpanded, setSubthreadsExpanded] = useState(false);
+  const subthreadsId = useId();
   const [execution, setExecution] = useState({ model: "Loading…", reasoningLevel: "" });
   const visible = open && !disabled;
 
   useEffect(() => {
+    setSubthreadsExpanded(false);
     if (!visible) return;
     let cancelled = false;
     setExecution({ model: "Loading…", reasoningLevel: "" });
@@ -53,9 +63,17 @@ export function ThreadDetailsTooltip({
     return () => { cancelled = true; };
   }, [call, thread.id, visible]);
 
+  const { sort: childSort } = useChildThreadDisplay();
+  const statusThread = useThreadWithDraft(thread);
   const provider = providers.find((entry) => entry.id === thread.providerId);
   const project = projects.find((entry) => entry.id === thread.projectId);
-  const status = thread.hasPendingInteraction ? "Needs you" : thread.indicatorLabel ?? "Idle";
+  const isWorktree =
+    thread.environment?.workspaceDisplayKind === "managed-worktree" ||
+    thread.environment?.workspaceDisplayKind === "unmanaged-worktree";
+  const status = thread.hasPendingInteraction ? "Needs you" : statusThread.indicatorLabel ?? "Idle";
+  const subthreads = visible ? threads
+    .filter((child) => !child.isArchived && child.parentThreadId === thread.id && child.id !== thread.id)
+    .sort(compareChildThreads(childSort)) : [];
   const label = (
     <div className="flex flex-col gap-2">
       <div className="truncate text-xs font-semibold leading-4 text-popover-foreground">
@@ -66,24 +84,25 @@ export function ThreadDetailsTooltip({
           <div className="flex items-center gap-2">
             <ProjectFavicon
               src={projectIconUrl(project.id, iconRevision)}
-              fallback={<Icon name="FolderGit" className="size-3.5 shrink-0" aria-hidden />}
+              name={project.name}
             />
             <span className="truncate"><span className="sr-only">Project: </span>{project.name}</span>
           </div>
         ) : null}
         {thread.host ? <DetailRow icon="Computer" label="Machine" value={thread.host.name} /> : null}
-        {thread.environment?.name ? (
-          <DetailRow icon="Terminal" label="Environment" value={thread.environment.name} />
-        ) : null}
         {thread.environment?.branchName ? (
-          <DetailRow icon="GitBranch" label="Branch" value={thread.environment.branchName} />
+          <DetailRow
+            icon={isWorktree ? "FolderGit" : "GitBranch"}
+            label={isWorktree ? "Worktree branch" : "Branch"}
+            value={thread.environment.branchName}
+          />
         ) : null}
         <div className="flex items-start gap-2">
           <span className="relative mt-px flex size-3.5 shrink-0 items-center justify-center">
             <ProviderGlyph providerId={thread.providerId} provider={provider ?? null} className="size-3.5 [&_span]:size-3.5" />
-            {thread.indicator !== "none" ? (
+            {statusThread.indicator !== "none" ? (
               <span className="absolute -bottom-1 -right-1 rounded-full bg-popover">
-                <StatusGlyph indicator={thread.indicator} label={status} className="size-2.5" />
+                <StatusGlyph indicator={statusThread.indicator} label={status} className="size-2.5" />
               </span>
             ) : null}
           </span>
@@ -96,6 +115,38 @@ export function ThreadDetailsTooltip({
           </div>
         </div>
         <span className="sr-only">Status: {status}</span>
+        {subthreads.length > 0 ? (
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <button
+              type="button"
+              aria-expanded={subthreadsExpanded}
+              aria-controls={subthreadsExpanded ? subthreadsId : undefined}
+              onClick={(event) => {
+                event.stopPropagation();
+                setSubthreadsExpanded((expanded) => !expanded);
+              }}
+              className="pointer-events-auto flex items-center gap-2 rounded-sm text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <Icon name="Workflow" className="size-3.5 shrink-0" aria-hidden />
+              <span>Subthreads ({subthreads.length})</span>
+              <Icon name={subthreadsExpanded ? "ChevronUp" : "ChevronDown"} className="ml-auto size-3 shrink-0" aria-hidden />
+            </button>
+            {subthreadsExpanded ? <ul id={subthreadsId} aria-label="Subthreads" className="pointer-events-auto flex max-h-[min(12rem,30dvh)] flex-col gap-1.5 overflow-y-auto">
+              {subthreads.map((child) => (
+                <li key={child.id} className="min-w-0 pl-5">
+                  <SubthreadRow
+                    thread={child}
+                    onOpen={() => {
+                      setOpen(false);
+                      actions.open(child.id);
+                    }}
+                  />
+                </li>
+              ))}
+            </ul> : null}
+          </div>
+        ) : null}
+        <ThreadPullRequestDetails thread={thread} />
         <OpenPortDetails thread={thread} />
       </div>
     </div>
@@ -112,11 +163,46 @@ export function ThreadDetailsTooltip({
   );
 }
 
+function SubthreadRow({ thread, onOpen }: { thread: PluginSidebarThread; onOpen: () => void }) {
+  const { splitProps } = experimental_useSidebarThreadSplit(thread.id);
+  const { providers } = useProviders();
+  const provider = providers.find((entry) => entry.id === thread.providerId);
+  const statusThread = useThreadWithDraft(thread);
+  const status = thread.hasPendingInteraction ? "Needs you" : statusThread.indicatorLabel ?? "Idle";
+  return (
+    <button
+      type="button"
+      aria-label={`Open subthread: ${threadDisplayTitle(thread)}`}
+      draggable={false}
+      onPointerDown={splitProps.onPointerDown}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      className={cn(
+        "flex w-full min-w-0 items-start gap-2 rounded-sm text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        splitProps.onPointerDown
+          ? "cursor-grab active:cursor-grabbing"
+          : "cursor-pointer",
+      )}
+    >
+      <ProviderGlyph providerId={thread.providerId} provider={provider ?? null} className="mt-px size-3.5 shrink-0 [&_span]:size-3.5" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{threadDisplayTitle(thread)}</span>
+        <span className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+          <span className="truncate">{provider?.displayName ?? thread.providerId} · {status}</span>
+          <StatusGlyph indicator={thread.hasPendingInteraction ? "waiting-for-input" : statusThread.indicator} label={null} className="size-2.5" />
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function DetailRow({ icon, label, value }: { icon: IconName; label: string; value: string }) {
   return (
     <div className="flex items-center gap-2">
       <Icon name={icon} className="size-3.5 shrink-0" aria-hidden />
-      <span className="truncate"><span className="sr-only">{label}: </span>{value}</span>
+      <span className="truncate" title={value}><span className="sr-only">{label}: </span>{value}</span>
     </div>
   );
 }

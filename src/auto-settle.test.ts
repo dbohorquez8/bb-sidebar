@@ -4,6 +4,7 @@ import {
   decideAutoSettle,
   parseAutoSettleAfterDays,
   type AutoSettleLifecycleState,
+  type AutoSettleThread,
 } from "./auto-settle";
 
 const DAY = 24 * 60 * 60 * 1_000;
@@ -20,11 +21,22 @@ function lifecycle(
   };
 }
 
-const quietThread = {
+const idleActivity = {
+  activeBackgroundAgentCount: 0,
+  activeBackgroundCommandCount: 0,
+  activeGoalCount: 0,
+  activePlanModeCount: 0,
+  activeWorkflowCount: 0,
+};
+
+const quietThread: AutoSettleThread = {
+  activity: idleActivity,
   createdAt: DAY,
+  hasPendingInteraction: false,
   latestAttentionAt: 6 * DAY,
   pinnedAt: null,
-  status: "idle" as const,
+  queuedWork: "none",
+  status: "idle",
   updatedAt: 6 * DAY,
 };
 
@@ -65,6 +77,47 @@ describe("automatic settle policy", () => {
       thread: { ...quietThread, status: "pending" },
     })).toBe("keep");
   });
+
+  it.each<[string, Partial<AutoSettleThread>]>([
+    ["a pending interaction", { hasPendingInteraction: true }],
+    ["queued messages", { queuedWork: "waiting" }],
+    ["a failed queued message", { queuedWork: "failed" }],
+    ["a workflow", { activity: { ...idleActivity, activeWorkflowCount: 1 } }],
+    [
+      "a background agent",
+      { activity: { ...idleActivity, activeBackgroundAgentCount: 1 } },
+    ],
+    [
+      "a background command",
+      { activity: { ...idleActivity, activeBackgroundCommandCount: 1 } },
+    ],
+    ["plan mode", { activity: { ...idleActivity, activePlanModeCount: 1 } }],
+    ["a goal", { activity: { ...idleActivity, activeGoalCount: 1 } }],
+  ])("never settles an idle thread with %s, and returns one it settled", (_, overrides) => {
+    const thread = { ...quietThread, ...overrides };
+    const merged = {
+      outcome: "available" as const,
+      state: "merged" as const,
+      updatedAt: new Date(NOW).toISOString(),
+    };
+
+    expect(autoSettleNeedsPullRequest(null, thread)).toBe(false);
+    for (const pullRequest of [{ outcome: "absent" as const }, merged]) {
+      expect(
+        decideAutoSettle({ lifecycle: null, now: NOW, pullRequest, settings, thread }),
+      ).toBe("keep");
+    }
+    expect(
+      decideAutoSettle({
+        lifecycle: lifecycle({ settledAt: NOW - DAY }),
+        now: NOW,
+        pullRequest: { outcome: "absent" },
+        settings,
+        thread,
+      }),
+    ).toBe("unsettle");
+  });
+
   it("accepts only configured inactivity thresholds from 1 through 90", () => {
     expect(parseAutoSettleAfterDays(true, "3")).toBe(3);
     expect(parseAutoSettleAfterDays(false, "3")).toBeNull();
@@ -208,4 +261,13 @@ describe("automatic settle policy", () => {
       }),
     ).toBe("keep");
   });
+});
+
+
+it("never automatically settles parked work or requests its PR", () => {
+  const parked = lifecycle({ parkedAt: DAY });
+  expect(autoSettleNeedsPullRequest(parked, quietThread)).toBe(false);
+  for (const pullRequest of [{ outcome: "absent" as const }, { outcome: "available" as const, state: "merged" as const, updatedAt: new Date(NOW).toISOString() }]) {
+    expect(decideAutoSettle({ lifecycle: parked, now: NOW, pullRequest, settings, thread: quietThread })).toBe("keep");
+  }
 });

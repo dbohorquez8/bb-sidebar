@@ -127,6 +127,7 @@ export function ProjectScopeSelect({
             {scope !== ALL_PROJECTS ? (
               <ProjectFavicon
                 src={projectIconUrl(scope, projectIconRevision)}
+                name={scopeLabel}
                 className="size-3"
               />
             ) : null}
@@ -191,6 +192,7 @@ export function ProjectScopeSelect({
                   {option.id !== ALL_PROJECTS ? (
                     <ProjectFavicon
                       src={projectIconUrl(option.id, projectIconRevision)}
+                      name={option.name}
                       className="size-3"
                     />
                   ) : null}

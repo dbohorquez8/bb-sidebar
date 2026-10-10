@@ -46,6 +46,11 @@ describe("childStatusKind", () => {
         thread({ indicator: "unread-error", hasPendingInteraction: true }),
       ),
     ).toBe("failed");
+    expect(
+      childStatusKind(
+        thread({ queuedWork: "failed", hasPendingInteraction: true }),
+      ),
+    ).toBe("failed");
     expect(childStatusKind(thread({ hasPendingInteraction: true }))).toBe(
       "needs-you",
     );
@@ -99,5 +104,32 @@ describe("childSubtree", () => {
       "aa",
       "b",
     ]);
+  });
+});
+
+
+describe("full child subtree", () => {
+  it.each([
+    ["waiting-for-input", "needs-you"],
+    ["unread-error", "failed"],
+    ["unread-success", "done"],
+    ["runtime", "working"],
+  ] as const)("rolls up fourth-level %s", (indicator, dominant) => {
+    const c = thread({ id: "c" });
+    const g = thread({ id: "g", parentThreadId: "c" });
+    const gg = thread({ id: "gg", parentThreadId: "g", indicator });
+    const subtree = childSubtree([c], new Map([["c", [g]], ["g", [gg]]]));
+    expect(subtree.map(row => row.id)).toEqual(["c", "g", "gg"]);
+    expect(childStatusSummary(subtree).dominant).toBe(dominant);
+  });
+
+  it("stops archived branches and visits cyclic/duplicate DTOs once in sibling order", () => {
+    const c = thread({ id: "c" });
+    const g = thread({ id: "g" });
+    const archived = thread({ id: "archived", isArchived: true });
+    const hidden = thread({ id: "hidden", indicator: "unread-error" });
+    const sibling = thread({ id: "sibling" });
+    const map = new Map([["c", [g, archived, sibling]], ["g", [c]], ["archived", [hidden]]]);
+    expect(childSubtree([c, sibling], map).map(row => row.id)).toEqual(["c", "g", "sibling"]);
   });
 });

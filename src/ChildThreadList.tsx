@@ -1,12 +1,23 @@
-import { useId, useState } from "react";
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import { useId, useState, type ReactNode } from "react";
+import {
+  experimental_useSidebarThreadSplit,
+  experimental_useSidebarThreads as useSidebarThreads,
+  useRealtime,
+  type PluginSidebarThread,
+} from "@get-bb/plugin-sdk/app";
 import { Icon } from "./components/Icon";
 import { Tooltip } from "./components/Tooltip";
 import { Disc } from "./Disc";
 import { cn } from "./lib/utils";
-import { relativeTimeLabel } from "./relative-time";
 import { StatusGlyph } from "./StatusGlyph";
-import { statusRowWashClass } from "./StatusSlot";
+import {
+  STATUS_SLOT_CLASS,
+  StatusOrTime,
+  statusRowWashClass,
+  threadStatusLabel,
+  useThreadWithDraft,
+} from "./StatusSlot";
+import { useWorkingSinceContext } from "./useWorkingSince";
 import { threadDisplayTitle } from "./inbox";
 import { canParkThread } from "./lifecycle";
 import { RowContextMenu } from "./RowContextMenu";
@@ -15,29 +26,40 @@ import { ThreadDetailsTooltip } from "./ThreadDetailsTooltip";
 import { OpenPortsIndicator } from "./OpenPorts";
 import {
   childStatusIndicator,
+  childStatusKind,
   childStatusPhrase,
   childStatusSummary,
   childSubtree,
-  isWorkingIndicator,
   type ChildStatusKind,
 } from "./child-status";
+import { childThreadSortOf, type ChildThreadSort } from "./sidebar-settings";
+import {
+  ChildThreadIcon,
+  compareChildThreads,
+  useChildThreadDisplay,
+} from "./ChildThreadDisplay";
+import { ProviderGlyph } from "./ProviderGlyph";
+import { ProjectFavicon } from "./ProjectFavicon";
+import { PROJECT_ICONS_CHANNEL, projectIconUrl } from "./project-icons";
 
 const MAX_CHILD_DOTS = 3;
 
 export function childrenOf(
   threads: readonly PluginSidebarThread[],
   parentThreadId: string,
+  sort: ChildThreadSort = childThreadSortOf(null),
 ): PluginSidebarThread[] {
   return threads
     .filter(
       (thread) =>
         !thread.isArchived && thread.parentThreadId === parentThreadId,
     )
-    .sort((left, right) => left.createdAt - right.createdAt);
+    .sort(compareChildThreads(sort));
 }
 
 export function childThreadsByParent(
   threads: readonly PluginSidebarThread[],
+  sort: ChildThreadSort = childThreadSortOf(null),
 ): ReadonlyMap<string, readonly PluginSidebarThread[]> {
   const result = new Map<string, PluginSidebarThread[]>();
   for (const thread of threads) {
@@ -47,7 +69,7 @@ export function childThreadsByParent(
     result.set(thread.parentThreadId, siblings);
   }
   for (const siblings of result.values()) {
-    siblings.sort((left, right) => left.createdAt - right.createdAt);
+    siblings.sort(compareChildThreads(sort));
   }
   return result;
 }
@@ -61,49 +83,29 @@ export function childNeedsYouCount(
 }
 
 /**
- * The children a collapsed list still shows: the active child, or the child
- * whose grandchild is active. Mirrors how a collapsed shelf keeps its active
- * thread visible, so collapsing a parent never hides the open chat.
+ * Whether a child earns a row while its section is collapsed: anything with
+ * a status to report (failed, waiting on the user, finished but unread, or
+ * still working). Read and idle children fold away; so does any indicator bb
+ * ships later, until it is given a kind. This is the same set the collapsed
+ * badge counts, so the rows and the badge never disagree.
  */
-export function activeChildThreads(
-  threads: readonly PluginSidebarThread[],
-  childrenByParent: ReadonlyMap<string, readonly PluginSidebarThread[]>,
-  activeThreadId: string | null | undefined,
-): PluginSidebarThread[] {
-  if (!activeThreadId) return [];
-  return threads.filter(
-    (child) =>
-      !child.isArchived &&
-      (child.id === activeThreadId ||
-        childrenByParent
-          .get(child.id)
-          ?.some((grandchild) => grandchild.id === activeThreadId) === true),
-  );
+export function childNeedsAttention(thread: PluginSidebarThread): boolean {
+  return childStatusKind(thread) !== null;
 }
 
-export function isChildRunning(thread: PluginSidebarThread): boolean {
-  return isWorkingIndicator(thread.indicator);
-}
-
-/** Children retained while collapsed, including paths to visible grandchildren. */
+/** Children retained while collapsed, including paths to visible descendants. */
 export function collapsedChildThreads(
   threads: readonly PluginSidebarThread[],
   childrenByParent: ReadonlyMap<string, readonly PluginSidebarThread[]>,
   activeThreadId: string | null | undefined,
-  showRunningChildren: boolean,
+  showAttentionChildren: boolean,
 ): PluginSidebarThread[] {
   return threads.filter((child) => {
     if (child.isArchived) return false;
-    const grandchildren = childrenByParent.get(child.id) ?? [];
-    return (
-      child.id === activeThreadId ||
-      grandchildren.some((grandchild) => grandchild.id === activeThreadId) ||
-      (showRunningChildren &&
-        (isChildRunning(child) ||
-          grandchildren.some(
-            (grandchild) =>
-              !grandchild.isArchived && isChildRunning(grandchild),
-          )))
+    return childSubtree([child], childrenByParent).some(
+      (descendant) =>
+        descendant.id === activeThreadId ||
+        (showAttentionChildren && childNeedsAttention(descendant)),
     );
   });
 }
@@ -115,7 +117,27 @@ export function ChildThreadDots({
   threads: readonly PluginSidebarThread[];
   compact?: boolean;
 }) {
+  const { iconStyle, providerById } = useChildThreadDisplay();
   const visibleThreads = threads.filter((thread) => !thread.isArchived);
+  if (iconStyle === "provider") {
+    // One glyph per agent: three identical logos would say nothing.
+    const providerIds = [
+      ...new Set(visibleThreads.map((thread) => thread.providerId)),
+    ].slice(0, MAX_CHILD_DOTS);
+    return (
+      <span className="flex shrink-0 items-center gap-0.5" aria-hidden>
+        {providerIds.map((providerId) => (
+          <span key={providerId} data-child-thread-dot="">
+            <ProviderGlyph
+              providerId={providerId}
+              provider={providerById.get(providerId) ?? null}
+              className={compact ? "size-3 [&_span]:size-2.5" : undefined}
+            />
+          </span>
+        ))}
+      </span>
+    );
+  }
   return (
     <span className="flex shrink-0 items-center" aria-hidden>
       {visibleThreads.slice(0, MAX_CHILD_DOTS).map((thread, index) => (
@@ -146,13 +168,13 @@ export function ChildThreadDots({
 function childStatusBadgeClass(kind: ChildStatusKind | null): string {
   switch (kind) {
     case "failed":
-      return "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300";
+      return "bg-[color:var(--bb-sidebar-badge-failed-bg)] text-[color:var(--bb-sidebar-badge-failed-fg)]";
     case "needs-you":
-      return "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300";
+      return "bg-[color:var(--bb-sidebar-badge-needs-you-bg)] text-[color:var(--bb-sidebar-badge-needs-you-fg)]";
     case "done":
-      return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300";
+      return "bg-[color:var(--bb-sidebar-badge-done-bg)] text-[color:var(--bb-sidebar-badge-done-fg)]";
     case "working":
-      return "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300";
+      return "bg-[color:var(--bb-sidebar-badge-working-bg)] text-[color:var(--bb-sidebar-badge-working-fg)]";
     default:
       return "bg-muted text-foreground";
   }
@@ -166,7 +188,7 @@ export function ChildThreadBadge({
   onToggle,
 }: {
   threads: readonly PluginSidebarThread[];
-  /** When given, grandchildren count toward the status rollup (not the count). */
+  /** When given, descendants count toward the status rollup (not the count). */
   childrenByParent?: ReadonlyMap<string, readonly PluginSidebarThread[]>;
   expanded: boolean;
   controls: string;
@@ -185,6 +207,7 @@ export function ChildThreadBadge({
     <Tooltip label={tooltip} side="bottom">
       <button
         type="button"
+        data-thread-control="child-badge"
         aria-label={tooltip}
         aria-expanded={expanded}
         aria-controls={controls}
@@ -228,6 +251,7 @@ export function ChildThreadList({
   activeThreadId,
   expanded = true,
   showRunningChildrenWhenCollapsed = false,
+  parentProjectId,
   onOpenThread,
 }: {
   threads: readonly PluginSidebarThread[];
@@ -236,12 +260,20 @@ export function ChildThreadList({
   now?: number;
   id?: string;
   activeThreadId?: string | null;
-  /** When false, only the active child (or the child of the active grandchild) shows. */
+  /** When false, only children on the path to the active descendant show. */
   expanded?: boolean;
+  /**
+   * While collapsed, also keep children with something to report: failed,
+   * waiting on the user, unread, or working. The setting keeps its original
+   * key; only its wording changed when it grew beyond running children.
+   */
   showRunningChildrenWhenCollapsed?: boolean;
+  /** The project of the thread these children hang from. */
+  parentProjectId?: string | null;
   onOpenThread: (threadId: string) => void;
 }) {
   const disclosureId = useId();
+  const { projects } = useSidebarThreads();
   const visibleThreads = expanded
     ? threads.filter((thread) => !thread.isArchived)
     : collapsedChildThreads(
@@ -250,11 +282,11 @@ export function ChildThreadList({
         activeThreadId,
         showRunningChildrenWhenCollapsed,
       );
-  const [expandedGrandchildParentIds, setExpandedGrandchildParentIds] =
+  const [expandedDescendantParentIds, setExpandedDescendantParentIds] =
     useState<ReadonlySet<string>>(() => new Set());
 
-  const toggleGrandchildren = (threadId: string) => {
-    setExpandedGrandchildParentIds((current) => {
+  const toggleDescendants = (threadId: string) => {
+    setExpandedDescendantParentIds((current) => {
       const next = new Set(current);
       if (next.has(threadId)) {
         next.delete(threadId);
@@ -265,6 +297,82 @@ export function ChildThreadList({
     });
   };
 
+  const renderRows = (
+    siblings: readonly PluginSidebarThread[],
+    depth: number,
+    ancestors: ReadonlySet<string>,
+    siblingParentProjectId: string | null | undefined,
+  ): ReactNode => siblings
+    .map((child) => {
+      const path = new Set(ancestors).add(child.id);
+      const descendants = (childrenByParent.get(child.id) ?? []).filter(
+        (thread) => !thread.isArchived && !path.has(thread.id),
+      );
+      const descendantsExpanded = expandedDescendantParentIds.has(child.id);
+      const visibleDescendants = descendantsExpanded
+        ? descendants
+        : collapsedChildThreads(
+            descendants,
+            childrenByParent,
+            activeThreadId,
+            showRunningChildrenWhenCollapsed,
+          );
+      const descendantsId = `${disclosureId}-${child.id}`;
+      const relation = depth === 1 ? "child"
+        : depth === 2 ? "grandchild"
+        : depth === 3 ? "great-grandchild" : "descendant";
+      const descendantRelation = depth === 1 ? "grandchild"
+        : depth === 2 ? "great-grandchild" : "descendant";
+      const listLabel = depth === 1 ? "Grandchildren"
+        : depth === 2 ? "Great-grandchildren" : "Descendants";
+      // Children can live in another project than their parent; say so,
+      // since nothing else in the tree shows a row's project.
+      const foreignProject =
+        siblingParentProjectId != null &&
+        child.projectId !== siblingParentProjectId
+          ? {
+              id: child.projectId,
+              name:
+                projects.find((project) => project.id === child.projectId)
+                  ?.name ?? null,
+            }
+          : undefined;
+      return (
+        <li key={child.id} className="list-none">
+          <ChildThreadRow
+            thread={child}
+            relation={relation}
+            variant={variant}
+            now={now}
+            isActive={child.id === activeThreadId}
+            foreignProject={foreignProject}
+            onOpenThread={onOpenThread}
+            disclosure={
+              descendants.length > 0
+                ? {
+                    count: descendants.length,
+                    relation: descendantRelation,
+                    expanded: descendantsExpanded,
+                    controls: descendantsId,
+                    onToggle: () => toggleDescendants(child.id),
+                  }
+                : undefined
+            }
+          />
+          {visibleDescendants.length > 0 ? (
+            <ul
+              id={descendantsId}
+              aria-label={`${listLabel} of ${threadDisplayTitle(child)}`}
+              data-grandchild-thread-list={depth === 1 ? variant : undefined}
+              className="ml-3 flex flex-col border-l border-border"
+            >
+              {renderRows(visibleDescendants, depth + 1, path, child.projectId)}
+            </ul>
+          ) : null}
+        </li>
+      );
+    });
+
   return (
     <ul
       id={id}
@@ -274,82 +382,23 @@ export function ChildThreadList({
       className={cn(
         "flex flex-col",
         variant === "header"
-          ? "gap-px p-1.5 pt-0.5"
-          : "ml-[21px] mt-1 border-l-[1.5px] border-border pl-3",
+          ? "mb-1.5 ml-1.75 mr-1.5 mt-0.5"
+          : "ml-4 mt-1 border-l border-border",
       )}
     >
-      {visibleThreads.map((child) => {
-        const title = threadDisplayTitle(child);
-        const grandchildren = (childrenByParent.get(child.id) ?? []).filter(
-          (thread) => !thread.isArchived,
-        );
-        const grandchildrenExpanded = expandedGrandchildParentIds.has(child.id);
-        // A collapsed disclosure still shows the active grandchild, so the
-        // open chat stays reachable without forcing the list open.
-        const visibleGrandchildren = grandchildrenExpanded
-          ? grandchildren
-          : grandchildren.filter(
-              (grandchild) =>
-                grandchild.id === activeThreadId ||
-                (showRunningChildrenWhenCollapsed &&
-                  isChildRunning(grandchild)),
-            );
-        const grandchildrenId = `${disclosureId}-${child.id}`;
-        return (
-          <li key={child.id} className="list-none">
-            <ChildThreadRow
-              thread={child}
-              relation="child"
-              variant={variant}
-              now={now}
-              isActive={child.id === activeThreadId}
-              onOpenThread={onOpenThread}
-              disclosure={
-                grandchildren.length > 0
-                  ? {
-                      count: grandchildren.length,
-                      expanded: grandchildrenExpanded,
-                      controls: grandchildrenId,
-                      onToggle: () => toggleGrandchildren(child.id),
-                    }
-                  : undefined
-              }
-            />
-            {visibleGrandchildren.length > 0 ? (
-              <ul
-                id={grandchildrenId}
-                aria-label={`Grandchildren of ${title}`}
-                data-grandchild-thread-list={variant}
-                className={cn(
-                  "flex flex-col",
-                  variant === "header"
-                    ? "ml-5 border-l border-border pl-1"
-                    : "ml-3 border-l-[1.5px] border-border pl-2",
-                )}
-              >
-                {visibleGrandchildren.map((grandchild) => (
-                  <li key={grandchild.id} className="list-none">
-                    <ChildThreadRow
-                      thread={grandchild}
-                      relation="grandchild"
-                      variant={variant}
-                      now={now}
-                      isActive={grandchild.id === activeThreadId}
-                      onOpenThread={onOpenThread}
-                    />
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </li>
-        );
-      })}
+      {renderRows(visibleThreads, 1, new Set(), parentProjectId)}
     </ul>
   );
 }
 
+interface ForeignProject {
+  id: string;
+  name: string | null;
+}
+
 interface GrandchildDisclosure {
   count: number;
+  relation: string;
   expanded: boolean;
   controls: string;
   onToggle: () => void;
@@ -361,21 +410,32 @@ function ChildThreadRow({
   variant,
   now,
   isActive = false,
+  foreignProject,
   onOpenThread,
   disclosure,
 }: {
   thread: PluginSidebarThread;
-  relation: "child" | "grandchild";
+  relation: string;
   variant: "header" | "sidebar";
   now?: number;
   isActive?: boolean;
+  /** Set when the thread's project differs from its parent's. */
+  foreignProject?: ForeignProject;
   onOpenThread: (threadId: string) => void;
   disclosure?: GrandchildDisclosure;
 }) {
   const title = threadDisplayTitle(thread);
   const needsYou = thread.hasPendingInteraction;
-  const running = !needsYou && isChildRunning(thread);
+  const effectiveNow = now ?? Date.now();
+  const workingSince = useWorkingSinceContext();
+  const statusThread = useThreadWithDraft(thread);
+  const visibleStatus = threadStatusLabel(
+    statusThread,
+    workingSince.get(thread.id),
+    effectiveNow,
+  );
   const [isRenaming, setIsRenaming] = useState(false);
+  const { splitProps } = experimental_useSidebarThreadSplit(thread.id);
   const RowAction = isRenaming ? "div" : "button";
 
   return (
@@ -392,14 +452,19 @@ function ChildThreadRow({
           variant === "header"
             ? "hover:bg-accent"
             : "h-7 hover:bg-sidebar-accent/60",
-          // A faint status wash across the whole child row: amber for a raised
-          // hand, emerald for finished-but-unread. `needsYou` here is broader
-          // than the indicator (it also covers a pending interaction), so it
-          // stays; unread borrows the shared wash so cards and child rows agree.
           variant === "sidebar" &&
             needsYou &&
             !isActive &&
-            "bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-950/30 dark:hover:bg-amber-950/45",
+            cn(
+              "bg-[color:var(--bb-sidebar-needs-you-tint)]",
+              "hover:bg-[color:var(--bb-sidebar-needs-you-tint-hover)]",
+              // In dark the amber fill is only a 1.07:1 step off the sidebar,
+              // so a leading rule carries where the fill cannot. It is
+              // transparent in light, where the cream band already reads.
+              "shadow-[inset_2px_0_0_0_var(--bb-sidebar-needs-you-accent)]",
+            ),
+          // Finished-but-unread borrows the shared card wash so cards and
+          // child rows agree.
           variant === "sidebar" &&
             !needsYou &&
             !isActive &&
@@ -414,22 +479,43 @@ function ChildThreadRow({
       >
         <ThreadDetailsTooltip thread={thread} disabled={isRenaming}>
           <RowAction
+            data-child-thread-id={thread.id}
             type={isRenaming ? undefined : "button"}
-            aria-label={isRenaming ? undefined : childThreadOpenLabel(thread, relation, title)}
+            aria-label={
+              isRenaming
+                ? undefined
+                : childThreadOpenLabel(
+                    relation,
+                    title,
+                    visibleStatus,
+                    foreignProject,
+                  )
+            }
             aria-current={isActive && !isRenaming ? "page" : undefined}
+            draggable={false}
+            onPointerDown={isRenaming ? undefined : splitProps.onPointerDown}
             onClick={isRenaming ? undefined : () => onOpenThread(thread.id)}
             onKeyDown={isRenaming ? (event) => event.stopPropagation() : undefined}
             className={cn(
               "flex min-w-0 flex-1 items-center text-left outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              isRenaming
+                ? "cursor-auto"
+                : splitProps.onPointerDown
+                  ? "cursor-grab active:cursor-grabbing"
+                  : "cursor-pointer",
               variant === "header"
-                ? "gap-2 rounded-md px-2 py-1.5"
-                : "h-full gap-2 rounded-md pl-2",
+                ? "gap-1.25 rounded-md py-1.5 pl-1.25 pr-1.5"
+                : "h-full gap-1.25 rounded-md pl-1.25",
             )}
           >
-            <Disc
-              thread={thread}
-              className={variant === "header" ? undefined : "size-2 border-0"}
-            />
+            <span className="flex size-3.5 shrink-0 items-center justify-center">
+              <ChildThreadIcon
+                thread={thread}
+                discClassName={
+                  variant === "header" ? undefined : "size-2 border-0"
+                }
+              />
+            </span>
             <span
               className={cn(
                 "min-w-0 flex-1 text-xs",
@@ -446,25 +532,38 @@ function ChildThreadRow({
               {variant === "header" ? (
                 <span className="truncate text-2xs text-muted-foreground">
                   {thread.originKind ?? "thread"}
+                  {foreignProject?.name ? ` · ${foreignProject.name}` : null}
                 </span>
               ) : null}
             </span>
+            {foreignProject ? (
+              <ForeignProjectMark project={foreignProject} />
+            ) : null}
             <OpenPortsIndicator thread={thread} />
             {variant === "header" ? (
               <span className="shrink-0">
                 <StatusGlyph
-                  indicator={thread.indicator}
-                  label={thread.indicatorLabel}
+                  indicator={statusThread.indicator}
+                  label={statusThread.indicatorLabel}
                 />
               </span>
             ) : null}
             {variant === "sidebar" ? (
-              <span className="flex shrink-0 items-center gap-1 pr-2">
-                {needsYou ? <ChildStatusFlag kind="needs-you" /> : null}
-                {running ? <ChildStatusFlag kind="running" /> : null}
-                <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/60">
-                  {relativeTimeLabel(thread.updatedAt, now ?? Date.now())}
-                </span>
+              // Match parent cards: a recognized status owns the trailing
+              // slot; an idle or future unknown status leaves it to the age.
+              //
+              // Sized to the label rather than fixed at the 112px "Monitoring
+              // · 27m" needs: a child row also pays an indent rail and a
+              // grandchild disclosure, so at a 280px sidebar a fixed slot left
+              // the title about six characters. No floor either: the label is
+              // right-aligned, so a floor under "8h" is only empty space the
+              // title could use. The ceiling keeps the longest status intact;
+              // the cost is that the title's truncation point shifts with the
+              // length of that row's status.
+              <span
+                className={cn(STATUS_SLOT_CLASS, "w-auto max-w-28 pr-2")}
+              >
+                <StatusOrTime thread={thread} now={effectiveNow} />
               </span>
             ) : null}
           </RowAction>
@@ -478,26 +577,49 @@ function ChildThreadRow({
 }
 
 function childThreadOpenLabel(
-  thread: PluginSidebarThread,
-  relation: "child" | "grandchild",
+  relation: string,
   title: string,
+  status: string | null,
+  foreignProject?: ForeignProject,
 ): string {
-  const status = thread.hasPendingInteraction
-    ? "Needs you"
-    : isChildRunning(thread)
-      ? "Running"
-      : thread.indicatorLabel;
-  return `Open ${relation} thread: ${title}${status ? `, ${status}` : ""}`;
+  const project = foreignProject
+    ? `, in ${foreignProject.name ? `project ${foreignProject.name}` : "another project"}`
+    : "";
+  return `Open ${relation} thread: ${title}${project}${status ? `, ${status}` : ""}`;
+}
+
+/**
+ * The project icon on a child from another project than its parent. Only
+ * these rows subscribe to icon updates; same-project rows draw nothing.
+ */
+function ForeignProjectMark({ project }: { project: ForeignProject }) {
+  const [iconRevision, setIconRevision] = useState(0);
+  useRealtime(PROJECT_ICONS_CHANNEL, () => {
+    setIconRevision((revision) => revision + 1);
+  });
+  return (
+    <span
+      data-foreign-project={project.id}
+      className="flex shrink-0 items-center pl-1"
+    >
+      <ProjectFavicon
+        src={projectIconUrl(project.id, iconRevision)}
+        name={project.name}
+        className="size-3"
+      />
+    </span>
+  );
 }
 
 function GrandchildDisclosureButton({
   title,
   count,
+  relation,
   expanded,
   controls,
   onToggle,
 }: GrandchildDisclosure & { title: string }) {
-  const noun = `grandchild thread${count === 1 ? "" : "s"}`;
+  const noun = `${relation} thread${count === 1 ? "" : "s"}`;
   const label = `${expanded ? "Hide" : "Show"} ${count} ${noun} for ${title}`;
 
   return (
@@ -512,30 +634,19 @@ function GrandchildDisclosureButton({
           event.stopPropagation();
           onToggle();
         }}
-        className="mr-1 flex h-5 shrink-0 items-center gap-0.5 rounded px-1 font-mono text-2xs tabular-nums text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        className="group mr-1 flex h-6 min-w-9 shrink-0 items-center justify-center rounded-full bg-transparent px-0.5 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
-        <span>{count}</span>
-        <Icon
-          name={expanded ? "ChevronUp" : "ChevronDown"}
-          className="size-3"
-          aria-hidden
-        />
+        <span className="inline-flex h-4.5 min-w-8 items-center justify-center gap-0.5 rounded-full bg-muted px-1 text-muted-foreground group-hover:bg-accent group-hover:text-foreground group-focus-visible:bg-accent group-focus-visible:text-foreground">
+          <span className="min-w-2.5 text-center font-sans text-2xs font-medium tabular-nums">
+            {count}
+          </span>
+          <Icon
+            name={expanded ? "ChevronUp" : "ChevronDown"}
+            className="size-3"
+            aria-hidden
+          />
+        </span>
       </button>
     </Tooltip>
-  );
-}
-
-function ChildStatusFlag({ kind }: { kind: "needs-you" | "running" }) {
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-[0.08em]",
-        kind === "needs-you"
-          ? "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
-          : "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300",
-      )}
-    >
-      {kind === "needs-you" ? "Needs you" : "Running"}
-    </span>
   );
 }

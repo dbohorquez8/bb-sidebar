@@ -1,9 +1,14 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { completeCloudTitle } from "./cloud-title";
 
 type Timeline = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["timeline"]>>;
 type Row = Timeline["rows"][number];
 const MESSAGE_LIMIT = 3;
 const MESSAGE_CHAR_LIMIT = 8_000;
+
+export interface TitleGenerationOptions {
+  onlyIfUntitled?: boolean;
+}
 
 function userRows(rows: readonly Row[]): Row[] {
   return rows
@@ -95,7 +100,7 @@ export function parseTitle(output: string | null) {
   return title;
 }
 
-/** Until bb exposes helper inference, use its public hidden-thread workflow. */
+/** bb cloud uses its public account RPC; Codex uses a hidden agent helper. */
 export function createTitleRegenerator(bb: BbPluginApi) {
   const pending = new Map<string, Promise<{ title: string }>>();
   const helpers = new Set<string>();
@@ -119,96 +124,120 @@ export function createTitleRegenerator(bb: BbPluginApi) {
     await Promise.all([...helpers].map(cleanup));
   });
 
-  async function generate(threadId: string) {
-    const original = await bb.sdk.threads.get({ threadId });
-    const messages = await lastUserMessages(bb, threadId);
-    if (!messages.some(Boolean))
-      throw new Error(
-        "This thread has no user-message text to generate a title from",
-      );
-    const config = await bb.sdk.system.config();
-    const providers = await bb.sdk.providers.list();
-    const personalProject = (await bb.sdk.projects.list({ includePersonal: true }))
-      .find((project) => project.kind === "personal");
-    if (!personalProject) throw new Error("No personal project is available for title generation");
-    const models = [
-      ...new Set([
-        config.aiServices.inference,
-        config.aiServices.inferenceFallback,
-      ]),
-    ];
+  async function generateCodex(original: Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["get"]>>, messages: readonly string[]) {
+    if (!original.environmentId)
+      throw new Error("This thread needs a workspace before its title can be regenerated");
+    const providerId = "codex";
+    const providers = await bb.sdk.providers.list({ environmentId: original.environmentId });
+    if (!providers.some((provider) => provider.id === providerId && provider.available))
+      throw new Error(`Title regeneration needs the ${providerId} provider to be available`);
+    const catalog = await bb.sdk.providers.models({
+      providerId, environmentId: original.environmentId,
+    });
+    const selected = catalog.models.find((entry) => entry.id === "gpt-6-luna") ??
+      catalog.models.find((entry) => entry.isDefault);
+    if (!selected) throw new Error("Codex has no available model for title generation");
+    controller.signal.throwIfAborted();
     let title: string | undefined;
-    for (const configured of models) {
+    let helperId: string | undefined;
+    try {
+      const helper = await bb.sdk.threads.spawn({
+        projectId: original.projectId,
+        // Reusing the ready workspace avoids provisioning a personal workspace
+        // for each title, which can stall before the helper's turn even starts.
+        environment: { type: "reuse", environmentId: original.environmentId },
+        providerId,
+        model: selected.model,
+        reasoningLevel: "low",
+        permissionMode: "accept-edits",
+        visibility: "hidden",
+        title: "Generate sidebar title",
+        // No parent/source thread: no inherited conversation or completion
+        // message injected into the user's thread.
+        prompt: titlePrompt(messages),
+      });
+      helperId = helper.id;
+      helpers.add(helperId);
       controller.signal.throwIfAborted();
-      const slash = configured.indexOf("/");
-      const providerId = configured.slice(0, slash);
-      const model = configured.slice(slash + 1);
-      if (
-        slash < 1 ||
-        !model ||
-        !providers.some(
-          (provider) => provider.id === providerId && provider.available,
-        )
-      ) {
-        throw new Error(
-          `Title regeneration needs an installed agent provider for ${configured}`,
-        );
-      }
-      let helperId: string | undefined;
-      try {
-        const helper = await bb.sdk.threads.spawn({
-          projectId: personalProject.id,
-          environment: { type: "host", workspace: { type: "personal" } },
-          providerId,
-          model,
-          reasoningLevel: "low",
-          permissionMode: "accept-edits",
-          visibility: "hidden",
-          title: "Generate sidebar title",
-          // No parent/source thread: no inherited conversation or completion
-          // message injected into the user's thread.
-          prompt: titlePrompt(messages),
-        });
-        helperId = helper.id;
-        helpers.add(helperId);
-        controller.signal.throwIfAborted();
-        await bb.sdk.threads.wait({
-          threadId: helperId,
-          status: "idle",
-          timeoutMs: 45_000,
-          signal: controller.signal,
-        });
-        const result = await bb.sdk.threads.output({ threadId: helperId });
-        title = parseTitle(result.output);
-        break;
-      } catch (error) {
-        if (
-          controller.signal.aborted ||
-          configured === models.at(-1) ||
-          !/timeout|timed out|rate.?limit|429|503|unavailable/iu.test(
-            error instanceof Error ? error.message : String(error),
-          )
-        )
-          throw error;
-      } finally {
-        if (helperId) await cleanup(helperId);
-      }
+      await bb.sdk.threads.wait({
+        threadId: helperId,
+        status: "idle",
+        timeoutMs: 45_000,
+        signal: controller.signal,
+      });
+      const result = await bb.sdk.threads.output({ threadId: helperId });
+      title = parseTitle(result.output);
+    } finally {
+      if (helperId) await cleanup(helperId);
     }
     if (!title) throw new Error("Could not generate a title");
+    return title;
+  }
+
+  async function generate(threadId: string, options: TitleGenerationOptions) {
+    const original = await bb.sdk.threads.get({ threadId });
+    if (options.onlyIfUntitled && original.title !== null)
+      throw new Error("The thread already has a title");
+    if (options.onlyIfUntitled && (original.visibility !== "visible" ||
+        original.archivedAt !== null || original.deletedAt !== null))
+      throw new Error("The thread is no longer available for automatic naming");
+    const messages = await lastUserMessages(bb, threadId);
+    if (!messages.some(Boolean))
+      throw new Error("This thread has no user-message text to generate a title from");
+    const { selections, services } = await bb.sdk.system.aiServices({ signal: controller.signal });
+    const selection = selections["thread-title"];
+    if (selection.mode === "off")
+      throw new Error("Thread titles are turned off in Settings → AI services");
+    const candidates = services
+      .filter((service) => service.tasks.includes("thread-title") && (
+        selection.mode === "automatic" ||
+        (service.pluginId === selection.pluginId && service.id === selection.serviceId)
+      ))
+      .sort((a, b) => (a.automaticRank ?? Infinity) - (b.automaticRank ?? Infinity));
+    let title: string | undefined;
+    let failure: unknown = new Error("No AI service is available for thread titles");
+    for (const service of candidates) {
+      controller.signal.throwIfAborted();
+      try {
+        if (!service.status.ready) throw new Error(service.status.message);
+        if (service.pluginId === "bb-ai" && service.id === "bb") {
+          title = parseTitle(await completeCloudTitle(bb, titlePrompt(messages), controller.signal));
+        } else if (service.pluginId === "provider-codex" && service.id === "codex") {
+          title = await generateCodex(original, messages);
+        } else {
+          throw new Error(`Sidebar title regeneration does not support ${service.displayName} yet`);
+        }
+        break;
+      } catch (error) {
+        failure = error;
+        if (selection.mode !== "automatic") throw error;
+      }
+    }
+    if (!title) throw failure;
     controller.signal.throwIfAborted();
+    if (options.onlyIfUntitled) {
+      const latest = (await bb.sdk.system.aiServices({ signal: controller.signal }))
+        .selections["thread-title"];
+      if (latest.mode !== selection.mode || (latest.mode === "service" &&
+          selection.mode === "service" && (latest.pluginId !== selection.pluginId ||
+            latest.serviceId !== selection.serviceId)))
+        throw new Error("Thread title settings changed while generating");
+    }
     const current = await bb.sdk.threads.get({ threadId });
     if (current.title !== original.title)
       throw new Error(
         "The title changed while generating. Your newer title was kept.",
       );
+    if (options.onlyIfUntitled && (current.archivedAt !== null || current.deletedAt !== null))
+      throw new Error("The thread is no longer available for automatic naming");
     await bb.sdk.threads.update({ threadId, title });
     return { title };
   }
 
-  return (threadId: string) => {
+  return (threadId: string, options: TitleGenerationOptions = {}) => {
     const existing = pending.get(threadId);
     if (existing) return existing;
-    const task = generate(threadId).finally(() => pending.delete(threadId));
+    const task = generate(threadId, options).finally(() => pending.delete(threadId));
     pending.set(threadId, task);
     return task;
   };

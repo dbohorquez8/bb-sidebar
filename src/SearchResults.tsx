@@ -2,7 +2,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
@@ -16,6 +15,7 @@ import { ProjectFavicon } from "./ProjectFavicon";
 import { projectIconUrl } from "./project-icons";
 import { ThreadTitle } from "./ThreadTitle";
 import { OpenPortsIndicator } from "./OpenPorts";
+import { JumpHint, useJumpHint } from "./JumpHints";
 
 /**
  * Search is a separate flat mode. A parked match must not disappear behind
@@ -33,8 +33,6 @@ export function SearchResults({
   now,
   wokeThreadIds,
   onAcknowledgeWake,
-  selectedThreadIds,
-  onSelectionClick,
   onNavigate,
 }: {
   threads: readonly PluginSidebarThread[];
@@ -44,11 +42,6 @@ export function SearchResults({
   now: number;
   wokeThreadIds: ReadonlySet<string>;
   onAcknowledgeWake: (threadId: string) => void;
-  selectedThreadIds: ReadonlySet<string>;
-  onSelectionClick: (
-    threadId: string,
-    event: ReactMouseEvent<HTMLAnchorElement>,
-  ) => boolean;
   onNavigate: () => void;
 }) {
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -70,7 +63,6 @@ export function SearchResults({
     <ul
       role="listbox"
       aria-label="Thread search results"
-      aria-multiselectable="true"
       className="flex flex-col gap-px"
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;
@@ -110,7 +102,6 @@ export function SearchResults({
           )}
           isActive={thread.id === activeThreadId}
           isHighlighted={highlightedIndex === index}
-          isSelected={selectedThreadIds.has(thread.id)}
           now={now}
           isWoke={wokeThreadIds.has(thread.id)}
           anchorRef={(node) => {
@@ -118,7 +109,6 @@ export function SearchResults({
           }}
           onHighlight={() => setHighlightedIndex(index)}
           onAcknowledgeWake={() => onAcknowledgeWake(thread.id)}
-          onSelectionClick={(event) => onSelectionClick(thread.id, event)}
           onNavigate={onNavigate}
         />
       ))}
@@ -132,13 +122,11 @@ function SearchResultRow({
   projectIconUrl,
   isActive,
   isHighlighted,
-  isSelected,
   now,
   isWoke,
   anchorRef,
   onHighlight,
   onAcknowledgeWake,
-  onSelectionClick,
   onNavigate,
 }: {
   thread: PluginSidebarThread;
@@ -146,17 +134,16 @@ function SearchResultRow({
   projectIconUrl: string | null;
   isActive: boolean;
   isHighlighted: boolean;
-  isSelected: boolean;
   now: number;
   isWoke: boolean;
   anchorRef: (node: HTMLAnchorElement | null) => void;
   onHighlight: () => void;
   onAcknowledgeWake: () => void;
-  onSelectionClick: (event: ReactMouseEvent<HTMLAnchorElement>) => boolean;
   onNavigate: () => void;
 }) {
   const actions = useSidebarThreadActions();
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
+  const jumpHint = useJumpHint(thread.id);
   const title = threadDisplayTitle(thread);
 
   return (
@@ -169,45 +156,69 @@ function SearchResultRow({
         href="#"
         role="option"
         tabIndex={isHighlighted ? 0 : -1}
-        aria-selected={isSelected}
+        aria-selected={isHighlighted}
         aria-current={isActive ? "page" : undefined}
-        data-selected={isSelected ? "true" : undefined}
         aria-label={projectName ? `${title}, ${projectName}` : title}
         {...splitProps}
         onFocus={onHighlight}
         onMouseMove={onHighlight}
         onClick={(event) => {
           event.preventDefault();
-          if (onSelectionClick(event)) return;
           if (isWoke) onAcknowledgeWake();
           actions.open(thread.id, { split: false });
           onNavigate();
         }}
         className={cn(
-          "flex h-9 items-center gap-2 rounded-md px-2.5 text-sm outline-none transition-colors",
+          "rounded-md px-2.5 text-sm outline-none transition-colors",
+          isWoke
+            ? "grid h-11 grid-cols-[minmax(0,1fr)_auto] grid-rows-2 items-center gap-x-2"
+            : "flex h-9 items-center gap-2",
           isHighlighted || isActive
             ? "bg-sidebar-accent text-foreground"
             : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-          isSelected && "ring-1 ring-inset ring-primary/60",
           !isActive && layout !== null && "bg-sidebar-accent/30",
         )}
       >
-        <ThreadTitle threadId={thread.id} title={title} className="min-w-0 flex-1 truncate" />
-        <OpenPortsIndicator thread={thread} />
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <ThreadTitle threadId={thread.id} title={title} className="min-w-0 flex-1 truncate" />
+          <OpenPortsIndicator thread={thread} />
+        </span>
         {projectName ? (
-          <span className="flex max-w-28 shrink-0 items-center gap-1.5 text-2xs text-muted-foreground/70">
-            <ProjectFavicon src={projectIconUrl} className="size-3" />
+          <span
+            className={cn(
+              "flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground/70",
+              isWoke
+                ? "col-start-1 row-start-2 max-w-full"
+                : // Proportional rather than a fixed 112px: on one line the
+                  // project shares the row with the title and the status
+                  // slot, and at a 280px sidebar a fixed cap left the title
+                  // about six characters. The title is what the user searched
+                  // for, so the project yields first.
+                  "max-w-[30%] shrink-0",
+            )}
+          >
+            <ProjectFavicon src={projectIconUrl} name={projectName} className="size-3" />
             <span className="min-w-0 truncate">{projectName}</span>
           </span>
         ) : null}
         <span
           className={cn(
             STATUS_SLOT_CLASS,
-            isWoke &&
-              "justify-end text-2xs font-medium text-amber-700 dark:text-amber-300",
+            isWoke && "col-start-2 row-span-2 row-start-1 w-auto gap-1",
           )}
         >
-          {isWoke ? "Woke" : <StatusOrTime thread={thread} now={now} />}
+          {jumpHint ? (
+            <JumpHint label={jumpHint} />
+          ) : (
+            <>
+              {isWoke ? (
+                <span className="shrink-0 text-2xs font-medium text-[color:var(--bb-sidebar-woke)]">
+                  Woke
+                </span>
+              ) : null}
+              <StatusOrTime thread={thread} now={now} />
+            </>
+          )}
         </span>
       </a>
     </li>

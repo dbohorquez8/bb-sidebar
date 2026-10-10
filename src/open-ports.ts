@@ -9,6 +9,7 @@ export const openPortSchema = z.object({
   container: z.string().optional(),
   service: z.string().optional(),
   ownerThreadId: z.string().optional(),
+  processStartedAt: z.string().min(1).optional(),
 });
 export type OpenPort = z.infer<typeof openPortSchema>;
 

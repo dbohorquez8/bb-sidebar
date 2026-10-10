@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   movePinnedId,
   movePinnedIdByOffset,
-  mergeVisibleOrder,
+  rebaseMovedId,
   orderInboxThreads,
   orderPinnedThreads,
   pinnedNeighbors,
+  orderSubsetInPlace,
+  rebaseMovedUnit,
 } from "./pinned-order";
 
 describe("pinned ordering", () => {
@@ -65,9 +67,67 @@ describe("pinned ordering", () => {
     ]);
   });
 
-  it("reorders a project-scoped subset without moving hidden rows", () => {
+  it("rebases a move onto the global order without reordering hidden rows", () => {
+    expect(rebaseMovedId(["a", "hidden", "b"], ["b", "a"], "a")).toEqual([
+      "hidden",
+      "b",
+      "a",
+    ]);
+  });
+
+  it("drops an anchor that disappeared mid-drag instead of reinstating it", () => {
+    // Preview said "put A after B", but B is gone by the time it lands.
+    expect(rebaseMovedId(["a", "c"], ["b", "a", "c"], "a")).toEqual(["a", "c"]);
+  });
+
+  it("keeps a reorder that landed elsewhere during the drag", () => {
+    // The host swapped D and C while the pointer was down; only A moves.
     expect(
-      mergeVisibleOrder(["a", "hidden", "b"], ["b", "a"]),
-    ).toEqual(["b", "hidden", "a"]);
+      rebaseMovedId(["a", "b", "d", "c"], ["b", "a", "c", "d"], "a"),
+    ).toEqual(["b", "a", "d", "c"]);
+  });
+
+  it("leaves the order alone when the moved row is gone", () => {
+    expect(rebaseMovedId(["b", "c"], ["b", "a", "c"], "a")).toEqual(["b", "c"]);
+  });
+});
+
+describe("moving whole units", () => {
+  const units = [
+    { key: "project:web", ids: ["w1", "w2"] },
+    { key: "x", ids: ["x"] },
+    { key: "y", ids: ["y"] },
+  ];
+
+  it("packs a moved unit together and leaves rows outside the units alone", () => {
+    expect(
+      rebaseMovedUnit(
+        ["w1", "other", "x", "w2", "y"],
+        units,
+        ["x", "y", "project:web"],
+        "project:web",
+      ),
+    ).toEqual(["x", "other", "y", "w1", "w2"]);
+  });
+
+  it("lands next to the nearest unit that outlived the gesture", () => {
+    expect(
+      rebaseMovedUnit(
+        ["w1", "w2", "y"],
+        [units[0]!, units[2]!],
+        ["x", "project:web", "y"],
+        "project:web",
+      ),
+    ).toEqual(["w1", "w2", "y"]);
+  });
+
+  it("previews part of a list without moving the rest", () => {
+    const rows = ["a", "b", "c", "d"].map((id) => ({ id }));
+    expect(orderSubsetInPlace(rows, ["d", "b"]).map((row) => row.id)).toEqual([
+      "a",
+      "d",
+      "c",
+      "b",
+    ]);
   });
 });

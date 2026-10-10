@@ -1,6 +1,301 @@
 # Changelog
 
-## Unreleased
+## [Unreleased]
+
+### Added
+
+- Optional project colors, disabled by default. Each project gets an automatic color based on its ID, with a custom color picker and reset control in Settings > Project appearance. Project groups share one continuous stripe; ungrouped rows have their own stripe.
+- While project colors are enabled, all project names stay colored. Show stripes in full and collapsed mode, full mode only, or grouped projects only when sorting by Project.
+
+### Changed
+
+- Grouped settings by sidebar layout, project appearance, thread behavior, child threads, and device. Section links jump to each group; project removal has its own management section at the bottom.
+- Settling a parent also settles its descendants, and waits until the whole tree is idle. New or resumed child activity reopens its ancestors.
+- The Settled Clean button is now labelled "Close terminals and ports of settled threads": it never archived anything.
+
+### Fixed
+
+- Delayed child events preserve newer Park and Snooze choices on their ancestors. Ancestor lookup failures no longer turn completed shelf moves into errors or skip automatic-settle cleanup.
+- Queued Settle cleanup rechecks activity, shelf state, pins and parentage before releasing resources, including after terminal lookups. Hidden descendants are included in tree checks.
+- Returning a parent to Active no longer adds permanent Active overrides to its descendants. Snapshot Undo ends after restoring the previous shelves, and failed Settle actions restore pins they removed.
+- Settings save only edited fields and finish queued saves after leaving the page. Removed preview settings are discarded from the local cache.
+- Project colors refresh after reconnecting, and removing a project clears its custom color.
+- Undo after settling restores each child's previous shelf instead of marking every child explicitly Active. It preserves newer shelf choices and activity.
+- Trying automatic-settle options no longer reopens manually settled, parked, or snoozed parents when an old child returns from automatic settling. Appearance changes do not trigger settling, and evaluations discard outdated settings before changing threads.
+- Retained automatic title recovery for threads BB leaves unnamed, including first prompts shorter than five words. BB's [Codex stream fix](https://github.com/get-bb/bb/pull/4830) fixes completion handling but does not change that naming threshold. Successful BB titles, manual titles, and the selected AI title service are preserved.
+
+## [0.2.34] - 2026-10-04
+
+### Fixed
+
+- Installing from the marketplace no longer fails with `Could not resolve "react-day-picker"`. Releases from 0.2.28 through 0.2.33 could not be installed fresh ([#7](https://github.com/yusuf8834/bb-sidebar/issues/7), reported by [@a-kras](https://github.com/a-kras)).
+
+### Changed
+
+- Settling a thread plays a short sweep across its card before the card moves. Reduced motion settles at once.
+- The snooze control turns orange while its menu is open, on hover, and on keyboard focus.
+- The message Active shows when every thread is working changes each time the scene appears, and never repeats the previous one.
+
+## [0.2.33] - 2026-10-04
+
+### Added
+
+- A thread with an unsent message in its composer shows **Draft** in place of its age, or **Drafting** while it works, as bb's own sidebar does. Failures, questions, unread results, and queued messages still take precedence.
+- With the Working shelf on, Active shows an animated scene when every thread is working.
+
+## [0.2.32] - 2026-10-04
+
+### Added
+
+- A child thread in a different project from its parent shows that project's icon in the sidebar tree, and the project's name in the header's Children popover.
+- Child threads at any depth can be dragged into the composer as a thread reference, or into the workspace to open a pane, like root threads. This also works from the Subthreads list in the hover card. Dragging keeps the child's parent ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6) by [@a-kras](https://github.com/a-kras)).
+- Thread trees show the full hierarchy, including great-grandchildren and deeper, and every level counts toward the parent card's status badge ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6) by [@a-kras](https://github.com/a-kras)).
+
+### Changed
+
+- Dragging to reorder slides the other rows and project groups out of the way, and a row moves as soon as the pointer enters the next one. Reduced motion turns the animation off ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6) by [@a-kras](https://github.com/a-kras)).
+- With **Show children that need attention** on, collapsed shelves and projects keep a parent visible while one of its descendants needs attention ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6) by [@a-kras](https://github.com/a-kras)).
+- Child rows are more compact and line up under their parent's icon. The count and chevron disclosure is a larger pill ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6) by [@a-kras](https://github.com/a-kras)).
+
+### Fixed
+
+- Pinned threads keep bb's global pin order when grouped by project, and reordering places a pin between the right neighbours ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6) by [@a-kras](https://github.com/a-kras)).
+- Only root threads can be pinned. Assigning a different parent unpins a thread; choosing None keeps it pinned ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6) by [@a-kras](https://github.com/a-kras)).
+- When a parent and child are in different projects, project filters and collapsed shelves keep the open thread or its nearest visible parent reachable ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6) by [@a-kras](https://github.com/a-kras)).
+
+### Contributors
+
+- Thanks to [@a-kras](https://github.com/a-kras) for the pinning, reordering, drag-and-drop, and nested child-thread improvements in [#6](https://github.com/yusuf8834/bb-sidebar/pull/6).
+
+## [0.2.31] - 2026-10-03
+
+### Fixed
+
+- Matched the development SDK to the stable BB build tools so the extension's SDK check passes in CI.
+
+## [0.2.30] - 2026-10-03
+
+### Fixed
+
+- **Regenerate title** reuses the thread's workspace instead of creating a personal workspace that can stall during setup. Selecting Codex for thread titles now uses a lightweight Codex helper, including for threads running through a custom provider. Turning thread titles off disables regeneration.
+- An unnamed thread gets one background title recovery attempt after BB's initial naming request. Recovery follows the selected AI title service, respects Off, and preserves successful or manually edited titles. Codex recovery allows up to 45 seconds for its helper to finish. Attempts are remembered across plugin reloads, with at most two running at once. This provides recovery while [BB's Codex stream issue](https://github.com/get-bb/bb/issues/4828) is investigated.
+- Selecting **bb cloud** for sidebar title regeneration now sends the last three user messages to bb cloud through the public account RPC. Automatic tries services in BB's advertised order, with cloud first. Explicit selections keep the existing title on failure and never switch to another service. Unsupported services show an error.
+- Pull-request lookups run only while their thread card is visible in the sidebar ([#5](https://github.com/yusuf8834/bb-sidebar/pull/5) by [@amrtawfik160](https://github.com/amrtawfik160)). Initial automatic-settle evaluation is preserved.
+
+### Contributors
+
+- Thanks to [@amrtawfik160](https://github.com/amrtawfik160) for finding that pull-request lookups for off-screen rows could delay other sidebar requests and contributing the fix in [#5](https://github.com/yusuf8834/bb-sidebar/pull/5).
+
+## [0.2.29] - 2026-10-03
+
+### Added
+
+- **Clean** in the Settled header previews only live terminals and verified thread-owned listening ports before asking for confirmation. Threads with nothing to clean and zero counts stay out of the preview. Each listed thread has an Open button for inspection. Clean force-closes the listed terminals and sends graceful shutdown requests to listed port processes. Threads that return to Active or Working are skipped, as are resources in a workspace shared with another non-settled thread. The result lists completed, skipped, failed, and still-listening resources.
+- **Dock shelves to the bottom (experimental)**, off by default in sidebar settings. Every shelf after Active (Working, Inactive, Snoozed, Parked, Settled) rests at the bottom of the sidebar, below the space Pinned and Active leave free, as in T3 Code. An open shelf that needs more room extends the list, and everything scrolls together.
+- **Working shelf (experimental)**, off by default in sidebar settings. A thread that is working, or has work running under it (child threads, background agents, commands, workflows, goals), moves out of Active into a Working shelf right below it, shown as one line like the other shelves, whether or not **Compact working threads** is on. It returns to its place in Active when all of it is done, or as soon as it fails or needs you. Pinned threads stay pinned, and a thread that just woke from a snooze stays in Active.
+
+### Changed
+
+- The Working shelf's header spinner now turns while the shelf contains live work, and stays still when reduced motion is enabled.
+- The thread list scrolls like T3 Code's sidebar: no scrollbar, and an edge fades out only where there is more to scroll, growing with the distance left. Scrolling the list no longer scrolls what is behind it.
+- A compact working row stays compact until everything under it is done: its own turn, its background agents, commands and workflows, and any working child or grandchild. It used to unfold into a full card as soon as the parent's own turn ended. It still unfolds at once if the parent needs you or fails. While only its children run, the row shows its usual status or age, and the badge shows the children still working.
+- A compact working row keeps its child threads folded, including children that need attention, until you expand them from its badge. Full cards still show those children while folded when **Show children that need attention** is on.
+
+### Fixed
+
+- Clean rechecks a thread before each terminal close and skips terminals in workspaces shared with Active or Working threads. It checks each terminal's own environment and host, even when the thread has moved. Workspace paths are resolved on the host before comparing them, including symlink aliases; unresolved paths block cleanup.
+- Clean binds previewed ports to their workspace and process start time, preserves partial shutdown results, and retains preview inspection failures in its final report. Open stays disabled during cleanup and closes the mobile sidebar drawer when used.
+- Live descendants remain classified as working even when their unread-success badge takes precedence. A thread requesting input stays in Active, compact Unpin controls remain clickable, and a rename in progress stays mounted while work finishes. If an attention, pin, or dock change interrupts a rename, its draft saves once and its shelf lock clears. Keyboard focus follows the thread or child control between shelves.
+- Clean's result remains visible if its last Settled thread leaves the shelf while cleanup is running.
+- Scroll-edge fades update when loading or search replaces the list contents.
+
+## [0.2.28] - 2026-10-03
+
+### Added
+
+- **Compact working threads (experimental)**, off by default in sidebar settings. A thread with live work shows as one line, like a settled thread, ending in a small status icon and how long it has run (◌ 6m). It returns to a full card when it finishes, fails, or needs you. Folded rows still reorder, open their child threads, and keep the right-click menu.
+- Snooze offers **Pick date & time…** below its shortcuts, in both the row's clock menu and the right-click menu. It opens a calendar and a time field, starting at tomorrow 9:00, and shows the exact wake time before you confirm. Past times and dates more than a year out cannot be picked.
+
+### Changed
+
+- The settings page is reorganised to match bb's own: Shelves, Snooze, Automatic settle, Child threads, Projects, This device, and Experimental. Changes save as you make them, so there is no Save button: the section you changed shows **Saving…** and then **Saved**, or **Not saved** if the save failed. An invalid value shows why and is not saved. The hours and days for the inactive shelf and automatic settle appear only while their switch is on, the snooze shortcuts show the menu they produce, and one project picker serves both the project icon and removing a project.
+- The right-click menu lists thread actions as Pin, Snooze, Park thread, Settle.
+
+## [0.2.27] - 2026-10-01
+
+### Added
+
+- A project without an icon shows a letter tile: its first letter on a colour picked from its name, so it looks the same on every machine. Common leading words such as `bb-` are skipped, so `bb-sidebar` shows **S**. The tile also shows while an icon is loading, in the hover card in place of the folder glyph, and in the Project icon settings preview.
+- A row shows **Send failed** when a queued message could not be sent, and **Queued** when a message is waiting to send on an otherwise quiet thread, such as a scheduled send. These rows used to show only their age. A failed send also counts as failed in a parent's child summary.
+- A pull request in GitHub's merge queue shows **In merge queue**.
+
+### Changed
+
+- Sorting Active by project gives a header only to projects with two or more Active threads. A project with one Active thread stays an ordinary card, so a list without repeated projects reads like manual order.
+- Project groups and single cards follow your manual order, with each group drawn where its first thread sits. Dragging a project header, or pressing Alt+Up or Alt+Down on it, moves the whole group; threads inside a group reorder among themselves.
+- Collapsing Active also hides the project headers, leaving only the open thread.
+- Requires plugin SDK 0.6.5 or newer.
+
+### Fixed
+
+- Automatic settle no longer settles, or stops the runtime of, a thread that is still waiting on you or has live work: a question or approval, queued messages, a workflow, a background agent or command, plan mode, or a goal. It now uses the same rule as the sidebar's **Settle** action.
+- Automatic settle no longer settles a thread that is still serving a port from its workspace, such as a dev server. Settling stops the thread's runtime, which also stops processes its agent left running, and some providers do not tell bb about them. A thread whose machine cannot be checked is left alone until the next pass.
+- **Settle**, **Park**, and **Snooze** are no longer offered for a thread with a queued or failed message, or for an unread thread whose turn is still running. Settled, parked, and snoozed threads in either state return to Active.
+- **Regenerate title** works again on current bb, which no longer exposes the inference model it read. It now generates the title with the thread's own agent and model, at low reasoning.
+
+## [0.2.26] - 2026-09-29
+
+### Added
+
+- Holding Cmd (Ctrl off Mac) labels the first nine rows with bb's own shortcut hints, ⌘ 1 to ⌘ 9, in place of their status. They appear on the same hold delay as bb's hints and match the row each Cmd+digit shortcut opens.
+- Each process in a hover card's **Workspace ports** list has a stop button. The first click arms it; a second click within four seconds stops the process.
+
+### Changed
+
+- The **Workspace ports** list in a hover card starts collapsed. Click its header to show the ports.
+
+## [0.2.25] - 2026-09-28
+
+### Changed
+
+- Sorting Active by project now shows each project's name once, in a header with its icon and thread count, instead of on every card. Cards under a header are a line shorter: the title sits beside the status.
+
+### Added
+
+- Project headers collapse. The choice is remembered, and a collapsed project still shows the open thread.
+
+## [0.2.24] - 2026-09-27
+
+### Fixed
+
+- A thread's hover card no longer lists pull requests from commands that only mention `gh pr create`, such as a search of another thread's log. Only commands that run it count.
+
+## [0.2.23] - 2026-09-27
+
+### Added
+
+- Hover cards have a collapsible **Pull requests** section listing every pull request a thread opened with `gh pr create`, newest first, with each PR's title and status. Before, only the PR on the thread's current branch was shown. Status comes from `gh` on the thread's machine; without it, the list still shows PR numbers and links. In a shared project checkout, a thread lists only the PRs it opened, not the checkout branch's PR.
+
+## [0.2.22] - 2026-09-27
+
+### Added
+
+- A **Child threads** settings section. **Sort** orders child threads by date created or last activity, ascending or descending, in the sidebar, the thread header popup, the parent's badge, and hover cards. **Child thread icon** shows a colour circle per thread (the default) or the agent's provider icon; with provider icons, the parent's badge shows each agent once. The defaults keep the previous look and oldest-first order ([#3](https://github.com/yusuf8834/bb-sidebar/pull/3) by [@a-kras](https://github.com/a-kras)).
+
+### Improved
+
+- The child-thread tree line sits under the parent's title, and child rows sit closer to it ([#3](https://github.com/yusuf8834/bb-sidebar/pull/3) by [@a-kras](https://github.com/a-kras)).
+
+### Fixed
+
+- A slow, older settings load arriving after a newer one no longer rolls the sidebar back to the previous settings ([#3](https://github.com/yusuf8834/bb-sidebar/pull/3) by [@a-kras](https://github.com/a-kras)).
+- The thread header's child-thread popup stays inside the window and scrolls a long list instead of running off screen.
+
+### Contributors
+
+- Thanks to [@a-kras](https://github.com/a-kras) for designing and contributing the Child threads settings (sort order and provider icons), the tighter child-thread indent, and the settings-load race fix in [#3](https://github.com/yusuf8834/bb-sidebar/pull/3).
+
+## [0.2.21] - 2026-09-23
+
+### Added
+
+- Show a spinner and "Loading threads…" while bb loads the thread list, instead of an empty list. It appears only if loading takes longer than 200 ms, so fast loads do not flicker.
+- The delete confirmation now names the thread and its project, and says how many child threads go with it, so a right-click delete in a busy list cannot be mistaken for another thread. The sidebar owns this dialog and deletes through bb's SDK instead of opening bb's generic "Delete thread?" prompt.
+
+### Fixed
+
+- A project icon that failed to load once, for example while bb's host was still starting, no longer stays hidden until the sidebar reloads. The sidebar retries with backoff, and the server reports a read failure as temporary instead of caching it as "no icon".
+
+## [0.2.20] - 2026-09-21
+
+### Added
+
+- Show every child-thread status in expanded rows: Failed, Needs you, Unread, Working or Monitoring with duration, Planning, Workflow, Agent, Command, Goal, Draft, and Drafting, using the same vocabulary as thread cards.
+- Keep every child that reports a status visible while its section is collapsed, not only running ones. The "Show running children" setting is now "Show children that need attention"; its saved value carries over.
+
+### Improved
+
+- Child-thread rows size the status column to its label, so short statuses and ages leave more room for the title in a narrow sidebar.
+- Search results give the title priority over a long project name in a narrow sidebar.
+- The dark needs-you child row has a stronger tint and a leading amber edge.
+
+### Fixed
+
+- Status colours follow bb's theme instead of the OS colour scheme, so a dark bb on a light OS (or the reverse) no longer shows low-contrast statuses or a light needs-you band.
+- On touch screens, Failed, Unread, and idle ages stay visible beside the snooze and settle actions instead of being hidden behind them.
+- A woken thread shows "Woke" beside its current status in cards and search results instead of replacing it.
+
+## [0.2.19] - 2026-09-19
+
+### Added
+
+- Support configurable snooze shortcuts for this evening, tomorrow morning, and next week, using local calendar times.
+
+### Improved
+
+- Sort parent-thread choices by recent activity in a single list.
+
+### Fixed
+
+- After parking or snoozing the open thread, select the first Pinned thread, then the first Active thread, or open the new-thread page when both sections are empty.
+
+## [0.2.18] - 2026-09-19
+
+### Improved
+
+- Show one branch-name line in thread hover cards, using the worktree icon for worktrees and the branch icon for plain checkouts, matching the thread card.
+- Add Park thread at the bottom of the snooze icon's menu.
+- Reuse the section status icons for thread context-menu actions and Park thread in the snooze menu.
+
+### Fixed
+
+- Pinning a thread clears Settled, Snoozed, and Parked states. Settling, snoozing, or parking a thread removes its pin.
+
+## [0.2.17] - 2026-09-18
+
+### Added
+
+- Add small rounded icons to Pinned, Active, Inactive, Snoozed, Parked, and Settled section headers.
+
+### Improved
+
+- Move Parked directly below Snoozed, before Settled.
+
+### Fixed
+
+- After settling the open thread, select the first Pinned thread, then the first Active thread in its current sort order, or open the new-thread page when both sections are empty.
+
+## [0.2.16] - 2026-09-18
+
+### Added
+
+- Add a Parked section for threads waiting on others, with Resume, Undo, waiting age, and protection from automatic cleanup.
+- Add a searchable Parent submenu for assigning or removing a thread's parent.
+- Add expandable subthreads to thread hover cards.
+- Offer to close thread-owned ports when settling a thread.
+
+### Improved
+
+- Improve drag-and-drop thread reordering and keyboard accessibility.
+
+### Fixed
+
+- Preserve inbox order across remounts and respect disabled inactivity settings.
+
+## [0.2.15] - 2026-09-16
+
+### Added
+
+- Add Undo actions after settling, un-settling, and waking a snoozed thread.
+
+### Removed
+
+- Remove thread multi-selection and bulk actions.
+- Remove project icon lookup through `t3.json`.
+
+### Improved
+
+- Shorten the README feature documentation.
 
 ## [0.2.14] - 2026-09-15
 
@@ -14,9 +309,13 @@
 
 ### Fixed
 
-- Keep snooze, settle, and restore actions visible on touch devices, with parked thread labels and snooze countdowns beside the restore button.
+- Keep snooze, settle, and restore actions visible on touch devices, with parked thread labels and snooze countdowns beside the restore button ([#2](https://github.com/yusuf8834/bb-sidebar/pull/2) by [@banjerluke](https://github.com/banjerluke)).
 - Group the unpin button with card actions, or with the status and Woke label when parking actions are unavailable.
 - Keep the status visible when focusing Unpin on cards without parking actions.
+
+### Contributors
+
+- Thanks to [@banjerluke](https://github.com/banjerluke) for finding that row and card actions were unreachable on touch devices and contributing the fix in [#2](https://github.com/yusuf8834/bb-sidebar/pull/2).
 
 ## [0.2.11] - 2026-09-11
 
@@ -82,11 +381,13 @@
 
 ### Fixed
 
-- Bounded the browser cache to 500 lifecycle records and 100 expanded-thread IDs to prevent unbounded storage growth.
-- Recovered from storage-quota errors by evicting sidebar caches one at a time, stopping as soon as the write succeeds to preserve remaining preferences.
+- Bounded the browser cache to 500 lifecycle records and 100 expanded-thread IDs to prevent unbounded storage growth ([#1](https://github.com/yusuf8834/bb-sidebar/pull/1) by [@elianiva](https://github.com/elianiva)).
+- Recovered from storage-quota errors by evicting sidebar caches one at a time, stopping as soon as the write succeeds to preserve remaining preferences ([#1](https://github.com/yusuf8834/bb-sidebar/pull/1) by [@elianiva](https://github.com/elianiva)).
 - Preserved expansion recency across restarts so pruning removes the oldest entries.
 
-Thanks to [@elianiva](https://github.com/elianiva) for identifying the storage issue and contributing the fix in [#1](https://github.com/yusuf8834/bb-sidebar/pull/1).
+### Contributors
+
+- Thanks to [@elianiva](https://github.com/elianiva) for finding the unbounded browser storage growth and contributing the cache limits and quota-error recovery in [#1](https://github.com/yusuf8834/bb-sidebar/pull/1).
 
 ## [0.2.5] - 2026-09-05
 
@@ -222,3 +523,6 @@ Thanks to [@elianiva](https://github.com/elianiva) for identifying the storage i
 [0.1.2]: https://github.com/yusuf8834/bb-sidebar/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/yusuf8834/bb-sidebar/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yusuf8834/bb-sidebar/releases/tag/v0.1.0
+
+[0.2.16]: https://github.com/yusuf8834/bb-sidebar/compare/v0.2.15...v0.2.16
+[0.2.17]: https://github.com/yusuf8834/bb-sidebar/compare/v0.2.16...v0.2.17

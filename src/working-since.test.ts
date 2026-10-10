@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import { idleSidebarThreadFields } from "./test-fixtures";
 import { reconcileWorkingSince, statusWithDuration } from "./working-since";
 
 const NOW = 1_000_000_000;
@@ -9,6 +10,7 @@ function thread(
   overrides: Partial<PluginSidebarThread> = {},
 ): PluginSidebarThread {
   return {
+    ...idleSidebarThreadFields,
     id: "thr_1",
     projectId: "proj_1",
     title: "A thread",

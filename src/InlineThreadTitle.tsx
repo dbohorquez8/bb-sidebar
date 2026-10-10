@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   type PluginSidebarThread,
@@ -23,6 +23,20 @@ export function InlineThreadTitle({
   const title = threadDisplayTitle(thread);
   const [draft, setDraft] = useState(title);
   const finished = useRef(false);
+  const latest = useRef({ draft, title, actions, onEditingChange });
+  latest.current = { draft, title, actions, onEditingChange };
+
+  useLayoutEffect(() => {
+    if (!editing) return;
+    return () => {
+      if (finished.current) return;
+      finished.current = true;
+      const { draft: currentDraft, title: currentTitle, actions: currentActions, onEditingChange: notify } = latest.current;
+      notify(false);
+      const nextTitle = currentDraft.trim();
+      if (nextTitle && nextTitle !== currentTitle) void currentActions.rename(thread.id, nextTitle);
+    };
+  }, [editing, thread.id]);
 
   useEffect(() => {
     if (!editing) return;

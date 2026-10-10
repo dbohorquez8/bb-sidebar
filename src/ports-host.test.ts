@@ -33,6 +33,7 @@ function commands(docker: () => string = () => "") {
     if (command === "lsof") return { stdout: args.includes("-d") ? "p123\nfcwd\nn/workspace/app\np456\nfcwd\nn/workspace/app\n" : sockets };
     if (command === "ps") return { stdout: args[0] === "eww"
       ? "node app.js BB_THREAD_ID=thr_owner PATH=/bin"
+      : args.includes("lstart=") ? "Sat Oct  3 12:29:38 2026\n"
       : "123 node app.js\n456 node /opt/bb-app/server/dist/index.js" };
     if (command === "docker") return { stdout: docker() };
     throw new Error(`Unexpected command ${command}`);
@@ -44,7 +45,7 @@ describe("host port scan", () => {
     commands(() => "abc\tapp-web-1\t0.0.0.0:3000->3000/tcp, 0.0.0.0:8080->8080/tcp\t/workspace/app\tweb");
     const result = await harness.experimental_call("scan", { roots });
     expect(result.ports).toEqual([
-      { environmentId: "env_a", port: 3000, address: "127.0.0.1", pid: 123, processName: "node", source: "process", ownerThreadId: "thr_owner", container: "app-web-1", service: "web" },
+      { environmentId: "env_a", port: 3000, address: "127.0.0.1", pid: 123, processName: "node", source: "process", ownerThreadId: "thr_owner", processStartedAt: "Sat Oct  3 12:29:38 2026", container: "app-web-1", service: "web" },
       { environmentId: "env_a", port: 8080, address: "0.0.0.0", source: "docker", container: "app-web-1", service: "web" },
     ]);
   });
@@ -62,5 +63,21 @@ describe("host port scan", () => {
     const controller = new AbortController();
     commands(() => { controller.abort(); throw new Error("aborted"); });
     await expect(harness.experimental_call("scan", { roots }, { signal: controller.signal })).rejects.toThrow();
+  });
+});
+
+describe("host pull request lookup", () => {
+  it("reads each PR with gh and skips the ones it cannot see", async () => {
+    mocks.run.mockImplementation(async (command: string, args: string[]) => {
+      if (command !== "gh") throw new Error(`Unexpected command ${command}`);
+      if (args[2]!.endsWith("/2")) throw new Error("Could not resolve to a PullRequest");
+      return { stdout: JSON.stringify({ number: 1, title: "Fix", state: "OPEN", isDraft: true, url: "https://github.com/new/r/pull/1" }) };
+    });
+    const result = await harness.experimental_call("pullRequests", {
+      urls: ["https://github.com/o/r/pull/1", "https://github.com/o/r/pull/2"],
+    });
+    expect(result.pullRequests).toEqual([
+      { url: "https://github.com/o/r/pull/1", number: 1, title: "Fix", state: "draft" },
+    ]);
   });
 });

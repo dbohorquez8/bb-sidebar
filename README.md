@@ -1,6 +1,6 @@
 # BB Sidebar
 
-A stable thread list for [bb](https://github.com/get-bb/bb). Threads stay where you put them while status, snooze, settle, and bulk actions remain close at hand.
+A stable thread list for [bb](https://github.com/get-bb/bb). Threads stay where you put them while status, snooze, and settle actions remain close at hand.
 
 ![BB Sidebar in light mode](docs/screenshots/sidebar-light.jpeg)
 
@@ -12,15 +12,19 @@ A stable thread list for [bb](https://github.com/get-bb/bb). Threads stay where 
 
 - Manual ordering plus Recent activity, Date created, and Project sort modes
 - Subtle project grouping for projects with multiple active threads
-- Pinned, Active, Inactive, Snoozed, and Settled shelves
-- Project filtering and multi-select bulk actions
-- Automatic favicons, custom project icons, and two-step project removal
+- Pinned, Active, Inactive, Snoozed, Parked, and Settled shelves
+- Project filtering
+- Optional project colors with per-project color selection. Names stay colored in every mode; show stripes in full and collapsed mode, full mode only, or grouped projects only
+- Automatic project icons with custom overrides
 - Expandable child-thread indicators with running and attention states
 - Live status, branch, pull request, and provider details
-- Subtle port icons for identified server-owning threads, with workspace port details in the hover card
+- Workspace port discovery, hover-card details, and optional browser links
+- A Clean button in Settled that previews and closes live terminals and verified thread-owned listening ports, while protecting Active and Working threads
+- Configurable inactive-thread and automatic cleanup rules
 - Native bb navigation, split, rename, archive, and delete flows
 - Project submenu on thread cards for settings, rename, local paths, and removal
 - Regenerate a thread title from its last three accepted user messages
+- Automatically retry missing thread titles once in the background, respecting the selected AI title service and manual edits
 
 ## Install
 
@@ -29,50 +33,6 @@ bb plugin install git:https://github.com/yusuf8834/bb-sidebar.git
 ```
 
 Then choose **BB Sidebar** under **Settings > Appearance > Sidebar**.
-
-Port discovery is built into BB Sidebar. Workspace scans refresh at most every 30 seconds and
-include listening TCP ports owned by processes in the workspace and published
-Docker Compose ports. Shared ports appear in the thread hover card. A row gets a
-muted port icon, without a count, only when the listening process carries a
-`BB_THREAD_ID` matching that thread and workspace. Missing or unreadable owner
-metadata leaves the row unmarked. Scans
-run on each workspace's machine and require macOS or Linux with `lsof` installed.
-Docker is optional. Inaccessible processes and containers without a Compose
-working-directory label cannot be attributed to a workspace.
-BB's own server and worker listeners are excluded. User and agent app servers
-remain visible, including servers launched through BB.
-Environment locations are cached for one minute. Unreachable machines retry with
-increasing delays, up to five minutes, and their stale ports are cleared.
-
-To enable browser links, select **Port links on this device** in sidebar
-settings. Only ports on that selected host are linked; other hosts stay as text.
-IPv6 and concrete bind addresses are preserved. Links try HTTP, or HTTPS on
-443 and 8443; known database and other non-web service ports stay as text.
-
-Project icons use `t3.json`, common favicon and app icon paths, and local icon
-metadata. To pick a different image, open BB Sidebar's plugin settings and use
-the **Project icons** section. Projects without a matching image keep the
-icon-free layout.
-
-The Inactive shelf is enabled by default and moves unpinned threads after six
-hours without activity. Both the switch and hour threshold are available in
-BB Sidebar's plugin settings.
-
-Automatic cleanup settles quiet threads after three days by default. It also
-settles closed pull requests, and the settings page controls whether merged
-pull requests settle automatically. Manual un-settle keeps a thread active
-until new work clears that override.
-
-Right-click a thread and choose **Regenerate title** to summarize its last
-three accepted user messages, or fewer if available. Only message text is
-included, capped at 8,000 characters per message. Assistant replies, queued
-drafts, attachments, and older messages are excluded.
-
-Generation uses a temporary hidden helper in a personal workspace, with the
-model configured by `BB_INFERENCE` and `BB_INFERENCE_FALLBACK` for transient
-failures. These settings must name installed agent providers, such as `codex`.
-The current SDK cannot call bb's helper-inference service directly. The helper
-is removed afterward; failed generation leaves the existing title in place.
 
 ## Development
 
@@ -87,3 +47,16 @@ bb plugin install path:. --yes
 This project includes code adapted from [bb-plugin-t3sidebar](https://github.com/SawyerHood/bb-plugin-t3sidebar). Its MIT copyright notice remains in [LICENSE](LICENSE).
 
 The sidebar design and interactions are directly inspired by [T3 Code](https://github.com/pingdotgg/t3code), which is also released under the MIT License. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
+
+Park threads while waiting on someone else. Use **Park thread** in the context menu and **Resume** when ready. Parked threads have no timer and are excluded from automatic cleanup. Opening one leaves it parked; new thread activity brings it back to Active.
+
+Use **Parent** in a thread's context menu to search threads in the same project, choose a parent, or select **None** to remove it. The current parent is checked; the thread itself and its descendants are excluded.
+
+### Contributors
+
+Thank you to everyone who has contributed to BB Sidebar:
+
+- [@a-kras](https://github.com/a-kras): Child threads settings, sorting, and provider icons ([#3](https://github.com/yusuf8834/bb-sidebar/pull/3)); pinned order, animated reordering, child-thread drag and drop, and full thread trees ([#6](https://github.com/yusuf8834/bb-sidebar/pull/6))
+- [@amrtawfik160](https://github.com/amrtawfik160): pull-request lookups only for visible rows ([#5](https://github.com/yusuf8834/bb-sidebar/pull/5))
+- [@banjerluke](https://github.com/banjerluke): row and card actions on touch devices ([#2](https://github.com/yusuf8834/bb-sidebar/pull/2))
+- [@elianiva](https://github.com/elianiva): bounded browser storage and quota-error recovery ([#1](https://github.com/yusuf8834/bb-sidebar/pull/1))

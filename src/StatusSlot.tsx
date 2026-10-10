@@ -1,18 +1,22 @@
-import type {
-  PluginSidebarThread,
-  PluginSidebarThreadIndicator,
+import {
+  useSidebarThreadDraft,
+  type PluginSidebarThread,
+  type PluginSidebarThreadIndicator,
 } from "@get-bb/plugin-sdk/app";
+import { useMemo } from "react";
+import { isWorkingIndicator } from "./child-status";
 import { cn } from "./lib/utils";
 import { relativeTimeLabel } from "./relative-time";
 import { useWorkingSinceContext } from "./useWorkingSince";
 import { statusWithDuration } from "./working-since";
 
 /**
- * The row's trailing slot: one fixed width, right-aligned, on every row.
+ * The default trailing slot for cards and flat rows: fixed and right-aligned.
  *
  * Fixed rather than intrinsic because both ages and live-status labels vary in
  * width. The slot holds "Planning · 12m" without dragging the project column
- * back and forth as a thread changes state.
+ * back and forth as a thread changes state. Child trees override the width:
+ * they carry no project column, so there the label's own width wins.
  */
 export const STATUS_SLOT_CLASS = "flex w-20 shrink-0 items-center justify-end";
 
@@ -35,22 +39,24 @@ export const TRAILING_GLYPH_BOX_CLASS =
  * slot answers "is it stuck?" as well as "what is it doing?".
  */
 export function StatusOrTime({
-  thread,
+  thread: listedThread,
   now,
 }: {
   thread: PluginSidebarThread;
   /** Quantized clock, shared by every row in one render. */
   now: number;
 }) {
+  const thread = useThreadWithDraft(listedThread);
   const workingSince = useWorkingSinceContext();
-  const status = shortStatus(thread.indicator, thread.indicatorLabel);
+  const status = threadShortStatus(thread);
   if (status !== null) {
-    const label = status.showsDuration
-      ? statusWithDuration(status.label, workingSince.get(thread.id), now)
-      : status.label;
+    const label = shortStatusLabel(status, workingSince.get(thread.id), now);
     return (
       <span
-        aria-label={thread.indicatorLabel ?? label}
+        aria-label={
+          status.ariaLabel ??
+          (thread.hasPendingInteraction ? label : (thread.indicatorLabel ?? label))
+        }
         className={cn(
           "max-w-full truncate text-2xs font-medium",
           status.showsDuration && "tabular-nums",
@@ -68,15 +74,58 @@ export function StatusOrTime({
   );
 }
 
-function shortStatus(
+/**
+ * Folds an unsent composer draft into bb's indicator the way bb's own row
+ * does. bb leaves drafts out of `indicator` because they are per-client, so a
+ * busy thread with a draft becomes "working-draft" and an otherwise quiet one
+ * "draft". A failure, a raised hand, an unread result or a queued message
+ * keeps its own status.
+ */
+export function withDraftIndicator(
   indicator: PluginSidebarThreadIndicator,
-  indicatorLabel: string | null,
-): {
+  hasDraft: boolean,
+): PluginSidebarThreadIndicator {
+  if (!hasDraft) return indicator;
+  if (isWorkingIndicator(indicator)) return "working-draft";
+  return indicator === "none" ? "draft" : indicator;
+}
+
+/** The thread as its row should draw it, with this client's draft folded in. */
+export function useThreadWithDraft(
+  thread: PluginSidebarThread,
+): PluginSidebarThread {
+  const { hasUnsubmittedDraft } = useSidebarThreadDraft(thread.id);
+  const indicator = withDraftIndicator(thread.indicator, hasUnsubmittedDraft);
+  return useMemo(
+    () =>
+      indicator === thread.indicator
+        ? thread
+        : {
+            ...thread,
+            indicator,
+            // bb's own wording for the two draft glyphs.
+            indicatorLabel:
+              indicator === "draft"
+                ? "Thread has unsubmitted draft"
+                : "Thread working with unsubmitted draft",
+          },
+    [thread, indicator],
+  );
+}
+
+export interface ShortStatus {
   label: string;
   className: string;
   /** Live work gets a running duration; a verdict or a request does not. */
   showsDuration: boolean;
-} | null {
+  /** For statuses bb has no indicator for, so no accessible label either. */
+  ariaLabel?: string;
+}
+
+export function shortStatus(
+  indicator: PluginSidebarThreadIndicator,
+  indicatorLabel: string | null,
+): ShortStatus | null {
   const className = statusToneClass(indicator);
   switch (indicator) {
     case "unread-error":
@@ -113,6 +162,58 @@ function shortStatus(
 }
 
 /**
+ * A pending user interaction outranks any concurrently reported runtime, and a
+ * message that failed to send outranks the rest: bb paints no indicator for
+ * either queued state, so a row would otherwise look idle or merely busy.
+ * A waiting message only shows on an otherwise quiet row; a running turn
+ * already says more.
+ */
+export function threadShortStatus(
+  thread: PluginSidebarThread,
+): ShortStatus | null {
+  if (thread.hasPendingInteraction) {
+    return shortStatus("waiting-for-input", null);
+  }
+  if (thread.queuedWork === "failed") {
+    return {
+      label: "Send failed",
+      className: statusToneClass("unread-error"),
+      showsDuration: false,
+      ariaLabel: "A queued message failed to send",
+    };
+  }
+  const status = shortStatus(thread.indicator, thread.indicatorLabel);
+  if (status === null && thread.queuedWork === "waiting") {
+    return {
+      label: "Queued",
+      className: statusToneClass("draft"),
+      showsDuration: false,
+      ariaLabel: "A message is waiting to send",
+    };
+  }
+  return status;
+}
+
+export function shortStatusLabel(
+  status: ShortStatus,
+  startedAt: number | undefined,
+  now: number,
+): string {
+  return status.showsDuration
+    ? statusWithDuration(status.label, startedAt, now)
+    : status.label;
+}
+
+export function threadStatusLabel(
+  thread: PluginSidebarThread,
+  startedAt: number | undefined,
+  now: number,
+): string | null {
+  const status = threadShortStatus(thread);
+  return status === null ? null : shortStatusLabel(status, startedAt, now);
+}
+
+/**
  * A monitor is still a runtime, so the indicator keeps the usual spinner and
  * working duration. BB's accessible label carries the more precise state.
  */
@@ -127,19 +228,19 @@ function isMonitoringLabel(label: string | null): boolean {
  * normal row keeps its default background.
  *
  * `isActive` suppresses the wash: an open thread already has the accent tint,
- * and stacking the status wash on top muddies it.
+ * and stacking the status wash on top muddies it. The amber reuses the
+ * needs-you tint tokens so cards match child rows.
  */
 export function statusRowWashClass(
   indicator: PluginSidebarThreadIndicator,
   isActive: boolean,
 ): string {
   if (isActive) return "";
-  // Dark mode uses a MID green/amber at low alpha, not the near-black 950: a
-  // 950 base barely shifts hue over the dark sidebar and just reads as a muddy
-  // dark patch. A 500-ish base at ~10-15% alpha adds visible colour instead.
+  // Dark mode uses a MID green at low alpha, not the near-black 950: a 950 base
+  // barely shifts hue over the dark sidebar and just reads as a muddy patch.
   switch (indicator) {
     case "waiting-for-input":
-      return "bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-500/10 dark:hover:bg-amber-500/15";
+      return "bg-[color:var(--bb-sidebar-needs-you-tint)] hover:bg-[color:var(--bb-sidebar-needs-you-tint-hover)]";
     case "unread-success":
       return "bg-emerald-50/60 hover:bg-emerald-100/50 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15";
     default:
@@ -147,27 +248,27 @@ export function statusRowWashClass(
   }
 }
 
-/** Status palette shared by cards and child-thread chips. */
+/** Status palette shared by cards, child labels, and glyphs. */
 export function statusToneClass(
   indicator: PluginSidebarThreadIndicator,
 ): string {
   switch (indicator) {
     case "unread-error":
-      return "text-red-700 dark:text-red-300";
+      return "text-[color:var(--bb-sidebar-tone-error)]";
     case "waiting-for-input":
-      return "text-indigo-600 dark:text-indigo-300";
+      return "text-[color:var(--bb-sidebar-tone-pending)]";
     case "unread-success":
-      return "text-emerald-700 dark:text-emerald-300";
+      return "text-[color:var(--bb-sidebar-tone-success)]";
     case "runtime":
     case "workflow":
     case "background-agent":
     case "background-command":
     case "plan-mode":
     case "goal":
-      return "text-sky-600 dark:text-sky-400";
+      return "text-[color:var(--bb-sidebar-tone-working)]";
     case "draft":
     case "working-draft":
-      return "text-amber-700 dark:text-amber-300";
+      return "text-[color:var(--bb-sidebar-tone-draft)]";
     case "none":
     default:
       return "text-muted-foreground";

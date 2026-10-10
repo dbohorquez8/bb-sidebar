@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type PluginSidebarThread, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { bbSidebarRpcContract } from "./server";
-import { orderPinnedThreads, pinnedNeighbors } from "./pinned-order";
+import {
+  orderPinnedThreads,
+  pinnedNeighbors,
+  sortPinnedThreads,
+} from "./pinned-order";
 
 interface OptimisticOrder {
   ids: readonly string[];
@@ -26,9 +30,13 @@ export function usePinnedReorder(
   pinnedThreads: readonly PluginSidebarThread[],
 ): PinnedReorderApi {
   const rpc = useRpc<typeof bbSidebarRpcContract>();
-  const baseIds = useMemo(
-    () => pinnedThreads.map((thread) => thread.id),
+  const baseThreads = useMemo(
+    () => sortPinnedThreads(pinnedThreads),
     [pinnedThreads],
+  );
+  const baseIds = useMemo(
+    () => baseThreads.map((thread) => thread.id),
+    [baseThreads],
   );
   const baseKey = orderKey(baseIds);
   const [optimistic, setOptimistic] = useState<OptimisticOrder | null>(null);
@@ -44,15 +52,37 @@ export function usePinnedReorder(
   }, [baseKey, optimistic]);
 
   const orderedThreads = useMemo(
-    () => orderPinnedThreads(pinnedThreads, optimistic?.ids ?? null),
-    [optimistic, pinnedThreads],
+    () => orderPinnedThreads(baseThreads, optimistic?.ids ?? null),
+    [optimistic, baseThreads],
   );
   const ids = orderedThreads.map((thread) => thread.id);
+  // Optimistic host pins can have no key yet; core cannot reorder against them.
+  const eligiblePinnedIds = useMemo(
+    () => new Set(baseThreads.filter((thread) => thread.pinSortKey != null).map((thread) => thread.id)),
+    [baseThreads],
+  );
+  // Match bb's pinned roots: a child is excluded only while its parent is pinned.
+  const childIds = useMemo(
+    () => {
+      return new Set(
+        pinnedThreads
+          .filter(
+            (thread) =>
+              thread.parentThreadId !== null && eligiblePinnedIds.has(thread.parentThreadId),
+          )
+          .map((thread) => thread.id),
+      );
+    },
+    [eligiblePinnedIds, pinnedThreads],
+  );
 
   const reorder = useCallback(
     async (nextIds: readonly string[], movingId: string): Promise<boolean> => {
-      if (inFlight.current || orderKey(nextIds) === orderKey(ids)) return false;
-      const neighbors = pinnedNeighbors(nextIds, movingId);
+      if (inFlight.current || !eligiblePinnedIds.has(movingId) || orderKey(nextIds) === orderKey(ids)) return false;
+      const neighbors = pinnedNeighbors(
+        nextIds.filter((id) => id === movingId || (eligiblePinnedIds.has(id) && !childIds.has(id))),
+        movingId,
+      );
       inFlight.current = true;
       setIsReordering(true);
       setOptimistic({ ids: [...nextIds], baseKey });
@@ -75,7 +105,7 @@ export function usePinnedReorder(
         setIsReordering(false);
       }
     },
-    [baseKey, ids, rpc],
+    [baseKey, childIds, eligiblePinnedIds, ids, rpc],
   );
 
   return { threads: orderedThreads, ids, isReordering, reorder };
