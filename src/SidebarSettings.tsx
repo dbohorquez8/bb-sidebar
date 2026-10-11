@@ -89,6 +89,7 @@ const SECTION_BY_SETTING: Record<keyof SidebarSettingsValues, string> = {
   dockShelves: "Sidebar layout",
   projectColorsEnabled: "Project appearance",
   projectColorDisplay: "Project appearance",
+  silenceThresholdMinutes: "Attention",
 };
 
 const validHours = (value: number) => Number.isInteger(value) && value >= MIN_INACTIVE_AFTER_HOURS && value <= MAX_INACTIVE_AFTER_HOURS;

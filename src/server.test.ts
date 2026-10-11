@@ -567,6 +567,7 @@ describe("lifecycle RPC", () => {
       dockShelves: false,
       projectColorsEnabled: false,
       projectColorDisplay: "all",
+      silenceThresholdMinutes: 15,
     });
     await expect(
       harness.behavior.callRpc("updateSidebarSettings", {
@@ -585,6 +586,7 @@ describe("lifecycle RPC", () => {
         dockShelves: true,
         projectColorsEnabled: true,
         projectColorDisplay: "grouped",
+        silenceThresholdMinutes: 5,
       }),
     ).resolves.toEqual({
       snoozePresets: "10m, 4h",
@@ -602,6 +604,7 @@ describe("lifecycle RPC", () => {
       dockShelves: true,
       projectColorsEnabled: true,
       projectColorDisplay: "grouped",
+      silenceThresholdMinutes: 5,
     });
     // A client that predates the setting leaves it out and must not reset it.
     await expect(
@@ -617,7 +620,7 @@ describe("lifecycle RPC", () => {
         childSortDirection: "descending",
         childIconStyle: "provider",
       }),
-    ).resolves.toMatchObject({ compactWorkingThreads: true, workingShelf: true, dockShelves: true, projectColorsEnabled: true, projectColorDisplay: "grouped" });
+    ).resolves.toMatchObject({ compactWorkingThreads: true, workingShelf: true, dockShelves: true, projectColorsEnabled: true, projectColorDisplay: "grouped", silenceThresholdMinutes: 5 });
     expect(harness.inspection.realtimeSignals).toContainEqual({
       channel: "sidebar-settings",
       payload: {},
@@ -714,6 +717,7 @@ describe("lifecycle RPC", () => {
       dockShelves: false,
       projectColorsEnabled: false,
       projectColorDisplay: "all",
+      silenceThresholdMinutes: 15,
     });
   });
 
