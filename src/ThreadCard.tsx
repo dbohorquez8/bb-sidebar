@@ -1,4 +1,5 @@
 import {
+  useContext,
   useId,
   useLayoutEffect,
   useEffect,
@@ -28,13 +29,12 @@ import { pullRequestStatusLabel, pullRequestToneClass } from "./pull-request-dis
 import { RowContextMenu } from "./RowContextMenu";
 import { ProviderGlyph, type SidebarProvider } from "./ProviderGlyph";
 import {
+  attentionWashClass,
   STATUS_SLOT_CLASS,
   StatusOrTime,
   statusRowWashClass,
-  threadShortStatus,
 } from "./StatusSlot";
-import { CompactLiveStatus } from "./StatusGlyph";
-import { threadDisplayTitle } from "./inbox";
+import { threadDisplayTitle, threadWorktreeName } from "./inbox";
 import { InlineThreadTitle } from "./InlineThreadTitle";
 import type { ConfiguredSnoozePreset } from "./lifecycle";
 import { isWorkingTree } from "./working-tree";
@@ -42,6 +42,11 @@ import { ProjectFavicon, ProjectStripe } from "./ProjectFavicon";
 import { useProjectColor } from "./ProjectColors";
 import { OpenPortsIndicator } from "./OpenPorts";
 import { JumpHint, useJumpHint } from "./JumpHints";
+import { AttentionContext } from "./useAttention";
+import { backgroundWorkCount, washFor, shortModelName } from "./attention";
+import { StageLine } from "./StageLine";
+import { TicketChip } from "./TicketChip";
+import { useThreadModel } from "./ThreadModel";
 import "./settle-button.css";
 
 /** How long the settle sweep plays before the thread actually moves. */
@@ -133,6 +138,9 @@ export function ThreadCard({
   const actions = useSidebarThreadActions();
   const jumpHint = useJumpHint(thread.id);
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
+  const attention = useContext(AttentionContext);
+  const view = attention?.viewFor(thread.id) ?? null;
+  const descriptionId = useId();
   const rowRef = useRef<HTMLLIElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   useEffect(() => {
@@ -201,7 +209,9 @@ export function ThreadCard({
   // it starts from does not disappear when the cursor leaves the row.
   const holdParkActions = isSnoozeOpen || isSettling;
   const childListId = useId();
-  const liveStatus = threadShortStatus(thread)?.showsDuration === true;
+  const modelRevision = view?.since ?? 0;
+  const model = useThreadModel(thread.id, isVisible, modelRevision);
+  const shortModel = shortModelName(model);
   // A thread stays folded until everything under it is done; it unfolds at
   // once when it needs you, fails, or just woke.
   const naturalCompact =
@@ -227,6 +237,10 @@ export function ThreadCard({
         ? "read-idle"
         : "active";
 
+  const openInThisWindow = isActive || layout !== null;
+  const cardWashClass = view
+    ? attentionWashClass(washFor(view.status, thread.indicator === "unread-success", openInThisWindow))
+    : statusRowWashClass(thread.indicator, isActive);
   const showParkActions = !isWoke && canPark && (snoozePresets.length > 0 || !!onPark);
   const unpinButton = thread.isPinned ? (
     <Tooltip label="Unpin thread">
@@ -255,22 +269,33 @@ export function ThreadCard({
     </Tooltip>
   ) : null;
 
+  const ticket = view?.ticket ?? null;
+  const backgroundCount =
+    view?.backgroundCount ??
+    backgroundWorkCount({
+      workers: thread.activity.backgroundAgents,
+      commands: thread.activity.backgroundCommands,
+      workflows: thread.activity.workflows,
+    });
   const titleLine = (
     <div
       data-row-emphasis={emphasis}
       data-settle-fade=""
       className={cn(
-        "pointer-events-none relative truncate text-sm",
-        showProject ? "mt-0.5" : "min-w-0 flex-1",
+        "pointer-events-none relative flex min-w-0 items-center gap-1 text-sm",
+        showProject ? "mt-0.5" : "flex-1",
         isRenaming && "pointer-events-auto",
         emphasis === "read-idle" ? "text-muted-foreground" : "text-foreground",
         (emphasis === "unread" || emphasis === "woke") && "font-medium",
       )}
     >
+      {ticket ? <TicketChip ticket={ticket} /> : null}
       <InlineThreadTitle
         thread={thread}
         editing={isRenaming}
         onEditingChange={changeRenaming}
+        displayTitle={ticket?.titleRest ?? undefined}
+        className="min-w-0 flex-1 truncate"
       />
     </div>
   );
@@ -307,10 +332,10 @@ export function ThreadCard({
               // A thread open in another pane gets a weaker tint than the active
               // row, so the two states stay distinguishable.
               !isActive && layout !== null && "bg-sidebar-accent/30",
-              // A faint status wash across the whole card for the two states the
-              // user must not miss (needs-you amber, unread emerald). Suppressed
-              // while the thread is open here or in another pane.
-              layout === null && statusRowWashClass(thread.indicator, isActive),
+              // A faint status wash across the whole card for the statuses that
+              // need attention (needs-you, check, failed, unread done).
+              // Suppressed while the thread is open here or in another pane.
+              layout === null && cardWashClass,
               // Lifted, not faded: the row under the cursor is the one the user
               // is acting on, so it should read as the most present thing on the
               // shelf. The two stacked gradients put an opaque sidebar base under
@@ -331,6 +356,7 @@ export function ThreadCard({
                 data-sidebar-thread-id={thread.id}
                 href="#"
                 aria-label={threadDisplayTitle(thread)}
+                aria-describedby={view && view.timeLabel !== null ? descriptionId : undefined}
                 aria-current={isActive ? "page" : undefined}
                 draggable={false}
                 aria-keyshortcuts={
@@ -409,14 +435,9 @@ export function ThreadCard({
                   ) : (
                     <>
                       {unpinButton}
-                      {/* The parent's own run time while it works; otherwise its
-                          usual status or age, with the badge showing the
-                          children still running. */}
-                      {liveStatus ? (
-                        <CompactLiveStatus thread={thread} now={now} />
-                      ) : (
-                        <StatusOrTime thread={thread} now={now} />
-                      )}
+                      {/* The compact card's status place: word and time, with
+                          the badge showing the children still running. */}
+                      <StatusOrTime thread={thread} now={now} />
                     </>
                   )}
                 </span>
@@ -524,6 +545,7 @@ export function ThreadCard({
               )}
             </div>
             {showProject ? titleLine : null}
+            {view?.stage ? <StageLine stage={view.stage} /> : null}
             <div
               data-settle-fade=""
               className="pointer-events-none relative mt-0.5 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground"
@@ -542,6 +564,9 @@ export function ThreadCard({
                   onToggle={onToggleChildren}
                 />
               ) : null}
+              {backgroundCount > 0 ? (
+                <ActivityCount label="background tasks" count={backgroundCount} />
+              ) : null}
               {thread.environment?.branchName && thread.host ? (
                 <Icon
                   name="Computer"
@@ -549,17 +574,8 @@ export function ThreadCard({
                   className="size-3 shrink-0 text-muted-foreground/60"
                 />
               ) : null}
-              {thread.activity.workflows > 0 ? (
-                <ActivityCount
-                  label="workflows"
-                  count={thread.activity.workflows}
-                />
-              ) : null}
-              {thread.activity.backgroundAgents > 0 ? (
-                <ActivityCount
-                  label="background agents"
-                  count={thread.activity.backgroundAgents}
-                />
+              {shortModel !== null ? (
+                <span className="shrink-0 font-mono">{shortModel}</span>
               ) : null}
               {isVisible ? <ThreadPullRequest threadId={thread.id} /> : null}
               <ProviderGlyph
@@ -569,6 +585,11 @@ export function ThreadCard({
             </div>
             </>
             )}
+            {view && view.timeLabel !== null ? (
+              <span id={descriptionId} className="sr-only">
+                {view.accessibleText}
+              </span>
+            ) : null}
           </div>
           {childThreads.length > 0 &&
           (childrenExpanded ||
@@ -602,15 +623,25 @@ export function ThreadCard({
 
 function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
   const branchName = thread.environment?.branchName;
-  if (branchName) {
-    const isWorktree =
-      thread.environment?.workspaceDisplayKind === "managed-worktree" ||
-      thread.environment?.workspaceDisplayKind === "unmanaged-worktree";
+  const worktreeName = threadWorktreeName(thread);
+  if (worktreeName !== null) {
     return (
       <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
         <Icon
-          name={isWorktree ? "FolderGit" : "GitBranch"}
-          aria-label={isWorktree ? "Worktree branch" : "Branch"}
+          name="FolderGit"
+          aria-label="Worktree branch"
+          className="size-3 shrink-0 text-muted-foreground/60"
+        />
+        <span className="truncate font-mono">{worktreeName}</span>
+      </span>
+    );
+  }
+  if (branchName) {
+    return (
+      <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
+        <Icon
+          name="GitBranch"
+          aria-label="Branch"
           className="size-3 shrink-0 text-muted-foreground/60"
         />
         <span className="truncate font-mono">{branchName}</span>

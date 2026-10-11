@@ -56,6 +56,27 @@ export function threadDisplayTitle(thread: PluginSidebarThread): string {
   return fallback ? fallback : "Untitled thread";
 }
 
+/**
+ * The name a worktree thread's location line shows in place of its branch:
+ * the environment's own name, else the last path segment for a plain
+ * checkout, else the branch name. Null for a thread with no worktree
+ * environment.
+ */
+export function threadWorktreeName(thread: PluginSidebarThread): string | null {
+  const env = thread.environment;
+  if (!env) return null;
+  const isWorktree =
+    env.workspaceDisplayKind === "managed-worktree" ||
+    env.workspaceDisplayKind === "unmanaged-worktree";
+  if (!isWorktree) return null;
+  if (env.name !== null) return env.name;
+  if (env.providerId === null && env.path !== null) {
+    const segments = env.path.split("/").filter(Boolean);
+    return segments.length > 0 ? segments[segments.length - 1] : null;
+  }
+  return env.branchName;
+}
+
 /** Substring match on the visible title only, preserving the incoming order. */
 export function searchThreadsByTitle(
   threads: readonly PluginSidebarThread[],

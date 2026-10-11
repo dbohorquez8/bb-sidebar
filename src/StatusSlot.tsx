@@ -3,12 +3,14 @@ import {
   type PluginSidebarThread,
   type PluginSidebarThreadIndicator,
 } from "@get-bb/plugin-sdk/app";
-import { useMemo } from "react";
+import { useContext, useId, useMemo } from "react";
 import { isWorkingIndicator } from "./child-status";
 import { cn } from "./lib/utils";
 import { relativeTimeLabel } from "./relative-time";
 import { useWorkingSinceContext } from "./useWorkingSince";
 import { statusWithDuration } from "./working-since";
+import { AttentionContext } from "./useAttention";
+import type { AttentionView, ResolvedStatus, WashKind } from "./attention";
 
 /**
  * The default trailing slot for cards and flat rows: fixed and right-aligned.
@@ -38,12 +40,121 @@ export const TRAILING_GLYPH_BOX_CLASS =
  * A live status carries how long the work has run ("Working · 5m"), so the
  * slot answers "is it stuck?" as well as "what is it doing?".
  */
+/** Status word colour, from the attention tokens, or BB's own tone for its own words. */
+function attentionLabelClass(status: ResolvedStatus): string {
+  switch (status.kind) {
+    case "needs-you":
+      return "text-[color:var(--bb-sidebar-status-needs-you)]";
+    case "check":
+      return "text-[color:var(--bb-sidebar-status-check)]";
+    case "failed":
+      return "text-[color:var(--bb-sidebar-status-failed)]";
+    case "working":
+      return "text-[color:var(--bb-sidebar-status-working)]";
+    case "background":
+      return "text-[color:var(--bb-sidebar-status-background)]";
+    case "done":
+      return "text-[color:var(--bb-sidebar-status-done)]";
+    case "bb-word":
+      return status.word === "draft" || status.word === "queued"
+        ? "text-[color:var(--bb-sidebar-tone-draft)]"
+        : "text-[color:var(--bb-sidebar-tone-working)]";
+    case "idle":
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+/** The whole-card wash for a status, or "" for none (needs-you, check, failed, done-unread only). */
+export function attentionWashClass(wash: WashKind | null): string {
+  switch (wash) {
+    case "needs-you":
+      return "bg-[color:var(--bb-sidebar-wash-needs-you)] hover:bg-[color:var(--bb-sidebar-wash-needs-you-hover)]";
+    case "check":
+      return "bg-[color:var(--bb-sidebar-wash-check)] hover:bg-[color:var(--bb-sidebar-wash-check-hover)]";
+    case "failed":
+      return "bg-[color:var(--bb-sidebar-wash-failed)] hover:bg-[color:var(--bb-sidebar-wash-failed-hover)]";
+    case "done-unread":
+      return "bg-[color:var(--bb-sidebar-wash-done-unread)] hover:bg-[color:var(--bb-sidebar-wash-done-unread-hover)]";
+    case null:
+    default:
+      return "";
+  }
+}
+
 export function StatusOrTime({
   thread: listedThread,
   now,
 }: {
   thread: PluginSidebarThread;
   /** Quantized clock, shared by every row in one render. */
+  now: number;
+}) {
+  const attention = useContext(AttentionContext);
+  const view = attention?.viewFor(listedThread.id) ?? null;
+  // Which hooks run must not depend on whether a view exists yet: the
+  // attention model can arrive (or a thread's view can disappear) after the
+  // first render, and a component may not change which hooks it calls
+  // between renders. Delegating to one or the other CHILD component — rather
+  // than branching inside this one, before calling the fallback's hooks —
+  // keeps every render of this component itself hook-free past this point.
+  if (view) {
+    return <AttentionStatusOrTime thread={listedThread} view={view} now={now} />;
+  }
+  return <FallbackStatusOrTime thread={listedThread} now={now} />;
+}
+
+function AttentionStatusOrTime({
+  thread: listedThread,
+  view,
+  now,
+}: {
+  thread: PluginSidebarThread;
+  view: AttentionView;
+  now: number;
+}) {
+  const descriptionId = useId();
+  if (view.label === null) {
+    // Idle: only the age, exactly as today's card does.
+    return (
+      <span className="tabular-nums text-2xs text-muted-foreground">
+        {relativeTimeLabel(listedThread.updatedAt, now)}
+      </span>
+    );
+  }
+  return (
+    <>
+      <span
+        aria-label={
+          listedThread.hasPendingInteraction
+            ? view.label
+            : (listedThread.indicatorLabel ?? view.label)
+        }
+        aria-describedby={view.timeLabel !== null ? descriptionId : undefined}
+        className={cn(
+          "max-w-full truncate text-2xs font-medium",
+          attentionLabelClass(view.status),
+        )}
+      >
+        {view.label}
+      </span>
+      {view.timeLabel !== null ? (
+        <span className="text-2xs tabular-nums text-muted-foreground"> {view.timeLabel}</span>
+      ) : null}
+      {view.timeLabel !== null ? (
+        <span id={descriptionId} className="sr-only">
+          {view.accessibleText}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function FallbackStatusOrTime({
+  thread: listedThread,
+  now,
+}: {
+  thread: PluginSidebarThread;
   now: number;
 }) {
   const thread = useThreadWithDraft(listedThread);

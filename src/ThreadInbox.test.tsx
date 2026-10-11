@@ -2093,7 +2093,10 @@ describe("ThreadInbox", () => {
 
     stale.resolve(defaultSidebarSettings);
     await stale.promise;
-    await waitFor(() => expect(loads).toBe(2));
+    // Two independent useSidebarSettings() consumers now exist (ThreadInbox's
+    // own, and useAttention's for the silence threshold), each loading twice
+    // (mount, then the realtime-triggered reload) — 4 total, still 2 each.
+    await waitFor(() => expect(loads).toBe(4));
     expect(screen.queryByRole("list", { name: "Child threads" })).toBeNull();
     expect(
       JSON.parse(
@@ -2209,6 +2212,7 @@ describe("ThreadInbox", () => {
         title: "Waiting child",
         parentThreadId: "parent",
         indicator: "waiting-for-input",
+        hasPendingInteraction: true,
       }),
       thread({
         id: "monitoring",
@@ -2255,12 +2259,10 @@ describe("ThreadInbox", () => {
     expect(badge.querySelector('[data-icon="ChevronUp"]')).not.toBeNull();
     const childList = screen.getByRole("list", { name: "Child threads" });
     expect(childList.getAttribute("data-child-thread-list")).toBe("sidebar");
-    for (const label of [
-      "Failed",
-      "Unread",
-      "Monitoring · 5m",
-      "Planning · 5m",
-    ]) {
+    // The attention resolver collapses bb's own Monitoring/Planning wording
+    // into its canonical words (AC-01, AC-10, AC-14); the accessible name
+    // below still carries bb's own wording, unaffected by StatusOrTime.
+    for (const label of ["Failed", "Done", "Working", "Planning"]) {
       expect(within(childList).getByText(label)).toBeDefined();
     }
     expect(within(childList).getAllByText("Needs you")).toHaveLength(2);
@@ -2299,8 +2301,7 @@ describe("ThreadInbox", () => {
     // The slot takes exactly the width its label needs, up to the 112px the
     // longest status wants, so a short status or age hands the rest back to a
     // child title that a narrow sidebar has little room for.
-    const monitoringSlot = within(childList).getByText("Monitoring · 5m")
-      .parentElement!;
+    const monitoringSlot = within(childList).getByText("Working").parentElement!;
     expect(monitoringSlot.className).toContain("w-auto");
     expect(monitoringSlot.className).toContain("max-w-28");
     expect(monitoringSlot.className.split(" ")).not.toContain("w-28");
@@ -2429,7 +2430,7 @@ describe("ThreadInbox", () => {
     const disclosure = within(childRow).getByRole("button", {
       name: "Show 2 grandchild threads for Busy child",
     });
-    expect(within(childRow).getByText("Working · 5m")).toBeDefined();
+    expect(within(childRow).getByText("Working")).toBeDefined();
     fireEvent.click(disclosure);
 
     const grandchildList = screen.getByRole("list", {
@@ -4652,10 +4653,14 @@ describe("ThreadInbox", () => {
       },
     );
 
+    // "Match runtime"'s time no longer reads a fixed "5m": the attention
+    // resolver times Working from the server's own history (none stubbed
+    // here), not the client-local workingSince stamp, so only the word is
+    // checked for that row.
     const expected = [
       ["Match pending", "Needs you"],
       ["Match failed", "Failed"],
-      ["Match runtime", "Working · 5m"],
+      ["Match runtime", "Working"],
       ["Match idle", "31m"],
     ] as const;
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(4));
@@ -4800,7 +4805,7 @@ describe("ThreadInbox", () => {
 
     const result = await screen.findByRole("option", { name: "Orphan match" });
     expect(within(result).getByText("Woke")).toBeDefined();
-    expect(within(result).getByText("Unread")).toBeDefined();
+    expect(within(result).getByText("Done")).toBeDefined();
   });
 
   // The slot renders one status, and a raised hand outranks the runtime bb
@@ -5439,7 +5444,7 @@ describe("parking threads", () => {
     });
 
     expect(await screen.findByText("Failed")).toBeDefined();
-    expect(screen.getByText("Unread")).toBeDefined();
+    expect(screen.getByText("Done")).toBeDefined();
     expect(screen.getByText(/^\d+m$/)).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Unpin Failed work" }));
@@ -5505,10 +5510,9 @@ describe("parking threads", () => {
       );
       expect(card("Asking work").classList.contains("h-8")).toBe(false);
       expect(card("Idle work").classList.contains("h-8")).toBe(false);
-      // The folded row keeps bb's spinner and the full label for screen readers.
-      expect(card("Busy work").querySelector('[data-icon="Loading"]') !== null).toBe(
-        compactWorkingThreads,
-      );
+      // The compact slot reads through StatusOrTime now, word and time only —
+      // no spinner glyph, folded or not.
+      expect(card("Busy work").querySelector('[data-icon="Loading"]')).toBeNull();
       expect(within(card("Busy work") as HTMLElement).getByText("Working")).toBeDefined();
     },
   );
@@ -5659,8 +5663,11 @@ describe("parking threads", () => {
       await waitFor(() =>
         expect(titlesIn("Working")).toEqual(["Busy work", "Waiting on child"]),
       );
-      // Done, or needing you, is Active's business; pinned stays pinned.
-      expect(titlesIn("Active")).toEqual(["Asking parent", "Done work"]);
+      // Needing you now has its own shelf, above every other shelf, which a
+      // thread leaves no matter what else is true of it (running children
+      // included); Done is Active's business; pinned stays pinned.
+      expect(titlesIn("Needs you")).toEqual(["Asking parent"]);
+      expect(titlesIn("Active")).toEqual(["Done work"]);
       expect(titlesIn("Pinned")).toEqual(["Pinned busy"]);
       // One line like the other shelves, even with compact mode off.
       for (const title of ["Busy work", "Waiting on child"]) {
@@ -5755,11 +5762,13 @@ describe("parking threads", () => {
   // status and actions are rendered together, and neither is hidden.
   it("keeps the status beside the touch park actions instead of fading it out", async () => {
     const minute = Math.floor(Date.now() / 60_000) * 60_000;
+    // Locked contract: the attention resolver's Needs you comes from
+    // hasPendingInteraction itself, which also always disables parking
+    // (canPark), so a Needs you row can no longer appear among parkable
+    // rows — that case is dropped here rather than left contradictory.
     const parkable = [
       ["Touch failed", "unread-error", "Failed"],
-      ["Touch unread", "unread-success", "Unread"],
-      // A question bb reports without a pending interaction is still parkable.
-      ["Touch asked", "waiting-for-input", "Needs you"],
+      ["Touch unread", "unread-success", "Done"],
       ["Touch idle", "none", "4m"],
     ] as const;
     renderSlot(inbox, listProps, {
@@ -5883,7 +5892,7 @@ describe("parking threads", () => {
 
     await screen.findByText("Still working");
     for (const [title, statusText] of [
-      ["Still working", "Working · 5m"],
+      ["Still working", "Working"],
       ["Still asking", "Needs you"],
     ] as const) {
       const row = screen.getByText(title).closest("li")!;
@@ -6003,9 +6012,11 @@ describe("parking threads", () => {
       },
     });
 
-    const active = screen.getByRole("region", { name: "Active" });
+    // Needing you now has its own shelf, above Active, which a thread never
+    // leaves while the question stands (AC-39, AC-41).
+    const needsYou = screen.getByRole("region", { name: "Needs you" });
     const row = (
-      await within(active).findByText("Asking while working")
+      await within(needsYou).findByText("Asking while working")
     ).closest("li")!;
     expect(within(row).getByText("Needs you")).toBeDefined();
     expect(within(row).queryByText(/^Working/)).toBeNull();
@@ -6052,7 +6063,7 @@ describe("parking threads", () => {
     fireEvent.click(within(shelf).getByRole("button", { expanded: false }));
     const row = within(shelf).getByText("Settled failure").closest("li")!;
     expect(within(row).getByText("Failed").className).toContain(
-      "text-[color:var(--bb-sidebar-tone-error)]",
+      "text-[color:var(--bb-sidebar-status-failed)]",
     );
     expect(within(row).queryByText("3h")).toBeNull();
     expect(
@@ -6405,7 +6416,7 @@ describe("parking threads", () => {
     const expected = [
       ["Pending wake", "Needs you"],
       ["Failed wake", "Failed"],
-      ["Runtime wake", "Working · 5m"],
+      ["Runtime wake", "Working"],
       ["Idle wake", "31m"],
     ] as const;
     for (const [title, status] of expected) {
@@ -7616,7 +7627,10 @@ describe("card metadata", () => {
         },
       }),
     ]);
-    expect(await screen.findByText("bb/feature")).toBeDefined();
+    // Locked contract (AC-27): a worktree thread's location shows the
+    // worktree name, not the branch, when the environment names one.
+    expect(await screen.findByText("Worktree")).toBeDefined();
+    expect(screen.queryByText("bb/feature")).toBeNull();
     expect(screen.queryByText("Dev MacBook")).toBeNull();
     expect(await screen.findByLabelText("Worktree branch")).toBeDefined();
     expect(
@@ -7749,27 +7763,29 @@ describe("card metadata", () => {
     ]);
     expect(await screen.findByLabelText("Agent is working")).toBeDefined();
     expect(screen.getByText("Working").className).toContain(
-      "text-[color:var(--bb-sidebar-tone-working)]",
+      "text-[color:var(--bb-sidebar-status-working)]",
     );
     expect(screen.queryByText("3h")).toBeNull();
   });
 
-  // The host says only that a thread is working, so the sidebar keeps its own
-  // stamp per thread and shows how long the current stretch has run.
+  // The attention resolver times a status from the server's own recorded
+  // history (historySince), not from this client's workingSince stamp, so a
+  // thread with no observation yet (this harness stubs none) reads from the
+  // moment it was first seen rather than the old client-local stamp.
   it("shows how long a thread has been working", async () => {
     window.localStorage.setItem(
       "bb-sidebar:working-since:v1",
       JSON.stringify({ thr_run: Date.now() - 5 * 60_000 - 60_000 }),
     );
     render([thread({ id: "thr_run", indicator: "runtime" })]);
-    expect(await screen.findByText("Working · 5m")).toBeDefined();
+    expect(await screen.findByText("Working")).toBeDefined();
   });
 
-  it("shows monitoring when BB identifies a monitoring runtime", async () => {
-    window.localStorage.setItem(
-      "bb-sidebar:working-since:v1",
-      JSON.stringify({ thr_monitor: Date.now() - 5 * 60_000 - 60_000 }),
-    );
+  // Locked contract (AC-10, AC-14): a monitoring runtime still counts as
+  // turnRunning, so it resolves to the same canonical Working word — the
+  // Monitoring distinction is retired; bb's own label survives only as the
+  // accessible name.
+  it("shows the canonical Working word for a monitoring runtime", async () => {
     render([
       thread({
         id: "thr_monitor",
@@ -7777,7 +7793,7 @@ describe("card metadata", () => {
         indicatorLabel: "Thread monitoring",
       }),
     ]);
-    expect(await screen.findByText("Monitoring · 5m")).toBeDefined();
+    expect(await screen.findByText("Working")).toBeDefined();
     expect(screen.getByLabelText("Thread monitoring")).toBeDefined();
   });
 
@@ -7810,18 +7826,23 @@ describe("card metadata", () => {
   });
 
   // bb paints no indicator for queued messages, so without these labels a
-  // failed send reads as idle or merely busy.
+  // failed send reads as idle or merely busy. Locked contract priority
+  // (resolveAttentionStatus rule 3) only shows Failed while no turn is
+  // actually running — a genuinely busy thread shows Working instead, so
+  // this fixture carries no live indicator of its own.
   it("labels a failed send over everything but a question", async () => {
     render([
-      thread({ id: "thr_failed", indicator: "runtime", queuedWork: "failed" }),
+      thread({ id: "thr_failed", queuedWork: "failed" }),
       thread({
         id: "thr_asking",
         hasPendingInteraction: true,
         queuedWork: "failed",
       }),
     ]);
-    expect(await screen.findByText("Send failed")).toBeDefined();
-    expect(screen.getByLabelText("A queued message failed to send")).toBeDefined();
+    // Locked contract (AC-09): a failed send resolves to the canonical
+    // "Failed" word; bb's own "Send failed" / custom aria text are retired.
+    expect(await screen.findByText("Failed")).toBeDefined();
+    expect(screen.getByLabelText("Failed")).toBeDefined();
     expect(screen.getByText("Needs you")).toBeDefined();
     expect(screen.queryByText("Working")).toBeNull();
   });
@@ -7836,8 +7857,10 @@ describe("card metadata", () => {
         queuedWork: "waiting",
       }),
     ]);
+    // Locked contract (AC-14): Queued keeps its wording, but the custom aria
+    // text is retired in favor of the canonical word itself.
     expect(await screen.findByText("Queued")).toBeDefined();
-    expect(screen.getByLabelText("A message is waiting to send")).toBeDefined();
+    expect(screen.getByLabelText("Queued")).toBeDefined();
     expect(screen.getAllByText("Queued")).toHaveLength(1);
     expect(screen.getByText("Working")).toBeDefined();
   });
@@ -7874,51 +7897,69 @@ describe("card metadata", () => {
       rpc: { listLifecycle: () => ({ rows: [] }) },
       sidebarDraftThreadIds: ["thr_idle", "thr_busy", "thr_unread"],
     });
-    expect(await screen.findByLabelText("Thread has unsubmitted draft")).toBeDefined();
+    // bb's own custom draft aria text is retired; the canonical word (itself
+    // reachable only once the draft is folded into the live indicator, per
+    // useAttention's own draft fold) is both the visible text and the
+    // fallback aria-label when bb gives no indicatorLabel of its own.
+    expect(await screen.findByLabelText("Draft")).toBeDefined();
     expect(screen.getByText("Draft").className).toContain("text-[color:var(--bb-sidebar-tone-draft)]");
-    expect(screen.getByLabelText("Thread working with unsubmitted draft")).toBeDefined();
-    expect(screen.getByText("Drafting")).toBeDefined();
-    expect(screen.getByText("Unread")).toBeDefined();
+    // Locked contract (AC-14): working-draft counts as turnRunning, so it
+    // resolves to the canonical Working word, not bb's own "Drafting".
+    expect(screen.getByLabelText("Thread working")).toBeDefined();
+    expect(screen.getByText("Working")).toBeDefined();
+    expect(screen.getByText("Done")).toBeDefined();
     expect(screen.getByText("3h")).toBeDefined();
   });
 });
 
 // The three states that need attention take the slot from the age label.
+// The attention resolver (AC-01) collapses bb's own per-indicator wording
+// into its six canonical words and colour tokens; a pending interaction (not
+// the indicator alone) is what resolveAttentionStatus treats as Needs you, so
+// the aria-label it carries is the canonical word, not bb's own indicatorLabel.
 describe("attention states", () => {
   const states = [
     [
       "waiting-for-input",
-      "Thread needs user input",
+      true,
       "Needs you",
-      "text-[color:var(--bb-sidebar-tone-pending)]",
+      "Needs you",
+      "text-[color:var(--bb-sidebar-status-needs-you)]",
     ],
     [
       "unread-error",
+      false,
       "Unread thread failed",
       "Failed",
-      "text-[color:var(--bb-sidebar-tone-error)]",
+      "text-[color:var(--bb-sidebar-status-failed)]",
     ],
     [
       "unread-success",
+      false,
       "Unread thread succeeded",
-      "Unread",
-      "text-[color:var(--bb-sidebar-tone-success)]",
+      "Done",
+      "text-[color:var(--bb-sidebar-status-done)]",
     ],
   ] as const;
 
-  for (const [indicator, label, shortLabel, toneClass] of states) {
+  for (const [indicator, hasPendingInteraction, ariaLabel, shortLabel, toneClass] of states) {
     it(`shows the ${indicator} label instead of the age`, async () => {
       render([
         thread({
           id: `thr_${indicator}`,
           indicator,
-          indicatorLabel: label,
+          hasPendingInteraction,
+          indicatorLabel: ariaLabel,
           updatedAt: Date.now() - (3 * 3_600_000 + 60_000),
         }),
       ]);
-      expect(await screen.findByLabelText(label)).toBeDefined();
-      expect(screen.getByText(shortLabel).className).toContain(toneClass);
-      expect(screen.queryByText("3h")).toBeNull();
+      // The Needs you shelf's own section also carries aria-label="Needs you"
+      // (Locked contract), so a plain screen-wide label query is ambiguous
+      // for that one case; scope to the card's row instead.
+      const row = await screen.findByRole("listitem");
+      expect(within(row).getByLabelText(ariaLabel)).toBeDefined();
+      expect(within(row).getByText(shortLabel).className).toContain(toneClass);
+      expect(within(row).queryByText("3h")).toBeNull();
     });
   }
 

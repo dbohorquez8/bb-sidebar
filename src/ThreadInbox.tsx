@@ -45,6 +45,9 @@ import { createDragPreview } from "./drag-preview";
 import { usePinnedReorder } from "./usePinnedReorder";
 import { useInboxReorder } from "./useInboxReorder";
 import { TRAILING_GLYPH_BOX_CLASS } from "./StatusSlot";
+import { AttentionContext, useAttention } from "./useAttention";
+import { placeNeedsYouShelf } from "./attention";
+import { NeedsYouShelf } from "./NeedsYouShelf";
 import { WorkingSinceContext, useWorkingSince } from "./useWorkingSince";
 import { JumpHintsContext, useJumpHints } from "./JumpHints";
 import { useSidebarSettings } from "./useSidebarSettings";
@@ -102,6 +105,10 @@ const CHILD_EXPANSION_STORAGE_KEY = "bb-sidebar:child-expansion:v1";
 const PROJECT_COLLAPSE_STORAGE_KEY = "bb-sidebar:project-collapse:v1";
 const SETTLED_INITIAL_LIMIT = 10;
 const SETTLED_PAGE_SIZE = 25;
+// Pane layout is only known per-row (ThreadCard queries it itself); the shared
+// attention model treats every thread as not open in another pane and each
+// card corrects its own wash locally against its own split hook.
+const NO_OPEN_THREAD_IDS: ReadonlySet<string> = new Set();
 
 function threadNeedsAttention(thread: PluginSidebarThread): boolean {
   return thread.hasPendingInteraction || thread.indicator === "waiting-for-input" ||
@@ -532,6 +539,12 @@ export function ThreadInbox({
     return () => clearInterval(timer);
   }, []);
   const now = nowMinute * 60_000;
+  const attention = useAttention(threads, {
+    activeThreadId,
+    now,
+    inactiveAfterHours,
+    openThreadIds: NO_OPEN_THREAD_IDS,
+  });
   const [expandedShelves, setExpandedShelves] =
     useState<ShelfExpansionState>(readShelfExpansion);
   const [expandedChildParentIds, setExpandedChildParentIds] =
@@ -617,15 +630,26 @@ export function ThreadInbox({
     parked,
     snoozed,
     settled,
+    needsYou,
   } = useMemo(() => {
     const allVisible = visibleInboxThreads(threads);
+    // Every project, every parent, regardless of scope (AC-40): a thread that
+    // needs the owner moves to this shelf no matter where it would otherwise sit.
+    const needsYouPlacement = placeNeedsYouShelf(
+      allVisible,
+      (thread) => attention.isNeedsYou(thread.id),
+      (thread) => attention.needsYouSince(thread.id) ?? 0,
+    );
     const scoped = filterByProject(
       allVisible,
       scope === ALL_PROJECTS ? null : scope,
     );
     // Children live in their parent's header chip instead of the flat list;
-    // an orphan whose parent is not on screen stays here.
-    const visible = hideChildrenOfVisibleParents(scoped);
+    // an orphan whose parent is not on screen stays here. A thread moved to
+    // Needs you leaves every other shelf until it no longer needs the owner.
+    const visible = hideChildrenOfVisibleParents(scoped).filter(
+      (thread) => !needsYouPlacement.movedIds.has(thread.id),
+    );
     const active: typeof visible = [];
     const onParkedShelf: typeof visible = [];
     const onSnoozeShelf: typeof visible = [];
@@ -696,9 +720,11 @@ export function ThreadInbox({
           (lifecycle.wakeAtFor(left) ?? 0) - (lifecycle.wakeAtFor(right) ?? 0),
       ),
       settled: sortSettledThreads(onSettledShelf, lifecycle.settledAtFor),
+      needsYou: needsYouPlacement.needsYou,
     };
   }, [
     activeThreadId,
+    attention,
     childrenByParentId,
     inactiveAfterHours,
     lifecycle,
@@ -1402,11 +1428,13 @@ export function ThreadInbox({
   const wokeThreadIds = useMemo(
     () =>
       new Set(
-        [...pinned, ...inbox, ...working, ...inactive]
+        // Needs you included: a thread moved to that shelf still answers
+        // "is it woke" the same as it would on the shelf it left.
+        [...pinned, ...inbox, ...working, ...inactive, ...needsYou]
           .filter((thread) => lifecycle.wokeFor(thread))
           .map((thread) => thread.id),
       ),
-    [inactive, inbox, lifecycle, pinned, working],
+    [inactive, inbox, lifecycle, needsYou, pinned, working],
   );
 
   const parkActiveThread = async (
@@ -1498,6 +1526,7 @@ export function ThreadInbox({
   );
 
   return (
+    <AttentionContext.Provider value={attention}>
     <ProjectColorsProvider
       enabled={sidebarSettings?.projectColorsEnabled === true}
       display={sidebarSettings?.projectColorDisplay ?? DEFAULT_SIDEBAR_SETTINGS.projectColorDisplay}
@@ -1566,6 +1595,9 @@ export function ThreadInbox({
               attachLowerRef={attachDockAutoAnimateRef}
               upper={
                 <>
+                  <NeedsYouShelf count={needsYou.length}>
+                    {needsYou.map((thread) => renderActiveThread(thread, "inbox"))}
+                  </NeedsYouShelf>
                   {pinned.length > 0 ? (
                     <CollapsibleShelf
                       label="Pinned"
@@ -1790,6 +1822,7 @@ export function ThreadInbox({
     </ChildThreadDisplayContext.Provider>
     </WorkingSinceContext.Provider>
     </ProjectColorsProvider>
+    </AttentionContext.Provider>
   );
 }
 

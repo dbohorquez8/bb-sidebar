@@ -134,6 +134,29 @@
   --bb-sidebar-monogram-6-fg: var(--bb-sidebar-amber-700);
   --bb-sidebar-monogram-7-bg: var(--bb-sidebar-red-100);
   --bb-sidebar-monogram-7-fg: var(--bb-sidebar-red-700);
+
+  /* Attention status words (StatusOrTime). */
+  --bb-sidebar-status-needs-you: oklch(50% 0.2 27);
+  --bb-sidebar-status-check: oklch(52% 0.15 55);
+  --bb-sidebar-status-failed: oklch(50% 0.22 335);
+  --bb-sidebar-status-working: oklch(50% 0.11 95);
+  --bb-sidebar-status-background: oklch(48% 0.12 150);
+  --bb-sidebar-status-done: oklch(40% 0.01 260);
+
+  /* Whole-card washes for the statuses that need attention (attentionWashClass). */
+  --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-red-100) 50%, transparent);
+  --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-red-100) 70%, transparent);
+  --bb-sidebar-wash-check: color-mix(in oklab, var(--bb-sidebar-orange-300) 35%, transparent);
+  --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-orange-300) 50%, transparent);
+  --bb-sidebar-wash-failed: color-mix(in oklab, var(--bb-sidebar-pink-100) 50%, transparent);
+  --bb-sidebar-wash-failed-hover: color-mix(in oklab, var(--bb-sidebar-pink-100) 70%, transparent);
+  --bb-sidebar-wash-done-unread: color-mix(in oklab, #000000 6%, transparent);
+  --bb-sidebar-wash-done-unread-hover: color-mix(in oklab, #000000 10%, transparent);
+
+  /* Workflow stage progress marks (StageLine). */
+  --bb-sidebar-stage-mark-done: var(--bb-sidebar-emerald-600);
+  --bb-sidebar-stage-mark-current: var(--color-foreground, currentColor);
+  --bb-sidebar-stage-mark-todo: color-mix(in oklab, var(--color-muted-foreground, currentColor) 35%, transparent);
 }
 
 .dark {
@@ -192,6 +215,39 @@
   --bb-sidebar-monogram-6-fg: var(--bb-sidebar-amber-300);
   --bb-sidebar-monogram-7-bg: color-mix(in oklab, var(--bb-sidebar-red-950) 80%, transparent);
   --bb-sidebar-monogram-7-fg: var(--bb-sidebar-red-300);
+
+  --bb-sidebar-status-needs-you: var(--bb-sidebar-red-300);
+  --bb-sidebar-status-check: var(--bb-sidebar-orange-300);
+  --bb-sidebar-status-failed: oklch(80% 0.13 335);
+  --bb-sidebar-status-working: oklch(88% 0.15 95);
+  --bb-sidebar-status-background: var(--bb-sidebar-emerald-300);
+  --bb-sidebar-status-done: oklch(92% 0.01 260);
+
+  --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-red-950) 60%, transparent);
+  --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-red-950) 80%, transparent);
+  --bb-sidebar-wash-check: color-mix(in oklab, var(--bb-sidebar-orange-600) 45%, transparent);
+  --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-orange-600) 60%, transparent);
+  --bb-sidebar-wash-failed: color-mix(in oklab, var(--bb-sidebar-pink-950) 60%, transparent);
+  --bb-sidebar-wash-failed-hover: color-mix(in oklab, var(--bb-sidebar-pink-950) 80%, transparent);
+  --bb-sidebar-wash-done-unread: color-mix(in oklab, #ffffff 6%, transparent);
+  --bb-sidebar-wash-done-unread-hover: color-mix(in oklab, #ffffff 10%, transparent);
+
+  --bb-sidebar-stage-mark-done: var(--bb-sidebar-emerald-300);
+  --bb-sidebar-stage-mark-current: var(--color-foreground, currentColor);
+  --bb-sidebar-stage-mark-todo: color-mix(in oklab, var(--color-muted-foreground, currentColor) 35%, transparent);
+}
+
+/* Workflow stage progress marks (StageLine): one appearance per mark kind. */
+.bb-sidebar-stage-mark-done {
+  background-color: var(--bb-sidebar-stage-mark-done);
+}
+
+.bb-sidebar-stage-mark-current {
+  background-color: var(--bb-sidebar-stage-mark-current);
+}
+
+.bb-sidebar-stage-mark-todo {
+  background-color: var(--bb-sidebar-stage-mark-todo);
 }
 
 /*
