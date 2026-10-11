@@ -1,3 +1,4 @@
+import { relativeTimeLabel } from "../relative-time";
 import type { AttentionStatus, BackgroundWork, BbWord, ResolvedStatus, WashKind } from "./types";
 
 export const STATUS_LABELS: Readonly<Record<Exclude<AttentionStatus, "idle">, string>> = {
@@ -17,15 +18,17 @@ export const BB_WORD_LABELS: Readonly<Record<BbWord, string>> = {
 };
 
 export function isTimedStatus(status: ResolvedStatus): boolean {
-  throw new Error("not implemented");
+  if (status.kind === "idle") return false;
+  if (status.kind === "bb-word") return status.word !== "draft" && status.word !== "queued";
+  return true;
 }
 
 export function formatTimeInStatus(since: number, now: number): string {
-  throw new Error("not implemented");
+  return relativeTimeLabel(since, now);
 }
 
 export function backgroundWorkCount(work: BackgroundWork): number {
-  throw new Error("not implemented");
+  return work.workers + work.commands + work.workflows;
 }
 
 export function washFor(
@@ -33,5 +36,10 @@ export function washFor(
   unreadResult: boolean,
   openInThisWindow: boolean,
 ): WashKind | null {
-  throw new Error("not implemented");
+  if (openInThisWindow) return null;
+  if (status.kind === "needs-you" || status.kind === "check" || status.kind === "failed") {
+    return status.kind;
+  }
+  if (status.kind === "done" && unreadResult) return "done-unread";
+  return null;
 }

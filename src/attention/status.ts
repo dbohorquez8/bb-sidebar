@@ -17,7 +17,24 @@ export interface AttentionInput {
 }
 
 export function resolveAttentionStatus(input: AttentionInput): ResolvedStatus {
-  throw new Error("not implemented");
+  const backgroundCount =
+    input.background.workers + input.background.commands + input.background.workflows;
+
+  if (input.hasPendingInteraction || input.verdict === "needs-you") return { kind: "needs-you" };
+  if (!input.turnRunning && input.silent && (backgroundCount > 0 || input.verdict === "working")) {
+    return { kind: "check" };
+  }
+  if (input.failureReported && !input.turnRunning) return { kind: "failed" };
+  if (input.turnRunning || input.verdict === "working") return { kind: "working" };
+  if (backgroundCount > 0) return { kind: "background" };
+  if (
+    input.unreadResult ||
+    ((input.verdict === "done" || input.verdict === "background") && !input.onInactiveShelf)
+  ) {
+    return { kind: "done" };
+  }
+  if (input.bbWord !== null) return { kind: "bb-word", word: input.bbWord };
+  return { kind: "idle" };
 }
 
 export function attentionInputFromThread(
@@ -29,12 +46,62 @@ export function attentionInputFromThread(
     failureAcknowledged: boolean;
   },
 ): AttentionInput {
-  throw new Error("not implemented");
+  const turnRunning =
+    isTurnInFlight(thread.status) ||
+    thread.indicator === "runtime" ||
+    thread.indicator === "working-draft";
+
+  const failureReported =
+    (thread.indicator === "unread-error" ||
+      thread.queuedWork === "failed" ||
+      thread.indicator === "queued-failed") &&
+    !context.failureAcknowledged;
+
+  const unreadResult = thread.indicator === "unread-success";
+
+  const background: BackgroundWork = {
+    workers: thread.activity.backgroundAgents,
+    commands: thread.activity.backgroundCommands,
+    workflows: thread.activity.workflows,
+  };
+
+  let bbWord: BbWord | null = null;
+  if (thread.indicator === "draft") {
+    bbWord = "draft";
+  } else if (thread.queuedWork === "waiting" || thread.indicator === "queued-waiting") {
+    bbWord = "queued";
+  } else if (thread.indicator === "plan-mode") {
+    bbWord = "planning";
+  } else if (thread.indicator === "goal") {
+    bbWord = "goal";
+  }
+
+  return {
+    hasPendingInteraction: thread.hasPendingInteraction,
+    turnRunning,
+    failureReported,
+    unreadResult,
+    background,
+    verdict: context.verdict,
+    silent: context.silent,
+    onInactiveShelf: context.onInactiveShelf,
+    bbWord,
+  };
 }
 
 export function verdictFor(
   reply: ObservedReply | null,
   enabledPresets: readonly AttentionPreset[],
 ): StateRuleKind | null {
-  throw new Error("not implemented");
+  if (!reply) return null;
+  let best: { line: number; kind: StateRuleKind } | null = null;
+  for (const preset of enabledPresets) {
+    if (preset.kind !== "state-markers") continue;
+    const match = reply.matches[preset.id];
+    if (!match) continue;
+    if (!best || match.line > best.line) {
+      best = { line: match.line, kind: match.kind };
+    }
+  }
+  return best ? best.kind : null;
 }
