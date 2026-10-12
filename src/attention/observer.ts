@@ -17,12 +17,16 @@ import {
   finalReplyTurn,
   HISTORY_EVENT_TYPES,
   HISTORY_PAGE_SIZE,
+  mergeChildSteps,
   parseStoredObservation,
   rowsToObservationEvents,
 } from "./observation";
 import { ATTENTION_PRESETS } from "./presets";
 import { ATTENTION_CHANNEL } from "./settings";
-import type { AttentionPreset, ThreadEventRowLike, ThreadObservation } from "./types";
+import type { AttentionPreset, ObservedStep, ThreadEventRowLike, ThreadObservation } from "./types";
+
+const CHILD_SCAN_LIMIT = 20; // newest children read per parent
+const CHILD_SCAN_TTL_MS = 30_000; // events cover changes between scans
 
 type SyncResult = "changed" | "unchanged" | "unavailable";
 
@@ -236,16 +240,18 @@ export function createAttentionObserver(
     return { result: changed ? "changed" : "unchanged", newestAt, observedAt: next.observedAt };
   }
 
-  // A child's own rows count as its parent's background activity.
-  async function bumpParent(parentId: string, at: number): Promise<boolean> {
+  // A child's own rows count as its parent's background activity, and its
+  // workflow steps count as the parent's (newest wins, resets respected).
+  async function bumpParent(
+    parentId: string,
+    at: number | null,
+    childSteps: Readonly<Record<string, ObservedStep>>,
+  ): Promise<boolean> {
     return serialized(parentId, async () => {
       const stored = readRecord(parentId);
-      const next = applyObservationEvent(
-        stored ?? emptyObservation(parentId, now()),
-        parentId,
-        { kind: "background-activity", at },
-        presets,
-      );
+      let next = stored ?? emptyObservation(parentId, now());
+      if (at !== null) next = applyObservationEvent(next, parentId, { kind: "background-activity", at }, presets);
+      next = mergeChildSteps(next, childSteps, presets);
       if (stored && comparable(stored) === comparable(next)) return false;
       writeRecord(next);
       return true;
@@ -256,10 +262,44 @@ export function createAttentionObserver(
     const outcome = await serialized(threadId, () => syncThread(threadId, hint));
     const changedIds = outcome.result === "changed" ? [threadId] : [];
     const parentId = parents.get(threadId) ?? null;
-    if (parentId !== null && parentId !== threadId && outcome.newestAt !== null) {
-      if (await bumpParent(parentId, outcome.newestAt)) changedIds.push(parentId);
+    if (parentId !== null && parentId !== threadId) {
+      const childSteps = readRecord(threadId)?.steps ?? {};
+      const hasSteps = Object.keys(childSteps).length > 0;
+      if ((outcome.newestAt !== null || hasSteps) && (await bumpParent(parentId, outcome.newestAt, childSteps))) {
+        changedIds.push(parentId);
+      }
     }
     return { result: outcome.result, changedIds, observedAt: outcome.observedAt };
+  }
+
+  // Children of a thread, hidden and archived included, newest first. Archived
+  // ones fold into the parent once per process: their record is dropped after.
+  const childScanAt = new Map<string, number>();
+  const foldedArchived = new Set<string>();
+  async function scanChildren(parentId: string, skip: ReadonlySet<string>): Promise<void> {
+    const last = childScanAt.get(parentId);
+    if (last !== undefined && now() - last < CHILD_SCAN_TTL_MS) return;
+    childScanAt.set(parentId, now());
+    let children: Awaited<ReturnType<typeof bb.sdk.threads.list>>;
+    try {
+      children = await bb.sdk.threads.list({ parentThreadId: parentId, includeHidden: "true", limit: "100" } as never);
+    } catch {
+      return;
+    }
+    const newest = [...children]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, CHILD_SCAN_LIMIT);
+    for (const child of newest) {
+      if (skip.has(child.id)) continue;
+      const archived = child.archivedAt !== null && child.archivedAt !== undefined;
+      if (archived && foldedArchived.has(child.id)) continue;
+      parents.set(child.id, parentId);
+      await syncWithParent(child.id);
+      if (archived) {
+        foldedArchived.add(child.id);
+        deleteRecord(child.id);
+      }
+    }
   }
 
   function rememberParent(thread: { id: string; parentThreadId?: string | null }): void {
@@ -325,6 +365,19 @@ export function createAttentionObserver(
         }
       };
       await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+
+      // Hidden and archived workers are not in the requested set; their steps
+      // reach their parent through this scan.
+      const requested = new Set(ids);
+      let scanIndex = 0;
+      const scanner = async () => {
+        while (scanIndex < ids.length) {
+          const threadId = ids[scanIndex++]!;
+          if (unavailable.has(threadId)) continue;
+          await scanChildren(threadId, requested).catch(() => undefined);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, scanner));
 
       // Read back after every sync: a child's bump may have moved its parent.
       const observations: ThreadObservation[] = [];
