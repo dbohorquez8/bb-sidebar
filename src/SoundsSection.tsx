@@ -169,6 +169,7 @@ export function SoundsSettings({ onSaveStatus }: { onSaveStatus(status: SaveStat
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
   const draftVersion = useRef(0);
   const saveTimer = useRef<unknown>(null);
+  const latestVolume = useRef(0);
   const inFlight = useRef(0);
   const mounted = useRef(true);
   const statusRef = useRef(onSaveStatus);
@@ -214,11 +215,17 @@ export function SoundsSettings({ onSaveStatus }: { onSaveStatus(status: SaveStat
       const { volume, ...rest } = patch;
       if (Object.keys(rest).length > 0) void save(rest);
       if (volume === undefined) return;
-      const version = ++draftVersion.current;
+      latestVolume.current = volume;
+      draftVersion.current += 1;
       setVolumeDraft(volume);
-      // Trailing: the latest value goes out once the slider pauses.
-      if (saveTimer.current !== null) clock.clearTimeout(saveTimer.current);
-      saveTimer.current = clock.setTimeout(() => saveVolume(volume, version), VOLUME_SAVE_MS);
+      // Throttle: the first move starts a timer and later moves only update
+      // the value, so a continuous drag saves every VOLUME_SAVE_MS and the
+      // last move is saved by the timer it started or by a new one.
+      if (saveTimer.current !== null) return;
+      saveTimer.current = clock.setTimeout(
+        () => saveVolume(latestVolume.current, draftVersion.current),
+        VOLUME_SAVE_MS,
+      );
     },
     [clock, save, saveVolume],
   );
