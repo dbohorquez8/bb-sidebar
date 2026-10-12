@@ -46,6 +46,7 @@ import { usePinnedReorder } from "./usePinnedReorder";
 import { useInboxReorder } from "./useInboxReorder";
 import { TRAILING_GLYPH_BOX_CLASS } from "./StatusSlot";
 import { AttentionContext, useAttention } from "./useAttention";
+import { useChime } from "./useChime";
 import { WorkingSinceContext, useWorkingSince } from "./useWorkingSince";
 import { JumpHintsContext, useJumpHints } from "./JumpHints";
 import { useSidebarSettings } from "./useSidebarSettings";
@@ -543,6 +544,7 @@ export function ThreadInbox({
     inactiveAfterHours,
     openThreadIds: NO_OPEN_THREAD_IDS,
   });
+  useChime({ threads, attention, lifecycle, activeThreadId });
   const [expandedShelves, setExpandedShelves] =
     useState<ShelfExpansionState>(readShelfExpansion);
   const [expandedChildParentIds, setExpandedChildParentIds] =

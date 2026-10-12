@@ -1,6 +1,7 @@
 import { createContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   useRealtime,
+  useRealtimeConnectionState,
   useRpc,
   useSidebarThreadDraftIds,
   type PluginSidebarThread,
@@ -64,14 +65,24 @@ export interface AttentionModel {
 export const AttentionContext = createContext<AttentionModel | null>(null);
 
 const EMPTY_PROJECT_SETTINGS: ProjectAttentionSettings = { enabledPresets: [], ticketPrefixes: [] };
-// Stub until plan step 8 fills chimeStatuses and loadGeneration.
-const NO_CHIME_STATUSES: ReadonlyMap<string, string> = new Map();
+/** A full load in which a call failed is retried after this long, until one succeeds. */
+const FULL_LOAD_RETRY_MS = 5_000;
+
+function sameStatuses(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [threadId, key] of a) {
+    if (b.get(threadId) !== key) return false;
+  }
+  return true;
+}
 
 interface ResolvedThread {
   status: ResolvedStatus;
   input: AttentionInput;
   observation: ThreadObservation | null;
   view: AttentionView;
+  /** BB reports a failure, acknowledged or not (reconcileFailedAck's `failing`). */
+  failing: boolean;
 }
 
 function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
@@ -147,8 +158,9 @@ export function useAttention(
   const firstSeenRef = useRef<Map<string, number>>(new Map());
   const backgroundSignatureRef = useRef<Map<string, { signature: string; at: number }>>(new Map());
 
-  const loadAttention = async (ids: readonly { id: string; parentId: string | null }[]) => {
-    if (ids.length === 0) return;
+  /** Resolves true when the records loaded (or nothing needed loading). */
+  const loadAttention = async (ids: readonly { id: string; parentId: string | null }[]): Promise<boolean> => {
+    if (ids.length === 0) return true;
     try {
       const result = await call("listAttention", { threads: ids.slice(0, 1000) });
       setObservations((current) => {
@@ -162,22 +174,55 @@ export function useAttention(
         for (const id of result.unavailable) next.add(id);
         return next;
       });
+      return true;
     } catch {
       // The host has no RPC yet, or the call failed: cards fall back to BB's
       // own live state until the next successful load.
+      return false;
     }
   };
 
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const liveThreadIds = () =>
+    threadsRef.current
+      .filter((thread) => !thread.isArchived)
+      .map((thread) => ({ id: thread.id, parentId: thread.parentThreadId }));
+
   const threadIdsKey = threads.map((thread) => `${thread.id}:${thread.parentThreadId ?? ""}`).join("\0");
+  const firstThreadIdsRun = useRef(true);
   useEffect(() => {
-    void loadAttention(
-      threads
-        .filter((thread) => !thread.isArchived)
-        .map((thread) => ({ id: thread.id, parentId: thread.parentThreadId })),
-    );
+    // The mount's full load (below) covers the first thread list.
+    if (firstThreadIdsRun.current) {
+      firstThreadIdsRun.current = false;
+      return;
+    }
+    void loadAttention(liveThreadIds());
     // threadIdsKey captures every id/parent pair this effect depends on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadIdsKey]);
+
+  // BB can announce a turn (`thread.active`) before the turn's rows exist, so
+  // the record synced then still carries the previous reply, and a stale
+  // Needs you verdict would outrank the running turn until it ends. Reloading
+  // a thread's record when BB's own status for it changes reads the new rows.
+  const bbStatusRef = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    const previous = bbStatusRef.current;
+    const next = new Map<string, string>();
+    const changed: { id: string; parentId: string | null }[] = [];
+    for (const thread of threads) {
+      if (thread.isArchived) continue;
+      next.set(thread.id, thread.status);
+      const before = previous?.get(thread.id);
+      if (before !== undefined && before !== thread.status) {
+        changed.push({ id: thread.id, parentId: thread.parentThreadId });
+      }
+    }
+    bbStatusRef.current = next;
+    if (changed.length > 0) void loadAttention(changed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads]);
 
   useRealtime(ATTENTION_CHANNEL, (payload: unknown) => {
     const threadIds = (payload as { threadIds?: unknown } | null)?.threadIds;
@@ -190,7 +235,8 @@ export function useAttention(
     );
   });
 
-  const loadProjectAttention = async () => {
+  const [projectSettingsLoaded, setProjectSettingsLoaded] = useState(false);
+  const loadProjectAttention = async (): Promise<boolean> => {
     try {
       const result = await call("getProjectAttention", {});
       const next = new Map<string, ProjectAttentionSettings>();
@@ -198,21 +244,75 @@ export function useAttention(
         next.set(projectId, parseProjectAttention(raw, ATTENTION_PRESETS).settings);
       }
       setProjectSettings(next);
+      setProjectSettingsLoaded(true);
+      return true;
     } catch {
       // Keep whatever settings are already known; every project defaults to
       // DEFAULT_PROJECT_ATTENTION until a row loads.
+      return false;
     }
   };
-
-  useEffect(() => {
-    void loadProjectAttention();
-    // Runs once on mount; PROJECT_ATTENTION_CHANNEL covers later changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useRealtime(PROJECT_ATTENTION_CHANNEL, () => {
     void loadProjectAttention();
   });
+
+  // The full load: every live thread's record plus the project settings, on
+  // mount and after each realtime reconnect. Each settled attempt bumps
+  // loadGeneration (useChime takes its baseline from it); a failed one is
+  // retried every FULL_LOAD_RETRY_MS until one succeeds.
+  const connectionState = useRealtimeConnectionState();
+  const [loadGeneration, setLoadGeneration] = useState(0);
+  const mountedRef = useRef(true);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fullLoadSeqRef = useRef(0);
+  const cancelRetry = () => {
+    if (retryTimerRef.current !== null) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = null;
+  };
+  const fullLoad = async () => {
+    cancelRetry();
+    const seq = ++fullLoadSeqRef.current;
+    const [recordsLoaded, settingsLoaded] = await Promise.all([
+      loadAttention(liveThreadIds()),
+      loadProjectAttention(),
+    ]);
+    if (!mountedRef.current) return;
+    setLoadGeneration((generation) => generation + 1);
+    // A newer full load (a reconnect) or a disconnect owns the retry now.
+    if (seq !== fullLoadSeqRef.current) return;
+    if (!recordsLoaded || !settingsLoaded) {
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        void fullLoad();
+      }, FULL_LOAD_RETRY_MS);
+    }
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void fullLoad();
+    return () => {
+      mountedRef.current = false;
+      cancelRetry();
+    };
+    // Runs once on mount; reconnects and channels cover later changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const previousConnectionRef = useRef(connectionState);
+  useEffect(() => {
+    const previous = previousConnectionRef.current;
+    previousConnectionRef.current = connectionState;
+    if (connectionState !== "connected") {
+      // The reload on the return to "connected" replaces a pending retry.
+      fullLoadSeqRef.current += 1;
+      cancelRetry();
+      return;
+    }
+    if (previous !== "connected") void fullLoad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionState]);
 
   const [statusSince, setStatusSince] = useState<ReadonlyMap<string, StatusSinceEntry>>(
     () => readStatusSince(),
@@ -257,13 +357,20 @@ export function useAttention(
       });
       const silent = isSilentPastThreshold(origin, now, silenceThresholdMinutes);
 
+      const failureAcknowledged = failedAck.has(thread.id);
       const input = attentionInputFromThread(thread, {
         verdict,
         silent,
         onInactiveShelf,
-        failureAcknowledged: failedAck.has(thread.id),
+        failureAcknowledged,
       });
       const status = resolveAttentionStatus(input);
+      // An acknowledged failure is still a reported one; reading the
+      // post-acknowledgement flag would drop the acknowledgement next pass.
+      const failing = failureAcknowledged
+        ? attentionInputFromThread(thread, { verdict, silent, onInactiveShelf, failureAcknowledged: false })
+            .failureReported
+        : input.failureReported;
 
       const since = statusSince.get(thread.id);
       const statusSinceValue =
@@ -295,7 +402,7 @@ export function useAttention(
         now,
       });
 
-      byThreadId.set(thread.id, { status, input, observation, view });
+      byThreadId.set(thread.id, { status, input, observation, view, failing });
     }
     return byThreadId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -328,7 +435,7 @@ export function useAttention(
 
     const failing = new Set<string>();
     for (const [threadId, entry] of resolved) {
-      if (entry.input.failureReported) failing.add(threadId);
+      if (entry.failing) failing.add(threadId);
     }
     const nextAck = reconcileFailedAck(
       failedAck,
@@ -347,6 +454,24 @@ export function useAttention(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolved]);
 
+  // The chime's status source: only threads whose record has loaded, and only
+  // once project settings have, so a first load never reads as a change. The
+  // previous Map is kept while nothing differs (useChime's snapshot identity).
+  const chimeStatusesRef = useRef<ReadonlyMap<string, string>>(new Map());
+  const chimeStatuses = useMemo(() => {
+    const next = new Map<string, string>();
+    if (projectSettingsLoaded) {
+      for (const [threadId, entry] of resolved) {
+        if (observations.has(threadId) || unavailable.has(threadId)) {
+          next.set(threadId, statusKey(entry.status));
+        }
+      }
+    }
+    if (sameStatuses(next, chimeStatusesRef.current)) return chimeStatusesRef.current;
+    chimeStatusesRef.current = next;
+    return next;
+  }, [resolved, observations, unavailable, projectSettingsLoaded]);
+
   return useMemo<AttentionModel>(
     () => ({
       viewFor: (threadId) => resolved.get(threadId)?.view ?? null,
@@ -357,9 +482,9 @@ export function useAttention(
         return statusSince.get(threadId)?.since ?? null;
       },
       silenceThresholdMinutes,
-      chimeStatuses: NO_CHIME_STATUSES,
-      loadGeneration: 0,
+      chimeStatuses,
+      loadGeneration,
     }),
-    [resolved, statusSince, silenceThresholdMinutes],
+    [resolved, statusSince, silenceThresholdMinutes, chimeStatuses, loadGeneration],
   );
 }
