@@ -41,6 +41,8 @@ export type AttentionPreset =
       kind: "workflow";
       workflow: { id: string; label: string; stages: readonly WorkflowStage[] };
       rules: readonly WorkflowStepRule[];
+      /** Steps that start the work over: invoking one clears the thread's stage. */
+      resetSteps?: readonly string[];
     };
 
 export interface BackgroundWork {
@@ -81,6 +83,8 @@ export interface ThreadObservation {
   reply: ObservedReply | null;
   /** Latest mapped step per workflow preset id. */
   steps: Readonly<Record<string, ObservedStep>>;
+  /** When the workflow was last reset, per workflow preset id; older steps never count. */
+  stepResets?: Readonly<Record<string, number>>;
   /** Latest background activity: the thread's own rows, and its child threads' rows. */
   lastActivityAt: number | null;
   /** When the pending question or approval was raised; null when none is pending. */

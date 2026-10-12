@@ -35,6 +35,7 @@ export const ATTENTION_PRESETS: readonly AttentionPreset[] = [
     label: "DDD workflow",
     kind: "workflow",
     workflow: { id: "ddd", label: "DDD", stages: DDD_STAGES },
+    resetSteps: ["finalize", "implement", "ddd:scaffold"],
     rules: [
       { step: "ddd:scaffold", stageId: "scaffold" },
       { step: "ddd:explore", stageId: "explore" },

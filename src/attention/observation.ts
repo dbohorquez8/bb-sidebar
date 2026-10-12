@@ -3,6 +3,7 @@ import { extractStepInvocation, mapStepToStage } from "./stage";
 import type {
   AttentionPreset,
   ObservationEvent,
+  ObservedStep,
   StateLineMatch,
   ThreadEventRowLike,
   ThreadObservation,
@@ -144,12 +145,17 @@ export function applyObservationEvent(
       return { ...base, turnEndedAt: event.at, reply: null };
     case "step-invoked": {
       const steps = { ...base.steps };
+      const stepResets = { ...base.stepResets };
       for (const preset of presets) {
         if (preset.kind !== "workflow") continue;
+        if (preset.resetSteps?.includes(event.step)) {
+          delete steps[preset.id];
+          stepResets[preset.id] = event.at;
+        }
         const mapped = mapStepToStage(event.step, preset);
         if (mapped) steps[preset.id] = { stageId: mapped.stageId, at: event.at };
       }
-      return { ...base, steps };
+      return { ...base, steps, stepResets };
     }
     case "background-activity":
       return {
@@ -168,6 +174,31 @@ export function applyObservationEvent(
     default:
       return base;
   }
+}
+
+/**
+ * Folds a child thread's steps into its parent's: per workflow, the newest step
+ * wins, and a step from before the parent's last reset never counts. Returns
+ * the same object when nothing changes.
+ */
+export function mergeChildSteps(
+  parent: ThreadObservation,
+  childSteps: Readonly<Record<string, ObservedStep>>,
+  presets: readonly AttentionPreset[],
+): ThreadObservation {
+  let steps: Record<string, ObservedStep> | null = null;
+  for (const preset of presets) {
+    if (preset.kind !== "workflow") continue;
+    const incoming = childSteps[preset.id];
+    if (!incoming) continue;
+    const resetAt = parent.stepResets?.[preset.id];
+    if (resetAt !== undefined && incoming.at < resetAt) continue;
+    const current = (steps ?? parent.steps)[preset.id];
+    if (current && current.at >= incoming.at) continue;
+    steps ??= { ...parent.steps };
+    steps[preset.id] = incoming;
+  }
+  return steps ? { ...parent, steps } : parent;
 }
 
 export function coldReadComplete(
