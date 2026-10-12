@@ -2,8 +2,14 @@ import type { TicketMatch } from "./types";
 
 const BOUNDARY_CHAR = /[\p{L}\p{N}]/u;
 
+// A prefix entered without its trailing hyphen ("WS") also matches the
+// hyphenated form ("WS-19"), so the chip does not depend on that keystroke.
+function prefixForms(prefix: string): string[] {
+  return prefix.endsWith("-") ? [prefix] : [`${prefix}-`, prefix];
+}
+
 function idAt(text: string, start: number, sortedPrefixes: readonly string[]): string | null {
-  for (const prefix of sortedPrefixes) {
+  for (const prefix of sortedPrefixes.flatMap(prefixForms)) {
     if (!text.startsWith(prefix, start)) continue;
     let digitsEnd = start + prefix.length;
     while (digitsEnd < text.length && text[digitsEnd] >= "0" && text[digitsEnd] <= "9") {

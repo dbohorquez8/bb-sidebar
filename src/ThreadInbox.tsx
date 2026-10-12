@@ -655,8 +655,8 @@ export function ThreadInbox({
     for (const thread of split.inbox) {
       const lockedShelf = renamingShelfLocks.get(thread.id);
       // A thread needing the owner — BB's own pending-interaction signal or
-      // the attention preset's state-line marker — is grouped in Active: it
-      // must not land in Working or Inactive because of running work or age.
+      // the attention preset's state-line marker — never hides in Working
+      // behind running work. It ages into Inactive like any other thread.
       const needsAttention =
         threadNeedsAttention(thread) || attention.isNeedsYou(thread.id);
       if (lockedShelf === "active") {
@@ -672,7 +672,8 @@ export function ThreadInbox({
         continue;
       }
       if (needsAttention) {
-        activeUnpinned.push(thread);
+        if (isInactiveThread(thread, now, inactiveAfterHours)) inactive.push(thread);
+        else activeUnpinned.push(thread);
         continue;
       }
       // A thread with work running anywhere under it waits on the Working

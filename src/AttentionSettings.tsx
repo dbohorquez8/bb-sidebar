@@ -128,7 +128,7 @@ export function ProjectAttentionFields({
           }
         />
       ))}
-      <SettingRow title="Ticket prefixes" description="Comma-separated, each tried in its own letter case.">
+      <SettingRow title="Ticket prefixes" description="Comma-separated, for example WS-, AID-. Each is tried in its own letter case.">
         <input
           type="text"
           aria-label="Ticket prefixes"

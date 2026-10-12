@@ -218,7 +218,7 @@
   --bb-sidebar-monogram-7-bg: color-mix(in oklab, var(--bb-sidebar-red-950) 80%, transparent);
   --bb-sidebar-monogram-7-fg: var(--bb-sidebar-red-300);
 
-  --bb-sidebar-status-needs-you: var(--bb-sidebar-red-300);
+  --bb-sidebar-status-needs-you: oklch(82% 0.085 22);
   --bb-sidebar-status-check: var(--bb-sidebar-orange-300);
   --bb-sidebar-status-failed: oklch(80% 0.13 335);
   --bb-sidebar-status-working: oklch(88% 0.15 95);
@@ -226,17 +226,17 @@
   --bb-sidebar-status-done: oklch(92% 0.01 260);
 
   /*
-   * Owner live review (2026-10-11): the old 60%/80% red-950 wash read far too
-   * strong in dark. Same recipe as the unread-row tint above — a mid shade at
-   * the status word's own hue (AC-19 25°-of-the-word tolerance), mixed in at
-   * 10%, 15% on hover — rather than a dark, heavily-mixed named shade.
+   * Owner live review (2026-10-11): saturated red read too harsh in dark.
+   * Each wash is its own pastel status word mixed in at 12%, 18% on hover,
+   * so wash and word share one hue (AC-19) and stay in the plugin's
+   * pastel palette. The Needs you word is a soft coral for the same reason.
    */
-  --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-red-500) 10%, transparent);
-  --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-red-500) 15%, transparent);
-  --bb-sidebar-wash-check: color-mix(in oklab, var(--bb-sidebar-orange-500) 10%, transparent);
-  --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-orange-500) 15%, transparent);
-  --bb-sidebar-wash-failed: color-mix(in oklab, oklch(65% 0.2 335) 10%, transparent);
-  --bb-sidebar-wash-failed-hover: color-mix(in oklab, oklch(65% 0.2 335) 15%, transparent);
+  --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-status-needs-you) 12%, transparent);
+  --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-status-needs-you) 18%, transparent);
+  --bb-sidebar-wash-check: color-mix(in oklab, var(--bb-sidebar-status-check) 12%, transparent);
+  --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-status-check) 18%, transparent);
+  --bb-sidebar-wash-failed: color-mix(in oklab, var(--bb-sidebar-status-failed) 12%, transparent);
+  --bb-sidebar-wash-failed-hover: color-mix(in oklab, var(--bb-sidebar-status-failed) 18%, transparent);
   --bb-sidebar-wash-done-unread: color-mix(in oklab, #ffffff 6%, transparent);
   --bb-sidebar-wash-done-unread-hover: color-mix(in oklab, #ffffff 10%, transparent);
 
