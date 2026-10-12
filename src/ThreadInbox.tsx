@@ -1522,6 +1522,7 @@ export function ThreadInbox({
     <AttentionContext.Provider value={attention}>
     <ProjectColorsProvider
       enabled={sidebarSettings?.projectColorsEnabled === true}
+      chipsNeedColors={threads.some((thread) => attention.viewFor(thread.id)?.ticket != null)}
       display={sidebarSettings?.projectColorDisplay ?? DEFAULT_SIDEBAR_SETTINGS.projectColorDisplay}
       projectIds={projects.map((project) => project.id)}
     >

@@ -282,14 +282,14 @@ export function ThreadCard({
       data-row-emphasis={emphasis}
       data-settle-fade=""
       className={cn(
-        "pointer-events-none relative flex min-w-0 items-center gap-1 text-sm",
+        "pointer-events-none relative flex min-w-0 items-center gap-1.5 text-[12px]/5",
         showProject ? "mt-0.5" : "flex-1",
         isRenaming && "pointer-events-auto",
         emphasis === "read-idle" ? "text-muted-foreground" : "text-foreground",
         (emphasis === "unread" || emphasis === "woke") && "font-medium",
       )}
     >
-      {ticket ? <TicketChip ticket={ticket} /> : null}
+      {ticket ? <TicketChip ticket={ticket} projectId={thread.projectId} /> : null}
       <InlineThreadTitle
         thread={thread}
         editing={isRenaming}

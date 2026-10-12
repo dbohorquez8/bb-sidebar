@@ -70,6 +70,26 @@ function textColor(color: string, darkTheme: boolean): string {
   return darkTheme ? "#ffffff" : "#000000";
 }
 
+function contrastRatio(a: number, b: number): number {
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+export const CHIP_TEXT_DARK = "#111111";
+export const CHIP_TEXT_LIGHT = "#ffffff";
+
+/**
+ * Text colour for a label filled with a project colour: whichever of near-black
+ * or white has the higher WCAG contrast ratio against the fill. Null when the
+ * colour is not a #rrggbb hex value.
+ */
+export function chipTextColor(fill: string): string | null {
+  if (!/^#[0-9a-f]{6}$/i.test(fill)) return null;
+  const l = luminance([1, 3, 5].map((offset) => parseInt(fill.slice(offset, offset + 2), 16)));
+  const dark = contrastRatio(l, luminance([0x11, 0x11, 0x11]));
+  const light = contrastRatio(l, 1);
+  return dark >= light ? CHIP_TEXT_DARK : CHIP_TEXT_LIGHT;
+}
+
 export function projectColorStyle(color: string): CSSProperties {
   return {
     "--bb-sidebar-project": color,
