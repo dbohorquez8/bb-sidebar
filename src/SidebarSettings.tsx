@@ -20,6 +20,7 @@ import {
 import { ProjectAppearanceSettings } from "./ProjectSettings";
 import { ProjectManagement } from "./ProjectManagement";
 import { PortLinkSettings } from "./PortLinkSettings";
+import { AttentionSettings } from "./AttentionSettings";
 import {
   configuredSnoozePresetError,
   parseConfiguredSnoozePresets,
@@ -64,7 +65,7 @@ const PROJECT_COLOR_DISPLAY_LABELS: Record<ProjectColorDisplay, string> = {
 
 const SETTINGS_SECTIONS = [
   "Sidebar layout", "Project appearance", "Thread behavior", "Child threads",
-  "This device", "Project management",
+  "Attention", "This device", "Project management",
 ] as const;
 
 /** Long enough to finish typing a shortcut, short enough to feel instant. */
@@ -541,6 +542,13 @@ export function SidebarSettings() {
               ))}
             </SettingsSelect>
           }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Attention" status={statusFor("Attention")}>
+        <AttentionSettings
+          silenceThresholdMinutes={draft.silenceThresholdMinutes}
+          onSilenceThresholdChange={(minutes) => update("silenceThresholdMinutes", minutes)}
         />
       </SettingsSection>
 
