@@ -39,15 +39,33 @@ const ProjectColorsContext = createContext<{
   display: ProjectColorDisplay;
 } | null>(null);
 
-export function ProjectColorsProvider({ enabled, display, projectIds, children }: {
+// Every project's colour, custom or automatic, whether or not the Project
+// colors display setting is on: ticket chips use it either way.
+const ProjectColorValuesContext = createContext<ReadonlyMap<string, string> | null>(null);
+
+export function ProjectColorsProvider({ enabled, chipsNeedColors = false, display, projectIds, children }: {
   enabled: boolean;
+  /** Load custom colours for ticket chips even while Project colors is off. */
+  chipsNeedColors?: boolean;
   display: ProjectColorDisplay;
   projectIds: readonly string[];
   children: ReactNode;
 }) {
-  const { overrides } = useProjectColorOverrides(enabled);
-  const value = useMemo(() => enabled ? { colors: projectColorsById(projectIds, overrides), display } : null, [enabled, projectIds, overrides, display]);
-  return <ProjectColorsContext.Provider value={value}>{children}</ProjectColorsContext.Provider>;
+  const { overrides } = useProjectColorOverrides(enabled || chipsNeedColors);
+  const colors = useMemo(() => projectColorsById(projectIds, overrides), [projectIds, overrides]);
+  const value = useMemo(() => enabled ? { colors, display } : null, [enabled, colors, display]);
+  return (
+    <ProjectColorValuesContext.Provider value={colors}>
+      <ProjectColorsContext.Provider value={value}>{children}</ProjectColorsContext.Provider>
+    </ProjectColorValuesContext.Provider>
+  );
+}
+
+/** The project's colour, custom or automatic, also when Project colors is off. */
+export function useProjectColorValue(projectId: string | undefined): string | undefined {
+  const colors = useContext(ProjectColorValuesContext);
+  if (!projectId) return undefined;
+  return colors?.get(projectId) ?? automaticProjectColor(projectId);
 }
 
 export function useProjectColor(projectId: string | undefined) {

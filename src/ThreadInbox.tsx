@@ -45,6 +45,7 @@ import { createDragPreview } from "./drag-preview";
 import { usePinnedReorder } from "./usePinnedReorder";
 import { useInboxReorder } from "./useInboxReorder";
 import { TRAILING_GLYPH_BOX_CLASS } from "./StatusSlot";
+import { AttentionContext, useAttention } from "./useAttention";
 import { WorkingSinceContext, useWorkingSince } from "./useWorkingSince";
 import { JumpHintsContext, useJumpHints } from "./JumpHints";
 import { useSidebarSettings } from "./useSidebarSettings";
@@ -102,6 +103,10 @@ const CHILD_EXPANSION_STORAGE_KEY = "bb-sidebar:child-expansion:v1";
 const PROJECT_COLLAPSE_STORAGE_KEY = "bb-sidebar:project-collapse:v1";
 const SETTLED_INITIAL_LIMIT = 10;
 const SETTLED_PAGE_SIZE = 25;
+// Pane layout is only known per-row (ThreadCard queries it itself); the shared
+// attention model treats every thread as not open in another pane and each
+// card corrects its own wash locally against its own split hook.
+const NO_OPEN_THREAD_IDS: ReadonlySet<string> = new Set();
 
 function threadNeedsAttention(thread: PluginSidebarThread): boolean {
   return thread.hasPendingInteraction || thread.indicator === "waiting-for-input" ||
@@ -532,6 +537,12 @@ export function ThreadInbox({
     return () => clearInterval(timer);
   }, []);
   const now = nowMinute * 60_000;
+  const attention = useAttention(threads, {
+    activeThreadId,
+    now,
+    inactiveAfterHours,
+    openThreadIds: NO_OPEN_THREAD_IDS,
+  });
   const [expandedShelves, setExpandedShelves] =
     useState<ShelfExpansionState>(readShelfExpansion);
   const [expandedChildParentIds, setExpandedChildParentIds] =
@@ -643,7 +654,11 @@ export function ThreadInbox({
     const inactive: typeof split.inbox = [];
     for (const thread of split.inbox) {
       const lockedShelf = renamingShelfLocks.get(thread.id);
-      const needsAttention = threadNeedsAttention(thread);
+      // A thread needing the owner — BB's own pending-interaction signal or
+      // the attention preset's state-line marker — never hides in Working
+      // behind running work. It ages into Inactive like any other thread.
+      const needsAttention =
+        threadNeedsAttention(thread) || attention.isNeedsYou(thread.id);
       if (lockedShelf === "active") {
         activeUnpinned.push(thread);
         continue;
@@ -654,6 +669,11 @@ export function ThreadInbox({
       }
       if (lockedShelf === "inactive" && !needsAttention) {
         inactive.push(thread);
+        continue;
+      }
+      if (needsAttention) {
+        if (isInactiveThread(thread, now, inactiveAfterHours)) inactive.push(thread);
+        else activeUnpinned.push(thread);
         continue;
       }
       // A thread with work running anywhere under it waits on the Working
@@ -699,6 +719,7 @@ export function ThreadInbox({
     };
   }, [
     activeThreadId,
+    attention,
     childrenByParentId,
     inactiveAfterHours,
     lifecycle,
@@ -1498,8 +1519,10 @@ export function ThreadInbox({
   );
 
   return (
+    <AttentionContext.Provider value={attention}>
     <ProjectColorsProvider
       enabled={sidebarSettings?.projectColorsEnabled === true}
+      chipsNeedColors={threads.some((thread) => attention.viewFor(thread.id)?.ticket != null)}
       display={sidebarSettings?.projectColorDisplay ?? DEFAULT_SIDEBAR_SETTINGS.projectColorDisplay}
       projectIds={projects.map((project) => project.id)}
     >
@@ -1790,6 +1813,7 @@ export function ThreadInbox({
     </ChildThreadDisplayContext.Provider>
     </WorkingSinceContext.Provider>
     </ProjectColorsProvider>
+    </AttentionContext.Provider>
   );
 }
 
@@ -2216,7 +2240,9 @@ function ActiveProjectGroup({
     <li
       data-reorder-unit={unitKey}
       className={cn(
-        "list-none rounded-md",
+        // Space after a project group, so the next
+        // project's own card does not read as part of the group.
+        "list-none rounded-md [&:not(:last-child)]:mb-2",
         reorder.isDragging &&
           "relative z-20 bg-[linear-gradient(var(--sidebar-accent),var(--sidebar-accent)),linear-gradient(var(--sidebar),var(--sidebar))] shadow-lg ring-1 ring-sidebar-border",
       )}

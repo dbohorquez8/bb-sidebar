@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactElement } from "react";
+import { useContext, useEffect, useId, useState, type ReactElement } from "react";
 import {
   experimental_useProviders as useProviders,
   experimental_useSidebarThreadSplit,
@@ -21,6 +21,34 @@ import { OpenPortDetails } from "./OpenPorts";
 import { ThreadPullRequestDetails } from "./ThreadPullRequests";
 import { compareChildThreads, useChildThreadDisplay } from "./ChildThreadDisplay";
 import { cn } from "./lib/utils";
+import { AttentionContext } from "./useAttention";
+import { backgroundWorkCount, type AttentionView } from "./attention";
+
+/**
+ * The Workflow and per-kind Background rows (AC-31). No SDK hook: takes the
+ * resolved view as a prop, so it is directly Component-testable without the
+ * rest of the hover card's host-bound hooks.
+ */
+export function AttentionHoverRows({ view }: { view: AttentionView | null }) {
+  return (
+    <>
+      {view?.stage ? (
+        <DetailRow
+          icon="Workflow"
+          label="Workflow"
+          value={`${view.stage.workflowLabel} › ${view.stage.stageLabel}`}
+        />
+      ) : null}
+      {view && backgroundWorkCount(view.background) > 0 ? (
+        <DetailRow
+          icon="Loading"
+          label="Background"
+          value={`${view.background.workers} workers · ${view.background.commands} background commands · ${view.background.workflows} workflows`}
+        />
+      ) : null}
+    </>
+  );
+}
 
 export function ThreadDetailsTooltip({
   thread,
@@ -64,6 +92,8 @@ export function ThreadDetailsTooltip({
   }, [call, thread.id, visible]);
 
   const { sort: childSort } = useChildThreadDisplay();
+  const attentionModel = useContext(AttentionContext);
+  const attentionView = attentionModel?.viewFor(thread.id) ?? null;
   const statusThread = useThreadWithDraft(thread);
   const provider = providers.find((entry) => entry.id === thread.providerId);
   const project = projects.find((entry) => entry.id === thread.projectId);
@@ -115,6 +145,7 @@ export function ThreadDetailsTooltip({
           </div>
         </div>
         <span className="sr-only">Status: {status}</span>
+        <AttentionHoverRows view={attentionView} />
         {subthreads.length > 0 ? (
           <div className="flex min-w-0 flex-col gap-1.5">
             <button

@@ -51,6 +51,14 @@ import { threadPullRequestSchema } from "./pull-requests";
 import { ownedPortTargetSchema, closePortsResultSchema } from "./close-owned-ports";
 
 import { PROJECT_COLORS_CHANNEL } from "./project-colors";
+import { CONTEXT_USAGE_CHANNEL } from "./context-usage";
+import { createAttentionObserver, THREAD_ATTENTION_TABLE } from "./attention/observer";
+import {
+  PROJECT_ATTENTION_CHANNEL,
+  SILENCE_THRESHOLD_MAX_MINUTES,
+  SILENCE_THRESHOLD_MIN_MINUTES,
+  type RawProjectAttention,
+} from "./attention";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -115,6 +123,15 @@ const migrations = [
      color TEXT NOT NULL
    )`,
   `ALTER TABLE sidebar_settings ADD COLUMN project_color_display TEXT NOT NULL DEFAULT 'all'`,
+  `ALTER TABLE sidebar_settings ADD COLUMN silence_threshold_minutes INTEGER NOT NULL DEFAULT 15`,
+  `CREATE TABLE IF NOT EXISTS project_attention (
+  project_id      TEXT PRIMARY KEY,
+  presets         TEXT NOT NULL DEFAULT '[]',
+  ticket_prefixes TEXT NOT NULL DEFAULT '[]'
+)`,
+  // A cache plus the reading position; the observer reconciles it with BB's
+  // event history before any of it is returned.
+  THREAD_ATTENTION_TABLE,
 ];
 
 export interface StoredLifecycleRow {
@@ -151,9 +168,13 @@ interface SidebarSettingsDbRow {
   dock_shelves: number;
   project_colors_enabled: number;
   project_color_display: string;
+  silence_threshold_minutes: number;
 }
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
+
+const CONTEXT_SOFT_LIMIT = 150_000;
+const CONTEXT_USAGE_EVENT_TYPES = new Set(["thread/contextWindowUsage/updated", "thread/tokenUsage/updated"]);
 
 /**
  * What parking a thread released. These counts are what the toast reminds the
@@ -234,8 +255,39 @@ const sidebarSettingsSchema = z
     dockShelves: z.boolean(),
     projectColorsEnabled: z.boolean(),
     projectColorDisplay: z.enum(PROJECT_COLOR_DISPLAYS),
+    silenceThresholdMinutes: z
+      .number()
+      .int()
+      .min(SILENCE_THRESHOLD_MIN_MINUTES)
+      .max(SILENCE_THRESHOLD_MAX_MINUTES),
   })
   .strict();
+
+const rawProjectAttentionSchema = z.object({
+  presets: z.array(z.string()),
+  ticketPrefixes: z.array(z.string()),
+});
+const stateLineMatchSchema = z.object({
+  kind: z.enum(["needs-you", "working", "background", "done"]),
+  line: z.number().int().nonnegative(),
+});
+const threadObservationSchema = z.object({
+  v: z.literal(2),
+  threadId: z.string(),
+  cursorSeq: z.number().nullable(),
+  turnStartedAt: z.number().nullable(),
+  turnEndedAt: z.number().nullable(),
+  reply: z
+    .object({
+      endedAt: z.number(),
+      matches: z.record(z.string(), stateLineMatchSchema),
+    })
+    .nullable(),
+  steps: z.record(z.string(), z.object({ stageId: z.string(), at: z.number() })),
+  lastActivityAt: z.number().nullable(),
+  interactionAt: z.number().nullable(),
+  observedAt: z.number(),
+});
 const uploadFilenameSchema = z
   .string()
   .trim()
@@ -282,6 +334,10 @@ export const bbSidebarRpcContract = defineRpcContract({
     input: threadIdSchema.strict(),
     output: z.object({ pullRequests: z.array(threadPullRequestSchema) }).strict(),
   },
+  getThreadContextUsage: {
+    input: threadIdSchema.strict(),
+    output: z.object({ percent: z.number().nullable(), zonePercent: z.number().nullable() }).strict(),
+  },
   getThreadExecutionDetails: {
     input: threadIdSchema.strict(),
     output: z.object({
@@ -315,6 +371,24 @@ export const bbSidebarRpcContract = defineRpcContract({
   getSidebarSettings: {
     input: z.object({}).strict(),
     output: sidebarSettingsSchema,
+  },
+  listAttention: {
+    input: z.object({
+      threads: z.array(z.object({ id: z.string().min(1), parentId: z.string().min(1).nullable() }).strict()).max(1000),
+    }).strict(),
+    output: z.object({ observations: z.array(threadObservationSchema), unavailable: z.array(z.string()) }),
+  },
+  getProjectAttention: {
+    input: z.object({}).strict(),
+    output: z.object({ projects: z.record(z.string(), rawProjectAttentionSchema) }),
+  },
+  setProjectAttention: {
+    input: z.object({
+      projectId: z.string().trim().min(1),
+      presets: z.array(z.string().max(64)).max(32),
+      ticketPrefixes: z.array(z.string().max(64)).max(32),
+    }).strict(),
+    output: z.object({ ok: z.boolean() }),
   },
   updateSidebarSettings: {
     // Save only edited fields. Full payloads from older clients remain valid.
@@ -555,6 +629,15 @@ function iconMimeType(path: string, reported: string): string {
   return reported;
 }
 
+function storedStrings(json: string): string[] {
+  try {
+    const value: unknown = JSON.parse(json);
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export default async function plugin(bb: BbPluginApi) {
   const getOpenPorts = createPortDiscovery(bb);
   const threadPortActions = createThreadPortActions(bb);
@@ -563,6 +646,7 @@ export default async function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   bb.storage.migrate(db, migrations);
   createAutoTitleRecovery(bb, regenerateTitle);
+  const attentionObserver = createAttentionObserver(bb, { db });
 
   const readSidebarSettings = (): SidebarSettingsValues => {
     const row = db
@@ -573,7 +657,8 @@ export default async function plugin(bb: BbPluginApi) {
                 auto_settle_after_days, auto_settle_on_merge,
                 child_sort_field, child_sort_direction, child_icon_style,
                 compact_working_threads, working_shelf, dock_shelves,
-                project_colors_enabled, project_color_display
+                project_colors_enabled, project_color_display,
+                silence_threshold_minutes
            FROM sidebar_settings
           WHERE id = 1`,
       )
@@ -598,6 +683,7 @@ export default async function plugin(bb: BbPluginApi) {
           dockShelves: row.dock_shelves === 1,
           projectColorsEnabled: row.project_colors_enabled === 1,
           projectColorDisplay: projectColorDisplayOf(row.project_color_display),
+          silenceThresholdMinutes: row.silence_threshold_minutes,
         }
       : { ...DEFAULT_SIDEBAR_SETTINGS };
   };
@@ -610,8 +696,9 @@ export default async function plugin(bb: BbPluginApi) {
          auto_settle_after_days, auto_settle_on_merge,
          child_sort_field, child_sort_direction, child_icon_style,
          compact_working_threads, working_shelf, dock_shelves,
-         project_colors_enabled, project_color_display
-       ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         project_colors_enabled, project_color_display,
+         silence_threshold_minutes
+       ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          snooze_presets = excluded.snooze_presets,
          inactive_threads_enabled = excluded.inactive_threads_enabled,
@@ -628,7 +715,8 @@ export default async function plugin(bb: BbPluginApi) {
          working_shelf = excluded.working_shelf,
          dock_shelves = excluded.dock_shelves,
          project_colors_enabled = excluded.project_colors_enabled,
-         project_color_display = excluded.project_color_display`,
+         project_color_display = excluded.project_color_display,
+         silence_threshold_minutes = excluded.silence_threshold_minutes`,
     ).run(
       values.snoozePresets,
       values.inactiveThreadsEnabled ? 1 : 0,
@@ -645,6 +733,7 @@ export default async function plugin(bb: BbPluginApi) {
       values.dockShelves ? 1 : 0,
       values.projectColorsEnabled ? 1 : 0,
       values.projectColorDisplay,
+      values.silenceThresholdMinutes,
     );
   };
 
@@ -703,6 +792,7 @@ export default async function plugin(bb: BbPluginApi) {
         dockShelves: DEFAULT_SIDEBAR_SETTINGS.dockShelves,
         projectColorsEnabled: false,
         projectColorDisplay: DEFAULT_SIDEBAR_SETTINGS.projectColorDisplay,
+        silenceThresholdMinutes: DEFAULT_SIDEBAR_SETTINGS.silenceThresholdMinutes,
       });
       if (hasLegacyValues && migrated.success) {
         writeSidebarSettings(migrated.data);
@@ -1570,6 +1660,41 @@ export default async function plugin(bb: BbPluginApi) {
     await evaluatePolicies();
   });
 
+  // How full each thread's context window is, as
+  // the context-ring plugin reads it, pushed again whenever a turn moves it.
+  // `percent` is the real window fill; `zonePercent` is usage against the
+  // context-ring plugin's soft limit (150k, its default and the owner's
+  // setting), which drives the colour exactly as the ring's does.
+  async function readContextUsage(
+    threadId: string,
+  ): Promise<{ percent: number | null; zonePercent: number | null }> {
+    try {
+      const timeline = await bb.sdk.threads.timeline({ threadId, summaryOnly: "true", segmentLimit: "1" });
+      const usage = timeline.contextWindowUsage;
+      if (!usage || usage.usedTokens === null) return { percent: null, zonePercent: null };
+      const window = usage.modelContextWindow && usage.modelContextWindow > 0 ? usage.modelContextWindow : null;
+      const zonePercent = Math.round((usage.usedTokens / CONTEXT_SOFT_LIMIT) * 100);
+      return { percent: window ? Math.round((usage.usedTokens / window) * 100) : zonePercent, zonePercent };
+    } catch (error) {
+      bb.log.warn(`context usage read failed for ${threadId}: ${String(error)}`);
+      return { percent: null, zonePercent: null };
+    }
+  }
+  const unsubscribeContextUsage = bb.sdk.subscribe({
+    event: "thread:changed",
+    callback: (event) => {
+      const threadId = event.id;
+      if (typeof threadId !== "string" || threadId === "") return;
+      const eventTypes = event.metadata?.eventTypes;
+      if (!Array.isArray(eventTypes)) return;
+      if (!eventTypes.some((type) => CONTEXT_USAGE_EVENT_TYPES.has(type))) return;
+      void readContextUsage(threadId).then((usage) => {
+        bb.realtime.publish(CONTEXT_USAGE_CHANNEL, { threadId, ...usage });
+      });
+    },
+  });
+  bb.onDispose(() => unsubscribeContextUsage());
+
   bb.rpc.register(bbSidebarRpcContract, {
     getOpenPorts,
     getThreadPorts: threadPortActions.getThreadPorts,
@@ -1743,6 +1868,9 @@ export default async function plugin(bb: BbPluginApi) {
         getOpenPorts.invalidate();
       }
     },
+    async getThreadContextUsage({ threadId }) {
+      return await readContextUsage(threadId);
+    },
     async getThreadExecutionDetails({ threadId }) {
       const options = await bb.sdk.threads.defaultExecutionOptions({ threadId });
       return options
@@ -1792,6 +1920,33 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async getSidebarSettings() {
       return readSidebarSettings();
+    },
+    listAttention: ({ threads }) => attentionObserver.list(threads),
+    async getProjectAttention() {
+      const rows = db
+        .prepare(`SELECT project_id, presets, ticket_prefixes FROM project_attention`)
+        .all() as Array<{ project_id: string; presets: string; ticket_prefixes: string }>;
+      return {
+        projects: Object.fromEntries(
+          rows.map((row) => [
+            row.project_id,
+            { presets: storedStrings(row.presets), ticketPrefixes: storedStrings(row.ticket_prefixes) },
+          ]),
+        ),
+      };
+    },
+    async setProjectAttention({ projectId, presets, ticketPrefixes }) {
+      // Strings are stored as given: parseProjectAttention decides validity on
+      // read, so the settings warning can name every skipped item.
+      const row: RawProjectAttention = { presets, ticketPrefixes };
+      db.prepare(
+        `INSERT INTO project_attention (project_id, presets, ticket_prefixes) VALUES (?, ?, ?)
+         ON CONFLICT(project_id) DO UPDATE SET
+           presets = excluded.presets,
+           ticket_prefixes = excluded.ticket_prefixes`,
+      ).run(projectId, JSON.stringify(row.presets), JSON.stringify(row.ticketPrefixes));
+      bb.realtime.publish(PROJECT_ATTENTION_CHANNEL, { projectId });
+      return { ok: true };
     },
     async updateSidebarSettings(values) {
       const stored = readSidebarSettings();

@@ -37,9 +37,16 @@ export interface SidebarSettingsValues {
   projectColorsEnabled: boolean;
   /** Where project stripes appear; enabled project names are always colored. */
   projectColorDisplay: ProjectColorDisplay;
+  /** Minutes of silent background work before a card turns Check?. */
+  silenceThresholdMinutes: number;
 }
 
 import { safeSetItem } from "./lib/safe-storage";
+import {
+  SILENCE_THRESHOLD_DEFAULT_MINUTES,
+  SILENCE_THRESHOLD_MAX_MINUTES,
+  SILENCE_THRESHOLD_MIN_MINUTES,
+} from "./attention/silence";
 import { DEFAULT_SNOOZE_PRESET_CONFIG } from "./lifecycle";
 
 export const DEFAULT_SIDEBAR_SETTINGS: SidebarSettingsValues = {
@@ -58,6 +65,7 @@ export const DEFAULT_SIDEBAR_SETTINGS: SidebarSettingsValues = {
   dockShelves: false,
   projectColorsEnabled: false,
   projectColorDisplay: "all",
+  silenceThresholdMinutes: SILENCE_THRESHOLD_DEFAULT_MINUTES,
 };
 
 export function childThreadSortOf(
@@ -126,6 +134,15 @@ function currentSettingsOnly(value: SidebarSettingsValues): SidebarSettingsValue
   ])) as unknown as SidebarSettingsValues;
 }
 
+function silenceThresholdOf(value: unknown): number {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= SILENCE_THRESHOLD_MIN_MINUTES &&
+    value <= SILENCE_THRESHOLD_MAX_MINUTES
+    ? value
+    : DEFAULT_SIDEBAR_SETTINGS.silenceThresholdMinutes;
+}
+
 function readStoredSidebarSettings(): SidebarSettingsValues | null {
   try {
     const stored = window.localStorage.getItem(SIDEBAR_SETTINGS_CACHE_KEY);
@@ -153,6 +170,7 @@ function readStoredSidebarSettings(): SidebarSettingsValues | null {
       dockShelves: value.dockShelves === true,
       projectColorsEnabled: value.projectColorsEnabled === true,
       projectColorDisplay: projectColorDisplayOf(value.projectColorDisplay),
+      silenceThresholdMinutes: silenceThresholdOf(value.silenceThresholdMinutes),
     } as SidebarSettingsValues);
   } catch {
     return null;

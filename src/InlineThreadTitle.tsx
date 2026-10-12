@@ -13,11 +13,14 @@ export function InlineThreadTitle({
   editing,
   onEditingChange,
   className,
+  displayTitle,
 }: {
   thread: PluginSidebarThread;
   editing: boolean;
   onEditingChange: (editing: boolean) => void;
   className?: string;
+  /** Shown in place of the thread's own title while not editing; renaming still edits the full title. */
+  displayTitle?: string;
 }) {
   const actions = useSidebarThreadActions();
   const title = threadDisplayTitle(thread);
@@ -44,7 +47,11 @@ export function InlineThreadTitle({
     finished.current = false;
   }, [editing, title]);
 
-  if (!editing) return <ThreadTitle threadId={thread.id} title={title} className={className} />;
+  if (!editing) {
+    return (
+      <ThreadTitle threadId={thread.id} title={displayTitle ?? title} className={className} />
+    );
+  }
 
   const finish = (save: boolean) => {
     if (finished.current) return;

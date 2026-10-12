@@ -1,4 +1,5 @@
 import {
+  useContext,
   useId,
   useLayoutEffect,
   useEffect,
@@ -30,11 +31,8 @@ import { ProviderGlyph, type SidebarProvider } from "./ProviderGlyph";
 import {
   STATUS_SLOT_CLASS,
   StatusOrTime,
-  statusRowWashClass,
-  threadShortStatus,
 } from "./StatusSlot";
-import { CompactLiveStatus } from "./StatusGlyph";
-import { threadDisplayTitle } from "./inbox";
+import { threadDisplayTitle, threadWorktreeName } from "./inbox";
 import { InlineThreadTitle } from "./InlineThreadTitle";
 import type { ConfiguredSnoozePreset } from "./lifecycle";
 import { isWorkingTree } from "./working-tree";
@@ -42,6 +40,11 @@ import { ProjectFavicon, ProjectStripe } from "./ProjectFavicon";
 import { useProjectColor } from "./ProjectColors";
 import { OpenPortsIndicator } from "./OpenPorts";
 import { JumpHint, useJumpHint } from "./JumpHints";
+import { AttentionContext } from "./useAttention";
+import { backgroundWorkCount, shortModelName } from "./attention";
+import { TicketChip } from "./TicketChip";
+import { useThreadModel } from "./ThreadModel";
+import { ThreadContextPercent, useThreadContextUsage } from "./ThreadContext";
 import "./settle-button.css";
 
 /** How long the settle sweep plays before the thread actually moves. */
@@ -133,6 +136,9 @@ export function ThreadCard({
   const actions = useSidebarThreadActions();
   const jumpHint = useJumpHint(thread.id);
   const { splitProps, layout } = useSidebarThreadSplit(thread.id);
+  const attention = useContext(AttentionContext);
+  const view = attention?.viewFor(thread.id) ?? null;
+  const descriptionId = useId();
   const rowRef = useRef<HTMLLIElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   useEffect(() => {
@@ -201,7 +207,10 @@ export function ThreadCard({
   // it starts from does not disappear when the cursor leaves the row.
   const holdParkActions = isSnoozeOpen || isSettling;
   const childListId = useId();
-  const liveStatus = threadShortStatus(thread)?.showsDuration === true;
+  const modelRevision = view?.since ?? 0;
+  const model = useThreadModel(thread.id, isVisible, modelRevision);
+  const contextUsage = useThreadContextUsage(thread.id, isVisible);
+  const shortModel = shortModelName(model);
   // A thread stays folded until everything under it is done; it unfolds at
   // once when it needs you, fails, or just woke.
   const naturalCompact =
@@ -255,22 +264,34 @@ export function ThreadCard({
     </Tooltip>
   ) : null;
 
+  const ticket = view?.ticket ?? null;
+  const backgroundCount =
+    view?.backgroundCount ??
+    backgroundWorkCount({
+      workers: thread.activity.backgroundAgents,
+      commands: thread.activity.backgroundCommands,
+      workflows: thread.activity.workflows,
+    });
   const titleLine = (
     <div
       data-row-emphasis={emphasis}
       data-settle-fade=""
       className={cn(
-        "pointer-events-none relative truncate text-sm",
-        showProject ? "mt-0.5" : "min-w-0 flex-1",
+        "pointer-events-none relative flex min-w-0 items-center gap-1.5 text-[12px]/5",
+        showProject ? "mt-1" : "flex-1",
         isRenaming && "pointer-events-auto",
         emphasis === "read-idle" ? "text-muted-foreground" : "text-foreground",
         (emphasis === "unread" || emphasis === "woke") && "font-medium",
+        isActive && "font-semibold text-foreground",
       )}
     >
+      {ticket ? <TicketChip ticket={ticket} projectId={thread.projectId} /> : null}
       <InlineThreadTitle
         thread={thread}
         editing={isRenaming}
         onEditingChange={changeRenaming}
+        displayTitle={ticket?.titleRest ?? undefined}
+        className="min-w-0 flex-1 truncate"
       />
     </div>
   );
@@ -303,14 +324,14 @@ export function ThreadCard({
             className={cn(
               "group/card relative rounded-md px-2.5 transition-colors duration-150 ease-out motion-reduce:transition-none",
               compact ? "flex h-8 items-center gap-2 text-xs" : "py-2",
-              isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60",
+              isActive
+                ? "bg-[color:var(--bb-sidebar-selected)] shadow-[inset_0_0_0_1px_var(--bb-sidebar-selected-ring)]"
+                : "hover:bg-sidebar-accent/60",
               // A thread open in another pane gets a weaker tint than the active
               // row, so the two states stay distinguishable.
               !isActive && layout !== null && "bg-sidebar-accent/30",
-              // A faint status wash across the whole card for the two states the
-              // user must not miss (needs-you amber, unread emerald). Suppressed
-              // while the thread is open here or in another pane.
-              layout === null && statusRowWashClass(thread.indicator, isActive),
+              // No whole-card status wash: the open card is the only filled
+              // card, and status lives in the slot's badge.
               // Lifted, not faded: the row under the cursor is the one the user
               // is acting on, so it should read as the most present thing on the
               // shelf. The two stacked gradients put an opaque sidebar base under
@@ -331,6 +352,7 @@ export function ThreadCard({
                 data-sidebar-thread-id={thread.id}
                 href="#"
                 aria-label={threadDisplayTitle(thread)}
+                aria-describedby={view && view.timeLabel !== null ? descriptionId : undefined}
                 aria-current={isActive ? "page" : undefined}
                 draggable={false}
                 aria-keyshortcuts={
@@ -390,6 +412,7 @@ export function ThreadCard({
                     className={cn(
                       "min-w-0 flex-1 truncate text-foreground",
                       thread.isUnread && "font-medium",
+                      isActive && "font-semibold",
                     )}
                   />
                 </span>
@@ -409,14 +432,9 @@ export function ThreadCard({
                   ) : (
                     <>
                       {unpinButton}
-                      {/* The parent's own run time while it works; otherwise its
-                          usual status or age, with the badge showing the
-                          children still running. */}
-                      {liveStatus ? (
-                        <CompactLiveStatus thread={thread} now={now} />
-                      ) : (
-                        <StatusOrTime thread={thread} now={now} />
-                      )}
+                      {/* The compact card's status place: word and time, with
+                          the badge showing the children still running. */}
+                      <StatusOrTime thread={thread} now={now} />
                     </>
                   )}
                 </span>
@@ -460,7 +478,7 @@ export function ThreadCard({
                         event.stopPropagation();
                         onAcknowledgeWake();
                       }}
-                      className="pointer-events-auto text-2xs font-medium text-[color:var(--bb-sidebar-woke)] hover:underline"
+                      className="pointer-events-auto inline-flex h-5 items-center text-2xs font-medium leading-none text-[color:var(--bb-sidebar-woke)] hover:underline"
                     >
                       Woke
                     </button>
@@ -471,37 +489,20 @@ export function ThreadCard({
                 <span
                   className={cn(
                     STATUS_SLOT_CLASS,
-                    "group/status-slot pointer-events-auto relative h-5",
-                    showParkActions &&
-                      "[@media(hover:none)]:w-auto [@media(hover:none)]:gap-1.5",
-                    !showParkActions && "w-auto min-w-20",
-                    // Beside the title a fixed slot would cut every title short,
-                    // so it hugs the time and widens only while the actions show.
-                    !showProject && "w-auto min-w-0",
-                    !showProject &&
-                      showParkActions &&
-                      "[@media(hover:hover)]:group-hover/card:min-w-11 has-[:focus-visible]:min-w-11",
-                    !showProject && holdParkActions && "min-w-11",
+                    // The status stays on screen while the park actions slide in
+                    // beside it, so a hovered Needs you keeps its badge. The
+                    // slot widens; the title truncates.
+                    "group/status-slot pointer-events-auto relative h-5 w-auto gap-1",
+                    showProject ? "min-w-20" : "min-w-0",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "flex items-center justify-end gap-0.5 transition-opacity duration-150 ease-out motion-reduce:transition-none",
-                      showParkActions &&
-                        "[@media(hover:hover)]:group-hover/card:opacity-0 [@media(hover:hover)]:group-has-[:focus-visible]/status-slot:opacity-0 [@media(hover:none)]:static [@media(hover:none)]:opacity-100",
-                      showParkActions && showProject && "absolute inset-y-0 right-0",
-                      holdParkActions &&
-                        "opacity-0 [@media(hover:none)]:opacity-100",
-                    )}
-                  >
-                    {!showParkActions ? unpinButton : null}
-                    <StatusOrTime thread={thread} now={now} />
-                  </span>
                   {showParkActions ? (
                     <span
                       className={cn(
-                        "pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 opacity-0 transition-opacity duration-150 ease-out has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100 group-hover/card:pointer-events-auto group-hover/card:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 motion-reduce:transition-none",
-                        holdParkActions && "pointer-events-auto opacity-100",
+                        "flex w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-opacity duration-150 ease-out motion-reduce:transition-none",
+                        "[@media(hover:hover)]:group-hover/card:w-auto [@media(hover:hover)]:group-hover/card:opacity-100 focus-within:w-auto focus-within:opacity-100",
+                        "[@media(hover:none)]:w-auto [@media(hover:none)]:opacity-100",
+                        holdParkActions && "w-auto opacity-100",
                       )}
                     >
                       {unpinButton}
@@ -520,13 +521,18 @@ export function ThreadCard({
                       />
                     </span>
                   ) : null}
+                  <span className="flex items-center justify-end gap-0.5">
+                    {!showParkActions ? unpinButton : null}
+                    <StatusOrTime thread={thread} now={now} />
+                  </span>
                 </span>
               )}
             </div>
             {showProject ? titleLine : null}
+            {/* The workflow stage lives in the status badge, not on its own line. */}
             <div
               data-settle-fade=""
-              className="pointer-events-none relative mt-0.5 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground"
+              className="pointer-events-none relative mt-1 flex h-[18px] items-center gap-1.5 text-2xs text-muted-foreground"
             >
               {/* A thread without a worktree still runs somewhere, so the
                   machine takes the branch's place rather than leaving the line
@@ -542,6 +548,9 @@ export function ThreadCard({
                   onToggle={onToggleChildren}
                 />
               ) : null}
+              {backgroundCount > 0 ? (
+                <ActivityCount label="background tasks" count={backgroundCount} />
+              ) : null}
               {thread.environment?.branchName && thread.host ? (
                 <Icon
                   name="Computer"
@@ -549,26 +558,23 @@ export function ThreadCard({
                   className="size-3 shrink-0 text-muted-foreground/60"
                 />
               ) : null}
-              {thread.activity.workflows > 0 ? (
-                <ActivityCount
-                  label="workflows"
-                  count={thread.activity.workflows}
-                />
-              ) : null}
-              {thread.activity.backgroundAgents > 0 ? (
-                <ActivityCount
-                  label="background agents"
-                  count={thread.activity.backgroundAgents}
-                />
+              {shortModel !== null ? (
+                <span className="shrink-0 font-medium leading-none tabular-nums">{shortModel}</span>
               ) : null}
               {isVisible ? <ThreadPullRequest threadId={thread.id} /> : null}
               <ProviderGlyph
                 providerId={thread.providerId}
                 provider={provider}
               />
+              <ThreadContextPercent usage={contextUsage} />
             </div>
             </>
             )}
+            {view && view.timeLabel !== null ? (
+              <span id={descriptionId} className="sr-only">
+                {view.accessibleText}
+              </span>
+            ) : null}
           </div>
           {childThreads.length > 0 &&
           (childrenExpanded ||
@@ -602,15 +608,25 @@ export function ThreadCard({
 
 function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
   const branchName = thread.environment?.branchName;
-  if (branchName) {
-    const isWorktree =
-      thread.environment?.workspaceDisplayKind === "managed-worktree" ||
-      thread.environment?.workspaceDisplayKind === "unmanaged-worktree";
+  const worktreeName = threadWorktreeName(thread);
+  if (worktreeName !== null) {
     return (
       <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
         <Icon
-          name={isWorktree ? "FolderGit" : "GitBranch"}
-          aria-label={isWorktree ? "Worktree branch" : "Branch"}
+          name="FolderGit"
+          aria-label="Worktree branch"
+          className="size-3 shrink-0 text-muted-foreground/60"
+        />
+        <span className="truncate font-mono">{worktreeName}</span>
+      </span>
+    );
+  }
+  if (branchName) {
+    return (
+      <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
+        <Icon
+          name="GitBranch"
+          aria-label="Branch"
           className="size-3 shrink-0 text-muted-foreground/60"
         />
         <span className="truncate font-mono">{branchName}</span>
@@ -705,9 +721,10 @@ function ActivityCount({ label, count }: { label: string; count: number }) {
   return (
     <span
       aria-label={`${count} ${label}`}
-      className="shrink-0 rounded bg-muted px-1 font-mono text-2xs text-muted-foreground"
+      className="flex h-[18px] shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 text-xs font-medium leading-none text-foreground"
     >
-      {count}
+      <Icon name="Terminal" aria-hidden="true" className="size-3 shrink-0" />
+      <span className="tabular-nums">{count}</span>
     </span>
   );
 }
