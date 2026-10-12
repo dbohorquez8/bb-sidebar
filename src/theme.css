@@ -225,10 +225,16 @@
 
   --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-red-950) 60%, transparent);
   --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-red-950) 80%, transparent);
-  --bb-sidebar-wash-check: color-mix(in oklab, var(--bb-sidebar-orange-600) 45%, transparent);
-  --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-orange-600) 60%, transparent);
-  --bb-sidebar-wash-failed: color-mix(in oklab, var(--bb-sidebar-pink-950) 60%, transparent);
-  --bb-sidebar-wash-failed-hover: color-mix(in oklab, var(--bb-sidebar-pink-950) 80%, transparent);
+  /*
+   * Dark, saturated tints at the same hue as their status word (within the
+   * AC-19 25°-of-the-word tolerance) rather than the named Tailwind shades —
+   * orange-600/pink-950 sit too far around the wheel from orange-300's 66°
+   * and the bespoke 335° failed word to pass.
+   */
+  --bb-sidebar-wash-check: color-mix(in oklab, oklch(27% 0.09 66.29) 45%, transparent);
+  --bb-sidebar-wash-check-hover: color-mix(in oklab, oklch(27% 0.09 66.29) 60%, transparent);
+  --bb-sidebar-wash-failed: color-mix(in oklab, oklch(27% 0.1 335) 60%, transparent);
+  --bb-sidebar-wash-failed-hover: color-mix(in oklab, oklch(27% 0.1 335) 80%, transparent);
   --bb-sidebar-wash-done-unread: color-mix(in oklab, #ffffff 6%, transparent);
   --bb-sidebar-wash-done-unread-hover: color-mix(in oklab, #ffffff 10%, transparent);
 
