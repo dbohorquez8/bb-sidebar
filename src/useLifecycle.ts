@@ -21,6 +21,7 @@ import {
   pruneLifecycleRows,
   safeSetItem,
 } from "./lib/safe-storage";
+import type { PutAwayRecord } from "./sounds";
 
 /** Any live work at all, which blocks parking and wakes a parked thread. */
 export function isWorking(thread: PluginSidebarThread): boolean {
@@ -41,7 +42,18 @@ export interface LifecycleApi {
   unsettle(threadId: string): Promise<boolean>;
   snooze(threadId: string, snoozedUntil: number): Promise<boolean>;
   unsnooze(threadId: string): Promise<boolean>;
+  /** Its identity changes only when a listPutAway result differs (entry by entry)
+   *  from the held one; the `now` tick that rebuilds the LifecycleApi object
+   *  does not change it. This is the dependency signal for useChime's effects. */
+  putAwayRecords: ReadonlyMap<string, PutAwayRecord>;
+  /** isPutAway(putAway.get(threadId), at); unknown id → false. */
+  putAwayFor(threadId: string, at: number): boolean;
+  /** rpc takeBackPutAway; no-op without a record. */
+  takeBack(threadId: string): Promise<void>;
 }
+
+// Stub until plan step 9 loads listPutAway.
+const NO_PUT_AWAY_RECORDS: ReadonlyMap<string, PutAwayRecord> = new Map();
 
 type LifecycleMutation =
   | "park"
@@ -395,6 +407,9 @@ export function useLifecycle(
       unsnooze: (threadId) => mutate({ method: "unsnooze", threadId }),
       snooze: (threadId, snoozedUntil) =>
         mutate({ method: "snooze", threadId, snoozedUntil }),
+      putAwayRecords: NO_PUT_AWAY_RECORDS,
+      putAwayFor: () => false,
+      takeBack: () => Promise.resolve(),
     };
   }, [now, rows, rpc]);
 }

@@ -31,6 +31,8 @@ const harnessModel: AttentionModel = {
   isNeedsYou: () => false,
   needsYouSince: () => null,
   silenceThresholdMinutes: 15,
+  chimeStatuses: new Map(),
+  loadGeneration: 0,
 };
 
 function Harness(_props: PluginThreadListProps) {

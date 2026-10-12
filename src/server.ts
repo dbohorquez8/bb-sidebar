@@ -58,6 +58,7 @@ import {
   SILENCE_THRESHOLD_MIN_MINUTES,
   type RawProjectAttention,
 } from "./attention";
+import { SOUND_IDS } from "./sounds/catalog";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -259,6 +260,33 @@ const sidebarSettingsSchema = z
   })
   .strict();
 
+/** Sound settings on the wire. The input's volume adds `.int()`; a stored readable 37.5 passes the output. */
+const soundSettingsSchema = z
+  .object({
+    playSounds: z.boolean(),
+    needsYouEnabled: z.boolean(),
+    needsYouSound: z.enum(SOUND_IDS),
+    doneEnabled: z.boolean(),
+    doneSound: z.enum(SOUND_IDS),
+    volume: z.number().min(0).max(100),
+  })
+  .strict();
+const soundSettingsPatchSchema = soundSettingsSchema
+  .extend({ volume: z.number().int().min(0).max(100) })
+  .partial()
+  .strict();
+const chimeStatusSchema = z.enum(["needs-you", "done"]);
+const soundWindowsSnapshotSchema = z.object({
+  playingWindowId: z.string().nullable(),
+  activeThreadId: z.string().nullable(),
+});
+const putAwayRecordSchema = z.object({
+  threadId: z.string(),
+  kind: z.enum(["parked", "snoozed", "settled"]),
+  since: z.number(),
+  snoozedUntil: z.number().nullable(),
+});
+
 const rawProjectAttentionSchema = z.object({
   presets: z.array(z.string()),
   ticketPrefixes: z.array(z.string()),
@@ -386,6 +414,44 @@ export const bbSidebarRpcContract = defineRpcContract({
     // Save only edited fields. Full payloads from older clients remain valid.
     input: sidebarSettingsSchema.partial(),
     output: sidebarSettingsSchema,
+  },
+  getSoundSettings: {
+    input: z.object({}).strict(),
+    output: soundSettingsSchema,
+  },
+  updateSoundSettings: {
+    input: soundSettingsPatchSchema,
+    output: soundSettingsSchema,
+  },
+  listPutAway: {
+    input: z.object({}).strict(),
+    output: z.object({ records: z.array(putAwayRecordSchema) }),
+  },
+  takeBackPutAway: {
+    input: threadIdSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  reportSoundWindow: {
+    input: z.object({
+      windowId: z.string().min(1),
+      focused: z.boolean(),
+      activeThreadId: z.string().nullable(),
+      soundBlocked: z.boolean(),
+      lastInputAt: z.number().nullable(),
+    }).strict(),
+    output: soundWindowsSnapshotSchema,
+  },
+  leaveSoundWindow: {
+    input: z.object({ windowId: z.string().min(1) }).strict(),
+    output: z.object({ ok: z.literal(true) }),
+  },
+  claimSoundPlay: {
+    input: z.object({
+      windowId: z.string().min(1),
+      threadId: z.string().min(1),
+      status: chimeStatusSchema,
+    }).strict(),
+    output: z.object({ granted: z.boolean() }),
   },
   listLifecycle: {
     input: z.object({}),
@@ -556,6 +622,8 @@ export const bbSidebarRpcContract = defineRpcContract({
 /** Channel the frontend re-reads on. */
 export const LIFECYCLE_CHANNEL = "lifecycle";
 export const INBOX_ORDER_CHANNEL = "inbox-order";
+/** Payload: SoundWindowsSnapshot. */
+export const SOUND_WINDOWS_CHANNEL = "sound-windows";
 interface StoredProjectIconRow {
   project_id: string;
   path: string;
@@ -1923,6 +1991,27 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async listLifecycle() {
       return { rows: readAll() };
+    },
+    async getSoundSettings() {
+      throw new Error("not implemented");
+    },
+    async updateSoundSettings() {
+      throw new Error("not implemented");
+    },
+    async listPutAway() {
+      throw new Error("not implemented");
+    },
+    async takeBackPutAway() {
+      throw new Error("not implemented");
+    },
+    async reportSoundWindow() {
+      throw new Error("not implemented");
+    },
+    async leaveSoundWindow() {
+      throw new Error("not implemented");
+    },
+    async claimSoundPlay() {
+      throw new Error("not implemented");
     },
     async pin({ threadId }) {
       return withPinParentChange(threadId, async () => {

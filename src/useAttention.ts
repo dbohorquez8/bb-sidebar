@@ -47,11 +47,25 @@ export interface AttentionModel {
   isNeedsYou(threadId: string): boolean;
   needsYouSince(threadId: string): number | null;
   silenceThresholdMinutes: number;
+  /**
+   * statusKey(status) per non-archived thread whose attention record has
+   * loaded (present in observations or named in `unavailable`), and only after
+   * project attention settings have loaded once. A thread is omitted until then.
+   */
+  chimeStatuses: ReadonlyMap<string, string>;
+  /**
+   * Increments each time a full load attempt (listAttention for every
+   * non-archived thread, plus getProjectAttention) has settled, success or
+   * failure: on mount and after each realtime reconnect.
+   */
+  loadGeneration: number;
 }
 
 export const AttentionContext = createContext<AttentionModel | null>(null);
 
 const EMPTY_PROJECT_SETTINGS: ProjectAttentionSettings = { enabledPresets: [], ticketPrefixes: [] };
+// Stub until plan step 8 fills chimeStatuses and loadGeneration.
+const NO_CHIME_STATUSES: ReadonlyMap<string, string> = new Map();
 
 interface ResolvedThread {
   status: ResolvedStatus;
@@ -343,6 +357,8 @@ export function useAttention(
         return statusSince.get(threadId)?.since ?? null;
       },
       silenceThresholdMinutes,
+      chimeStatuses: NO_CHIME_STATUSES,
+      loadGeneration: 0,
     }),
     [resolved, statusSince, silenceThresholdMinutes],
   );
