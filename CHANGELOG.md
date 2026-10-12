@@ -4,6 +4,7 @@
 
 ### Added
 
+- Optional sounds when a thread needs you or is done, with themes, 24 sound choices, a volume slider and previews in Settings > Sounds. The sounds are synthesized in the browser from the definitions in Chime (MIT); see THIRD_PARTY_NOTICES.md.
 - Optional project colors, disabled by default. Each project gets an automatic color based on its ID, with a custom color picker and reset control in Settings > Project appearance. Project groups share one continuous stripe; ungrouped rows have their own stripe.
 - While project colors are enabled, all project names stay colored. Show stripes in full and collapsed mode, full mode only, or grouped projects only when sorting by Project.
 
