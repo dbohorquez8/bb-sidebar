@@ -52,6 +52,8 @@ export interface AttentionModel {
    * statusKey(status) per non-archived thread whose attention record has
    * loaded (present in observations or named in `unavailable`), and only after
    * project attention settings have loaded once. A thread is omitted until then.
+   * While its record reloads after BB reports a status or indicator change for
+   * it, a thread keeps the status it last had here.
    */
   chimeStatuses: ReadonlyMap<string, string>;
   /**
@@ -74,6 +76,11 @@ function sameStatuses(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, str
     if (b.get(threadId) !== key) return false;
   }
   return true;
+}
+
+/** BB's own status and indicator for a thread; a change reloads its record. */
+function bbStatusSignature(thread: PluginSidebarThread): string {
+  return `${thread.status}\0${thread.indicator}`;
 }
 
 interface ResolvedThread {
@@ -158,11 +165,18 @@ export function useAttention(
   const firstSeenRef = useRef<Map<string, number>>(new Map());
   const backgroundSignatureRef = useRef<Map<string, { signature: string; at: number }>>(new Map());
 
-  /** Resolves true when the records loaded (or nothing needed loading). */
-  const loadAttention = async (ids: readonly { id: string; parentId: string | null }[]): Promise<boolean> => {
+  /**
+   * Resolves true when the records loaded (or nothing needed loading).
+   * `settled` runs once the call has answered, before its state lands.
+   */
+  const loadAttention = async (
+    ids: readonly { id: string; parentId: string | null }[],
+    settled?: () => void,
+  ): Promise<boolean> => {
     if (ids.length === 0) return true;
     try {
       const result = await call("listAttention", { threads: ids.slice(0, 1000) });
+      settled?.();
       setObservations((current) => {
         const next = new Map(current);
         for (const observation of result.observations) next.set(observation.threadId, observation);
@@ -178,6 +192,10 @@ export function useAttention(
     } catch {
       // The host has no RPC yet, or the call failed: cards fall back to BB's
       // own live state until the next successful load.
+      if (settled) {
+        settled();
+        setReloadsSettled((count) => count + 1);
+      }
       return false;
     }
   };
@@ -205,22 +223,39 @@ export function useAttention(
   // BB can announce a turn (`thread.active`) before the turn's rows exist, so
   // the record synced then still carries the previous reply, and a stale
   // Needs you verdict would outrank the running turn until it ends. Reloading
-  // a thread's record when BB's own status for it changes reads the new rows.
+  // a thread's record when BB's own status or indicator for it changes reads
+  // the new rows. Until that reload answers, the thread's status is left out
+  // of chimeStatuses: BB's list can say a turn ended (and its result is
+  // unread) before the record holds the final reply, and the status resolved
+  // in between (Done in place of Needs you) must not count as an entry.
   const bbStatusRef = useRef<Map<string, string> | null>(null);
+  /** Thread id → the latest status-change reload's sequence number, while it is in flight. */
+  const reloadingRef = useRef<Map<string, number>>(new Map());
+  const reloadSeqRef = useRef(0);
+  const [reloadsSettled, setReloadsSettled] = useState(0);
   useEffect(() => {
     const previous = bbStatusRef.current;
     const next = new Map<string, string>();
     const changed: { id: string; parentId: string | null }[] = [];
     for (const thread of threads) {
       if (thread.isArchived) continue;
-      next.set(thread.id, thread.status);
+      const signature = bbStatusSignature(thread);
+      next.set(thread.id, signature);
       const before = previous?.get(thread.id);
-      if (before !== undefined && before !== thread.status) {
+      if (before !== undefined && before !== signature) {
         changed.push({ id: thread.id, parentId: thread.parentThreadId });
       }
     }
     bbStatusRef.current = next;
-    if (changed.length > 0) void loadAttention(changed);
+    if (changed.length === 0) return;
+    const seq = ++reloadSeqRef.current;
+    for (const { id } of changed) reloadingRef.current.set(id, seq);
+    void loadAttention(changed, () => {
+      // A newer reload of the same thread keeps it out until that one answers.
+      for (const { id } of changed) {
+        if (reloadingRef.current.get(id) === seq) reloadingRef.current.delete(id);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threads]);
 
@@ -452,11 +487,29 @@ export function useAttention(
   // The chime's status source: only threads whose record has loaded, and only
   // once project settings have, so a first load never reads as a change. The
   // previous Map is kept while nothing differs (useChime's snapshot identity).
+  // A thread whose record is reloading after a BB status change keeps the
+  // status it last had here until the reload answers, so its next status is
+  // compared with the last one useChime held (leaving it out would drop it
+  // from useChime's held statuses, and its return would not count as an
+  // entry). The render that first sees the change runs before the reload
+  // effect, so a signature that differs from the last one seen also counts
+  // as reloading.
   const chimeStatusesRef = useRef<ReadonlyMap<string, string>>(new Map());
   const chimeStatuses = useMemo(() => {
     const next = new Map<string, string>();
     if (projectSettingsLoaded) {
+      const seen = bbStatusRef.current;
+      const reloading = new Set(reloadingRef.current.keys());
+      for (const thread of threads) {
+        const before = seen?.get(thread.id);
+        if (before !== undefined && before !== bbStatusSignature(thread)) reloading.add(thread.id);
+      }
       for (const [threadId, entry] of resolved) {
+        if (reloading.has(threadId)) {
+          const held = chimeStatusesRef.current.get(threadId);
+          if (held !== undefined) next.set(threadId, held);
+          continue;
+        }
         if (observations.has(threadId) || unavailable.has(threadId)) {
           next.set(threadId, statusKey(entry.status));
         }
@@ -465,7 +518,7 @@ export function useAttention(
     if (sameStatuses(next, chimeStatusesRef.current)) return chimeStatusesRef.current;
     chimeStatusesRef.current = next;
     return next;
-  }, [resolved, observations, unavailable, projectSettingsLoaded]);
+  }, [threads, resolved, observations, unavailable, projectSettingsLoaded, reloadsSettled]);
 
   return useMemo<AttentionModel>(
     () => ({
