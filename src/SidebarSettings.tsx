@@ -21,6 +21,7 @@ import { ProjectAppearanceSettings } from "./ProjectSettings";
 import { ProjectManagement } from "./ProjectManagement";
 import { PortLinkSettings } from "./PortLinkSettings";
 import { AttentionSettings } from "./AttentionSettings";
+import { SoundsSettings } from "./SoundsSection";
 import {
   configuredSnoozePresetError,
   parseConfiguredSnoozePresets,
@@ -65,7 +66,7 @@ const PROJECT_COLOR_DISPLAY_LABELS: Record<ProjectColorDisplay, string> = {
 
 const SETTINGS_SECTIONS = [
   "Sidebar layout", "Project appearance", "Thread behavior", "Child threads",
-  "Attention", "This device", "Project management",
+  "Attention", "This device", "Project management", "Sounds",
 ] as const;
 
 /** Long enough to finish typing a shortcut, short enough to feel instant. */
@@ -559,6 +560,10 @@ export function SidebarSettings() {
       </SettingsSection>
 
       <ProjectManagement />
+
+      <SettingsSection title="Sounds" status={statusFor("Sounds")}>
+        <SoundsSettings onSaveStatus={(status) => setSaveFeedback({ section: "Sounds", status })} />
+      </SettingsSection>
     </div>
   );
 }
