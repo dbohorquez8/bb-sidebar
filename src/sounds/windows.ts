@@ -37,16 +37,28 @@ export interface SoundWindowsSnapshot {
  * ties: smallest windowId. No candidate: null.
  */
 export function choosePlayingWindow(
-  _windows: readonly SoundWindowReport[],
-  _current: string | null,
-  _now: number,
+  windows: readonly SoundWindowReport[],
+  current: string | null,
+  now: number,
 ): string | null {
-  throw new Error("not implemented");
+  const candidates = windows.filter((w) => now - w.seenAt <= WINDOW_TTL_MS && !w.soundBlocked);
+  if (candidates.length === 0) return null;
+  const byId = (a: SoundWindowReport, b: SoundWindowReport) => (a.windowId < b.windowId ? -1 : a.windowId > b.windowId ? 1 : 0);
+  const focused = candidates.filter((w) => w.focused).sort(byId);
+  if (focused.length > 0) return focused[0].windowId;
+  if (current !== null && candidates.some((w) => w.windowId === current)) return current;
+  const input = (w: SoundWindowReport) => w.lastInputAt ?? Number.NEGATIVE_INFINITY;
+  return [...candidates].sort((a, b) => input(b) - input(a) || byId(a, b))[0].windowId;
 }
 
 /** activeThreadId of the fresh focused report (blocked windows included); several focused: greatest seenAt; none: null. */
-export function activeThreadOf(_windows: readonly SoundWindowReport[], _now: number): string | null {
-  throw new Error("not implemented");
+export function activeThreadOf(windows: readonly SoundWindowReport[], now: number): string | null {
+  let best: SoundWindowReport | null = null;
+  for (const w of windows) {
+    if (!w.focused || now - w.seenAt > WINDOW_TTL_MS) continue;
+    if (best === null || w.seenAt > best.seenAt) best = w;
+  }
+  return best?.activeThreadId ?? null;
 }
 
 /** No window-local time is sent: windows' clocks and learn times differ (remote tabs, slow refetches). */
@@ -76,6 +88,50 @@ export interface SoundWindowRegistry {
   claim(claim: SoundClaim): boolean;
 }
 
-export function createSoundWindowRegistry(_now: () => number): SoundWindowRegistry {
-  throw new Error("not implemented");
+export function createSoundWindowRegistry(now: () => number): SoundWindowRegistry {
+  const reports = new Map<string, SoundWindowReport>();
+  /** Last time each (threadId, status) claim was granted, on this registry's clock. */
+  const grants = new Map<string, number>();
+  let playing: string | null = null;
+  let published: SoundWindowsSnapshot = { playingWindowId: null, activeThreadId: null };
+
+  const compute = (): SoundWindowsSnapshot => {
+    const t = now();
+    const list = [...reports.values()];
+    playing = choosePlayingWindow(list, playing, t);
+    return { playingWindowId: playing, activeThreadId: activeThreadOf(list, t) };
+  };
+  const publish = (): SoundWindowsSnapshot => {
+    published = compute();
+    return published;
+  };
+
+  return {
+    report(report) {
+      reports.set(report.windowId, { ...report, seenAt: now() });
+      return publish();
+    },
+    leave(windowId) {
+      reports.delete(windowId);
+      return publish();
+    },
+    prune() {
+      const t = now();
+      for (const [id, r] of reports) if (t - r.seenAt > WINDOW_TTL_MS) reports.delete(id);
+      for (const [key, at] of grants) if (t - at > CLAIM_RETENTION_MS) grants.delete(key);
+      const next = compute();
+      if (next.playingWindowId === published.playingWindowId && next.activeThreadId === published.activeThreadId) return null;
+      published = next;
+      return next;
+    },
+    snapshot: compute,
+    claim({ threadId, status }) {
+      const t = now();
+      const key = JSON.stringify([threadId, status]);
+      const last = grants.get(key);
+      if (last !== undefined && t - last <= CLAIM_MATCH_MS) return false;
+      grants.set(key, t);
+      return true;
+    },
+  };
 }
