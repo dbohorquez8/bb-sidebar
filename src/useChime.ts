@@ -8,6 +8,7 @@ import { useSoundSettings } from "./useSoundSettings";
 import { useSoundWindows } from "./useSoundWindows";
 import { useSoundWindow } from "./sounds/browser";
 import {
+  canStart,
   CUTOFF_MS,
   decidePlayback,
   detectEntries,
@@ -94,6 +95,9 @@ export function useChime({
       claimsRef.current.delete(key);
     }
     if (!granted || !mountedRef.current) return;
+    // The claim can resolve late (a slow server, a sleeping computer): the
+    // 3-second cutoff holds at the moment the sound would start.
+    if (!canStart(play, w.clock.now())) return;
     // A sound that cannot start changes nothing else.
     w.output.play(play.sound, play.volume).catch(() => undefined);
   };
@@ -126,7 +130,8 @@ export function useChime({
     processedRef.current = snapshot.statuses;
     const { soundWindow: w, settings: soundSettings, windows: soundWindows, lifecycle: life } = current.current;
     const at = w.clock.now();
-    const detected = detectEntries(tracker, snapshot, at);    trackerRef.current = detected.tracker;
+    const detected = detectEntries(tracker, snapshot, at);
+    trackerRef.current = detected.tracker;
     const audible = detected.entries.filter((entry) =>
       isAudibleEntry(entry, {
         settings: soundSettings,
