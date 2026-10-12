@@ -40,6 +40,5 @@ export function washFor(
   if (status.kind === "needs-you" || status.kind === "check" || status.kind === "failed") {
     return status.kind;
   }
-  if (status.kind === "done" && unreadResult) return "done-unread";
   return null;
 }

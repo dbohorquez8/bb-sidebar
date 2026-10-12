@@ -65,7 +65,7 @@ function attentionLabelClass(status: ResolvedStatus): string {
   }
 }
 
-/** The whole-card wash for a status, or "" for none (needs-you, check, failed, done-unread only). */
+/** The whole-card wash for a status, or "" for none (needs-you, check, failed only; an unread Done card has none). */
 export function attentionWashClass(wash: WashKind | null): string {
   switch (wash) {
     case "needs-you":
@@ -74,8 +74,6 @@ export function attentionWashClass(wash: WashKind | null): string {
       return "bg-[color:var(--bb-sidebar-wash-check)] hover:bg-[color:var(--bb-sidebar-wash-check-hover)]";
     case "failed":
       return "bg-[color:var(--bb-sidebar-wash-failed)] hover:bg-[color:var(--bb-sidebar-wash-failed-hover)]";
-    case "done-unread":
-      return "bg-[color:var(--bb-sidebar-wash-done-unread)] hover:bg-[color:var(--bb-sidebar-wash-done-unread-hover)]";
     case null:
     default:
       return "";

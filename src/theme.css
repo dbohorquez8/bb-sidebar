@@ -152,8 +152,6 @@
   --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-orange-300) 50%, transparent);
   --bb-sidebar-wash-failed: color-mix(in oklab, var(--bb-sidebar-pink-100) 50%, transparent);
   --bb-sidebar-wash-failed-hover: color-mix(in oklab, var(--bb-sidebar-pink-100) 70%, transparent);
-  --bb-sidebar-wash-done-unread: color-mix(in oklab, #000000 6%, transparent);
-  --bb-sidebar-wash-done-unread-hover: color-mix(in oklab, #000000 10%, transparent);
 
   /* Workflow stage progress marks (StageLine). */
   --bb-sidebar-stage-mark-done: var(--bb-sidebar-emerald-600);
@@ -237,8 +235,6 @@
   --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-status-check) 18%, transparent);
   --bb-sidebar-wash-failed: color-mix(in oklab, var(--bb-sidebar-status-failed) 12%, transparent);
   --bb-sidebar-wash-failed-hover: color-mix(in oklab, var(--bb-sidebar-status-failed) 18%, transparent);
-  --bb-sidebar-wash-done-unread: color-mix(in oklab, #ffffff 6%, transparent);
-  --bb-sidebar-wash-done-unread-hover: color-mix(in oklab, #ffffff 10%, transparent);
 
   --bb-sidebar-stage-mark-done: var(--bb-sidebar-emerald-300);
   --bb-sidebar-stage-mark-current: var(--color-foreground, currentColor);

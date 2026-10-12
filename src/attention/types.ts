@@ -109,7 +109,7 @@ export type ObservationEvent =
 
 export interface StageView {
   presetId: string;
-  workflowLabel: string; // "DDD", "Coding loop"
+  workflowLabel: string; // the workflow's display name, from its preset
   stageLabel: string; // "Spec", "Validation plan", "Loop"
   position: number; // 1-based
   total: number;
@@ -122,7 +122,7 @@ export interface TicketMatch {
   titleRest: string | null;
 }
 
-export type WashKind = "needs-you" | "check" | "failed" | "done-unread";
+export type WashKind = "needs-you" | "check" | "failed";
 
 export interface AttentionView {
   status: ResolvedStatus;
