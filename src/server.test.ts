@@ -9,7 +9,11 @@ import plugin, { type StoredLifecycleRow } from "./server";
 // Default both SDK listings to the test's thread fixture. Host-boundary tests
 // override them separately to reproduce visibility, paging and stale replies.
 const createFakePluginHost = (options: Parameters<typeof createHost>[0]) => {
-  const result = createHost(options);
+  // The plugin subscribes to thread events for context usage; the fake host has no event bus.
+  const result = createHost({
+    ...options,
+    sdk: { ...options?.sdk, subscribe: (() => () => {}) as never },
+  });
   if (!options?.sdk?.threads?.list) {
     result.harness.inspection.sdk.stub("threads.list", async (args: Parameters<BbPluginApi["sdk"]["threads"]["list"]>[0]) => {
       const projects = await result.bb.sdk.projects.list({ include: "threads", includePersonal: true });

@@ -122,8 +122,6 @@ export interface TicketMatch {
   titleRest: string | null;
 }
 
-export type WashKind = "needs-you" | "check" | "failed";
-
 export interface AttentionView {
   status: ResolvedStatus;
   /** Status word; null for idle. */
@@ -132,7 +130,6 @@ export interface AttentionView {
   timeLabel: string | null;
   /** Epoch ms the shown time counts from; null when no time is shown. */
   since: number | null;
-  wash: WashKind | null;
   stage: StageView | null;
   ticket: TicketMatch | null;
   background: BackgroundWork;

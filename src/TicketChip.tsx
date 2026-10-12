@@ -1,26 +1,20 @@
 import type { TicketMatch } from "./attention";
-import { chipTextColor } from "./project-colors";
-import { useProjectColorValue } from "./ProjectColors";
 
 /**
- * The ticket id before a card's title, when a confident id was found. It is
- * filled with the thread's project colour; the text is near-black or white,
- * whichever contrasts more with that fill. The text box is trimmed to
- * the capital letters, so the padding above and below the id is even.
+ * The ticket id before a card's title, when a confident id was found.
+ *
+ * A neutral pill in the same style as the
+ * background-work and child-thread chips, so colour on a card stays reserved
+ * for status. The project colour lives on the project name instead.
  */
-export function TicketChip({ ticket, projectId }: { ticket: TicketMatch; projectId?: string }) {
-  const fill = useProjectColorValue(projectId);
-  const text = fill ? chipTextColor(fill) : null;
+export function TicketChip({ ticket }: { ticket: TicketMatch; projectId?: string }) {
   return (
     <span
       data-ticket-chip=""
-      className={
-        "shrink-0 rounded-sm px-1 py-1 font-mono text-2xs font-medium leading-none [text-box:trim-both_cap_alphabetic]" +
-        (text ? "" : " bg-foreground/10 text-foreground/80")
-      }
-      style={text ? { backgroundColor: fill, color: text } : undefined}
+      className="flex h-[18px] shrink-0 items-center rounded-full bg-muted px-1.5 font-mono text-2xs font-medium leading-none text-foreground"
     >
-      {ticket.id}
+      {/* Trimmed to the capitals, so the id sits in the optical middle of the pill. */}
+      <span className="[text-box:trim-both_cap_alphabetic]">{ticket.id}</span>
     </span>
   );
 }

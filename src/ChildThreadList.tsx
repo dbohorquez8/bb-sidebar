@@ -13,7 +13,6 @@ import { StatusGlyph } from "./StatusGlyph";
 import {
   STATUS_SLOT_CLASS,
   StatusOrTime,
-  statusRowWashClass,
   threadStatusLabel,
   useThreadWithDraft,
 } from "./StatusSlot";
@@ -218,7 +217,7 @@ export function ChildThreadBadge({
           onToggle();
         }}
         className={cn(
-          "pointer-events-auto flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-xs font-medium",
+          "pointer-events-auto flex h-[18px] shrink-0 items-center gap-1 rounded-full px-1.5 text-xs font-medium",
           "outline-none focus-visible:ring-1 focus-visible:ring-ring",
           childStatusBadgeClass(summary.dominant),
         )}
@@ -463,18 +462,12 @@ function ChildThreadRow({
               // transparent in light, where the cream band already reads.
               "shadow-[inset_2px_0_0_0_var(--bb-sidebar-needs-you-accent)]",
             ),
-          // Finished-but-unread borrows the shared card wash so cards and
-          // child rows agree.
-          variant === "sidebar" &&
-            !needsYou &&
-            !isActive &&
-            statusRowWashClass(thread.indicator, isActive),
           // The open chat gets the same tint as an active parent card, so the
           // eye finds it in a long tree the way it finds a card in the list.
           isActive &&
             (variant === "header"
               ? "bg-accent"
-              : "bg-sidebar-accent hover:bg-sidebar-accent"),
+              : "bg-[color:var(--bb-sidebar-selected)] hover:bg-[color:var(--bb-sidebar-selected)]"),
         )}
       >
         <ThreadDetailsTooltip thread={thread} disabled={isRenaming}>

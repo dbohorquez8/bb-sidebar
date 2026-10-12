@@ -2242,7 +2242,9 @@ function ActiveProjectGroup({
     <li
       data-reorder-unit={unitKey}
       className={cn(
-        "list-none rounded-md",
+        // Space after a project group, so the next
+        // project's own card does not read as part of the group.
+        "list-none rounded-md [&:not(:last-child)]:mb-2",
         reorder.isDragging &&
           "relative z-20 bg-[linear-gradient(var(--sidebar-accent),var(--sidebar-accent)),linear-gradient(var(--sidebar),var(--sidebar))] shadow-lg ring-1 ring-sidebar-border",
       )}

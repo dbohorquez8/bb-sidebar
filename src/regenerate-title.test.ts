@@ -44,7 +44,11 @@ const codexService = {
 };
 
 async function setup() {
-  const { bb, harness } = createFakePluginHost({ pluginId: "bb-sidebar" });
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "bb-sidebar",
+    // The plugin subscribes to thread events for context usage; the fake host has no event bus.
+    sdk: { subscribe: (() => () => {}) as never },
+  });
   const sdk = harness.inspection.sdk;
   sdk.stub("threads.get", async () =>
     makeThreadResponse({

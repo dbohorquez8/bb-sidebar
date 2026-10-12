@@ -100,8 +100,6 @@
    */
   --bb-sidebar-needs-you-tint: var(--bb-sidebar-amber-50);
   --bb-sidebar-needs-you-tint-hover: var(--bb-sidebar-amber-50);
-  --bb-sidebar-unread-tint: color-mix(in oklab, var(--bb-sidebar-emerald-100) 50%, transparent);
-  --bb-sidebar-unread-tint-hover: color-mix(in oklab, var(--bb-sidebar-emerald-100) 80%, transparent);
   --bb-sidebar-needs-you-accent: transparent;
 
   --bb-sidebar-settle-active: var(--bb-sidebar-emerald-700);
@@ -138,25 +136,21 @@
   --bb-sidebar-monogram-7-fg: var(--bb-sidebar-red-700);
 
   /* Attention status words (StatusOrTime). */
-  --bb-sidebar-status-needs-you: oklch(50% 0.2 27);
-  --bb-sidebar-status-check: oklch(52% 0.15 55);
-  --bb-sidebar-status-failed: oklch(50% 0.22 335);
-  --bb-sidebar-status-working: oklch(50% 0.11 95);
-  --bb-sidebar-status-background: oklch(48% 0.12 150);
-  --bb-sidebar-status-done: oklch(40% 0.01 260);
+  --bb-sidebar-status-needs-you: oklch(45% 0.19 27);
+  --bb-sidebar-status-check: oklch(42% 0.12 55);
+  --bb-sidebar-status-failed: oklch(42% 0.14 335);
+  --bb-sidebar-status-working: oklch(42% 0.10 95);
+  --bb-sidebar-status-background: oklch(42% 0.10 155);
+  --bb-sidebar-status-done-unread: oklch(25% 0.01 260);
+  --bb-sidebar-status-done: oklch(40% 0.015 260);
 
-  /* Whole-card washes for the statuses that need attention (attentionWashClass). */
-  --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-red-100) 50%, transparent);
-  --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-red-100) 70%, transparent);
-  --bb-sidebar-wash-check: color-mix(in oklab, var(--bb-sidebar-orange-300) 35%, transparent);
-  --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-orange-300) 50%, transparent);
-  --bb-sidebar-wash-failed: color-mix(in oklab, var(--bb-sidebar-pink-100) 50%, transparent);
-  --bb-sidebar-wash-failed-hover: color-mix(in oklab, var(--bb-sidebar-pink-100) 70%, transparent);
-
-  /* Workflow stage progress marks (StageLine). */
-  --bb-sidebar-stage-mark-done: var(--bb-sidebar-emerald-600);
-  --bb-sidebar-stage-mark-current: var(--color-foreground, currentColor);
-  --bb-sidebar-stage-mark-todo: color-mix(in oklab, var(--color-muted-foreground, currentColor) 35%, transparent);
+  /* Selected card fill and ring, status dots; status words per the 2026-10-12 audit. */
+  --bb-sidebar-selected: color-mix(in oklab, #171922 7%, transparent);
+  --bb-sidebar-selected-ring: color-mix(in oklab, var(--color-foreground, #171922) 8%, transparent);
+  --bb-sidebar-unread-dot: var(--bb-sidebar-emerald-600);
+  /* Badge fills are solid against the sidebar, so a badge on the open card keeps its contrast. */
+  --bb-sidebar-pill-done-unread: color-mix(in oklab, var(--bb-sidebar-status-done-unread) 18%, var(--sidebar, #f1f2f8));
+  --bb-sidebar-pill-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 18%, var(--sidebar, #f1f2f8));
 }
 
 .dark {
@@ -184,8 +178,6 @@
    */
   --bb-sidebar-needs-you-tint: color-mix(in oklab, var(--bb-sidebar-amber-950) 60%, transparent);
   --bb-sidebar-needs-you-tint-hover: color-mix(in oklab, var(--bb-sidebar-amber-950) 80%, transparent);
-  --bb-sidebar-unread-tint: color-mix(in oklab, var(--bb-sidebar-emerald-500) 10%, transparent);
-  --bb-sidebar-unread-tint-hover: color-mix(in oklab, var(--bb-sidebar-emerald-500) 15%, transparent);
   --bb-sidebar-needs-you-accent: color-mix(in oklab, var(--bb-sidebar-amber-300) 55%, transparent);
 
   --bb-sidebar-settle-active: var(--bb-sidebar-emerald-300);
@@ -216,42 +208,19 @@
   --bb-sidebar-monogram-7-bg: color-mix(in oklab, var(--bb-sidebar-red-950) 80%, transparent);
   --bb-sidebar-monogram-7-fg: var(--bb-sidebar-red-300);
 
-  --bb-sidebar-status-needs-you: oklch(82% 0.085 22);
-  --bb-sidebar-status-check: var(--bb-sidebar-orange-300);
-  --bb-sidebar-status-failed: oklch(80% 0.13 335);
-  --bb-sidebar-status-working: oklch(88% 0.15 95);
-  --bb-sidebar-status-background: var(--bb-sidebar-emerald-300);
-  --bb-sidebar-status-done: oklch(92% 0.01 260);
+  --bb-sidebar-status-needs-you: oklch(80% 0.12 27);
+  --bb-sidebar-status-check: oklch(84% 0.085 55);
+  --bb-sidebar-status-failed: oklch(82% 0.085 335);
+  --bb-sidebar-status-working: oklch(88% 0.10 95);
+  --bb-sidebar-status-background: oklch(82% 0.085 155);
+  --bb-sidebar-status-done-unread: oklch(96% 0.005 260);
+  --bb-sidebar-status-done: oklch(88% 0.015 260);
 
-  /*
-   * Owner live review (2026-10-11): saturated red read too harsh in dark.
-   * Each wash is its own pastel status word mixed in at 12%, 18% on hover,
-   * so wash and word share one hue (AC-19) and stay in the plugin's
-   * pastel palette. The Needs you word is a soft coral for the same reason.
-   */
-  --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-status-needs-you) 12%, transparent);
-  --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-status-needs-you) 18%, transparent);
-  --bb-sidebar-wash-check: color-mix(in oklab, var(--bb-sidebar-status-check) 12%, transparent);
-  --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-status-check) 18%, transparent);
-  --bb-sidebar-wash-failed: color-mix(in oklab, var(--bb-sidebar-status-failed) 12%, transparent);
-  --bb-sidebar-wash-failed-hover: color-mix(in oklab, var(--bb-sidebar-status-failed) 18%, transparent);
-
-  --bb-sidebar-stage-mark-done: var(--bb-sidebar-emerald-300);
-  --bb-sidebar-stage-mark-current: var(--color-foreground, currentColor);
-  --bb-sidebar-stage-mark-todo: color-mix(in oklab, var(--color-muted-foreground, currentColor) 35%, transparent);
-}
-
-/* Workflow stage progress marks (StageLine): one appearance per mark kind. */
-.bb-sidebar-stage-mark-done {
-  background-color: var(--bb-sidebar-stage-mark-done);
-}
-
-.bb-sidebar-stage-mark-current {
-  background-color: var(--bb-sidebar-stage-mark-current);
-}
-
-.bb-sidebar-stage-mark-todo {
-  background-color: var(--bb-sidebar-stage-mark-todo);
+  --bb-sidebar-selected: color-mix(in oklab, #ffffff 13%, transparent);
+  --bb-sidebar-selected-ring: color-mix(in oklab, var(--color-foreground, #ffffff) 8%, transparent);
+  --bb-sidebar-unread-dot: var(--bb-sidebar-emerald-400);
+  --bb-sidebar-pill-done-unread: color-mix(in oklab, var(--bb-sidebar-status-done-unread) 28%, var(--sidebar, #2f313d));
+  --bb-sidebar-pill-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 30%, var(--sidebar, #2f313d));
 }
 
 /*
@@ -344,4 +313,35 @@
 
 .bb-sidebar-project-monogram {
   background-color: color-mix(in oklab, var(--bb-sidebar-project) 20%, transparent);
+}
+
+/* The Needs you bell rings for a moment, then rests. */
+.bb-sidebar-needs-you-bell {
+  transform-origin: 50% 10%;
+  animation: bb-sidebar-needs-you-ring 2.4s ease-in-out infinite;
+}
+
+@keyframes bb-sidebar-needs-you-ring {
+  0%, 30%, 100% { transform: rotate(0deg); }
+  5% { transform: rotate(16deg); }
+  10% { transform: rotate(-14deg); }
+  15% { transform: rotate(10deg); }
+  20% { transform: rotate(-6deg); }
+  25% { transform: rotate(3deg); }
+}
+
+/* The Done check pops once, then rests. */
+.bb-sidebar-done-check {
+  animation: bb-sidebar-done-pop 2.4s ease-out infinite;
+}
+
+@keyframes bb-sidebar-done-pop {
+  0%, 25%, 100% { transform: scale(1); }
+  8% { transform: scale(1.3); }
+  16% { transform: scale(0.92); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-sidebar-needs-you-bell,
+  .bb-sidebar-done-check { animation: none; }
 }
