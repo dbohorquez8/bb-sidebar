@@ -139,7 +139,7 @@ function AttentionStatusOrTime({
         {view.label}
       </span>
       {view.timeLabel !== null ? (
-        <span className="text-2xs tabular-nums text-muted-foreground"> {view.timeLabel}</span>
+        <span className="ml-1 text-2xs tabular-nums text-muted-foreground"> {view.timeLabel}</span>
       ) : null}
       {view.timeLabel !== null ? (
         <span id={descriptionId} className="sr-only">

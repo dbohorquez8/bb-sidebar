@@ -23,6 +23,7 @@
    */
   --bb-sidebar-red-100: var(--color-red-100, oklch(93.6% 0.032 17.717));
   --bb-sidebar-red-300: var(--color-red-300, oklch(80.8% 0.114 19.571));
+  --bb-sidebar-red-500: var(--color-red-500, oklch(63.7% 0.237 25.331));
   --bb-sidebar-red-600: var(--color-red-600, oklch(57.7% 0.245 27.325));
   --bb-sidebar-red-700: var(--color-red-700, oklch(50.5% 0.213 27.518));
   --bb-sidebar-red-950: var(--color-red-950, oklch(25.8% 0.092 26.042));
@@ -32,6 +33,7 @@
   --bb-sidebar-amber-700: var(--color-amber-700, oklch(55.5% 0.163 48.998));
   --bb-sidebar-amber-950: var(--color-amber-950, oklch(27.9% 0.077 45.635));
   --bb-sidebar-orange-300: var(--color-orange-300, oklch(83.7% 0.128 66.29));
+  --bb-sidebar-orange-500: var(--color-orange-500, oklch(70.5% 0.213 47.604));
   --bb-sidebar-orange-600: var(--color-orange-600, oklch(64.6% 0.222 41.116));
   --bb-sidebar-emerald-100: var(--color-emerald-100, oklch(95% 0.052 163.051));
   --bb-sidebar-emerald-200: var(--color-emerald-200, oklch(90.5% 0.093 164.15));
@@ -223,18 +225,18 @@
   --bb-sidebar-status-background: var(--bb-sidebar-emerald-300);
   --bb-sidebar-status-done: oklch(92% 0.01 260);
 
-  --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-red-950) 60%, transparent);
-  --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-red-950) 80%, transparent);
   /*
-   * Dark, saturated tints at the same hue as their status word (within the
-   * AC-19 25°-of-the-word tolerance) rather than the named Tailwind shades —
-   * orange-600/pink-950 sit too far around the wheel from orange-300's 66°
-   * and the bespoke 335° failed word to pass.
+   * Owner live review (2026-10-11): the old 60%/80% red-950 wash read far too
+   * strong in dark. Same recipe as the unread-row tint above — a mid shade at
+   * the status word's own hue (AC-19 25°-of-the-word tolerance), mixed in at
+   * 10%, 15% on hover — rather than a dark, heavily-mixed named shade.
    */
-  --bb-sidebar-wash-check: color-mix(in oklab, oklch(27% 0.09 66.29) 45%, transparent);
-  --bb-sidebar-wash-check-hover: color-mix(in oklab, oklch(27% 0.09 66.29) 60%, transparent);
-  --bb-sidebar-wash-failed: color-mix(in oklab, oklch(27% 0.1 335) 60%, transparent);
-  --bb-sidebar-wash-failed-hover: color-mix(in oklab, oklch(27% 0.1 335) 80%, transparent);
+  --bb-sidebar-wash-needs-you: color-mix(in oklab, var(--bb-sidebar-red-500) 10%, transparent);
+  --bb-sidebar-wash-needs-you-hover: color-mix(in oklab, var(--bb-sidebar-red-500) 15%, transparent);
+  --bb-sidebar-wash-check: color-mix(in oklab, var(--bb-sidebar-orange-500) 10%, transparent);
+  --bb-sidebar-wash-check-hover: color-mix(in oklab, var(--bb-sidebar-orange-500) 15%, transparent);
+  --bb-sidebar-wash-failed: color-mix(in oklab, oklch(65% 0.2 335) 10%, transparent);
+  --bb-sidebar-wash-failed-hover: color-mix(in oklab, oklch(65% 0.2 335) 15%, transparent);
   --bb-sidebar-wash-done-unread: color-mix(in oklab, #ffffff 6%, transparent);
   --bb-sidebar-wash-done-unread-hover: color-mix(in oklab, #ffffff 10%, transparent);
 

@@ -46,8 +46,6 @@ import { usePinnedReorder } from "./usePinnedReorder";
 import { useInboxReorder } from "./useInboxReorder";
 import { TRAILING_GLYPH_BOX_CLASS } from "./StatusSlot";
 import { AttentionContext, useAttention } from "./useAttention";
-import { placeNeedsYouShelf } from "./attention";
-import { NeedsYouShelf } from "./NeedsYouShelf";
 import { WorkingSinceContext, useWorkingSince } from "./useWorkingSince";
 import { JumpHintsContext, useJumpHints } from "./JumpHints";
 import { useSidebarSettings } from "./useSidebarSettings";
@@ -630,26 +628,15 @@ export function ThreadInbox({
     parked,
     snoozed,
     settled,
-    needsYou,
   } = useMemo(() => {
     const allVisible = visibleInboxThreads(threads);
-    // Every project, every parent, regardless of scope (AC-40): a thread that
-    // needs the owner moves to this shelf no matter where it would otherwise sit.
-    const needsYouPlacement = placeNeedsYouShelf(
-      allVisible,
-      (thread) => attention.isNeedsYou(thread.id),
-      (thread) => attention.needsYouSince(thread.id) ?? 0,
-    );
     const scoped = filterByProject(
       allVisible,
       scope === ALL_PROJECTS ? null : scope,
     );
     // Children live in their parent's header chip instead of the flat list;
-    // an orphan whose parent is not on screen stays here. A thread moved to
-    // Needs you leaves every other shelf until it no longer needs the owner.
-    const visible = hideChildrenOfVisibleParents(scoped).filter(
-      (thread) => !needsYouPlacement.movedIds.has(thread.id),
-    );
+    // an orphan whose parent is not on screen stays here.
+    const visible = hideChildrenOfVisibleParents(scoped);
     const active: typeof visible = [];
     const onParkedShelf: typeof visible = [];
     const onSnoozeShelf: typeof visible = [];
@@ -667,7 +654,11 @@ export function ThreadInbox({
     const inactive: typeof split.inbox = [];
     for (const thread of split.inbox) {
       const lockedShelf = renamingShelfLocks.get(thread.id);
-      const needsAttention = threadNeedsAttention(thread);
+      // A thread needing the owner — BB's own pending-interaction signal or
+      // the attention preset's state-line marker — is grouped in Active: it
+      // must not land in Working or Inactive because of running work or age.
+      const needsAttention =
+        threadNeedsAttention(thread) || attention.isNeedsYou(thread.id);
       if (lockedShelf === "active") {
         activeUnpinned.push(thread);
         continue;
@@ -678,6 +669,10 @@ export function ThreadInbox({
       }
       if (lockedShelf === "inactive" && !needsAttention) {
         inactive.push(thread);
+        continue;
+      }
+      if (needsAttention) {
+        activeUnpinned.push(thread);
         continue;
       }
       // A thread with work running anywhere under it waits on the Working
@@ -720,7 +715,6 @@ export function ThreadInbox({
           (lifecycle.wakeAtFor(left) ?? 0) - (lifecycle.wakeAtFor(right) ?? 0),
       ),
       settled: sortSettledThreads(onSettledShelf, lifecycle.settledAtFor),
-      needsYou: needsYouPlacement.needsYou,
     };
   }, [
     activeThreadId,
@@ -1428,13 +1422,11 @@ export function ThreadInbox({
   const wokeThreadIds = useMemo(
     () =>
       new Set(
-        // Needs you included: a thread moved to that shelf still answers
-        // "is it woke" the same as it would on the shelf it left.
-        [...pinned, ...inbox, ...working, ...inactive, ...needsYou]
+        [...pinned, ...inbox, ...working, ...inactive]
           .filter((thread) => lifecycle.wokeFor(thread))
           .map((thread) => thread.id),
       ),
-    [inactive, inbox, lifecycle, needsYou, pinned, working],
+    [inactive, inbox, lifecycle, pinned, working],
   );
 
   const parkActiveThread = async (
@@ -1595,9 +1587,6 @@ export function ThreadInbox({
               attachLowerRef={attachDockAutoAnimateRef}
               upper={
                 <>
-                  <NeedsYouShelf count={needsYou.length}>
-                    {needsYou.map((thread) => renderActiveThread(thread, "inbox"))}
-                  </NeedsYouShelf>
                   {pinned.length > 0 ? (
                     <CollapsibleShelf
                       label="Pinned"

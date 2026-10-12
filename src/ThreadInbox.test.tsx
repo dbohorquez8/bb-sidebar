@@ -5663,11 +5663,11 @@ describe("parking threads", () => {
       await waitFor(() =>
         expect(titlesIn("Working")).toEqual(["Busy work", "Waiting on child"]),
       );
-      // Needing you now has its own shelf, above every other shelf, which a
-      // thread leaves no matter what else is true of it (running children
-      // included); Done is Active's business; pinned stays pinned.
-      expect(titlesIn("Needs you")).toEqual(["Asking parent"]);
-      expect(titlesIn("Active")).toEqual(["Done work"]);
+      // A raised hand is grouped in Active no matter what else is true of
+      // it (running children included), alongside Active's own business;
+      // pinned stays pinned.
+      expect(screen.queryByRole("region", { name: "Needs you" })).toBeNull();
+      expect(titlesIn("Active")).toEqual(["Asking parent", "Done work"]);
       expect(titlesIn("Pinned")).toEqual(["Pinned busy"]);
       // One line like the other shelves, even with compact mode off.
       for (const title of ["Busy work", "Waiting on child"]) {
@@ -6012,11 +6012,11 @@ describe("parking threads", () => {
       },
     });
 
-    // Needing you now has its own shelf, above Active, which a thread never
-    // leaves while the question stands (AC-39, AC-41).
-    const needsYou = screen.getByRole("region", { name: "Needs you" });
+    // A raised hand is grouped in Active (no separate Needs you shelf),
+    // never the settled store it was found in.
+    const active = screen.getByRole("region", { name: "Active" });
     const row = (
-      await within(needsYou).findByText("Asking while working")
+      await within(active).findByText("Asking while working")
     ).closest("li")!;
     expect(within(row).getByText("Needs you")).toBeDefined();
     expect(within(row).queryByText(/^Working/)).toBeNull();

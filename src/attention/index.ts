@@ -10,7 +10,6 @@ export * from "./stage";
 export * from "./silence";
 export * from "./status";
 export * from "./since";
-export * from "./shelves";
 export * from "./observation";
 export * from "./settings";
 export * from "./format";
