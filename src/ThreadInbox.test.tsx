@@ -766,7 +766,7 @@ describe("sidebar settings", () => {
     expect(
       (await screen.findAllByRole("heading", { level: 2 })).map((heading) => heading.textContent),
     ).toEqual([
-      "Sidebar layout", "Project appearance", "Thread behavior", "Child threads", "Attention", "This device", "Project management",
+      "Sidebar layout", "Project appearance", "Thread behavior", "Child threads", "Attention", "This device", "Project management", "Sounds",
     ]);
     const navigation = screen.getByRole("navigation", { name: "Settings sections" });
     for (const link of within(navigation).getAllByRole("link")) {

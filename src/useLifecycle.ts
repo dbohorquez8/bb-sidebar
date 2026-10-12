@@ -21,6 +21,7 @@ import {
   pruneLifecycleRows,
   safeSetItem,
 } from "./lib/safe-storage";
+import { isPutAway, type PutAwayRecord } from "./sounds";
 
 /** Any live work at all, which blocks parking and wakes a parked thread. */
 export function isWorking(thread: PluginSidebarThread): boolean {
@@ -41,6 +42,33 @@ export interface LifecycleApi {
   unsettle(threadId: string): Promise<boolean>;
   snooze(threadId: string, snoozedUntil: number): Promise<boolean>;
   unsnooze(threadId: string): Promise<boolean>;
+  /** Its identity changes only when a listPutAway result differs (entry by entry)
+   *  from the held one; the `now` tick that rebuilds the LifecycleApi object
+   *  does not change it. This is the dependency signal for useChime's effects. */
+  putAwayRecords: ReadonlyMap<string, PutAwayRecord>;
+  /** isPutAway(putAway.get(threadId), at); unknown id → false. */
+  putAwayFor(threadId: string, at: number): boolean;
+  /** rpc takeBackPutAway; no-op without a record. */
+  takeBack(threadId: string): Promise<void>;
+}
+
+function samePutAwayRecords(
+  a: ReadonlyMap<string, PutAwayRecord>,
+  b: ReadonlyMap<string, PutAwayRecord>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [threadId, record] of a) {
+    const other = b.get(threadId);
+    if (
+      !other ||
+      other.kind !== record.kind ||
+      other.since !== record.since ||
+      other.snoozedUntil !== record.snoozedUntil
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 type LifecycleMutation =
@@ -174,6 +202,11 @@ export function useLifecycle(
       new Map(),
   );
   const [now, setNow] = useState(() => Date.now());
+  // The owner's put-away choices (sounds). Loaded beside the lifecycle rows;
+  // the Map is replaced only when a load differs, so useChime can depend on it.
+  const [putAwayRecords, setPutAwayRecords] = useState<
+    ReadonlyMap<string, PutAwayRecord>
+  >(() => new Map());
 
   // Responses can land out of order (a mutation's refresh racing a realtime
   // one), and an older list would silently restore state the user just
@@ -183,17 +216,29 @@ export function useLifecycle(
   const portPromptVersions = useRef(new Map<string, number>());
   const refresh = useCallback(async () => {
     const seq = ++requestSeq.current;
-    try {
-      const result = await rpc.call("listLifecycle", {});
-      if (seq !== requestSeq.current) return;
+    // Both lists load together so a park and its put-away record land in the
+    // same render.
+    const [lifecycle, putAway] = await Promise.allSettled([
+      rpc.call("listLifecycle", {}),
+      rpc.call("listPutAway", {}),
+    ]);
+    if (seq !== requestSeq.current) return;
+    // A rejected list keeps the last known value during a backend reload or
+    // transient RPC failure. The next realtime signal or mount retries.
+    if (lifecycle.status === "fulfilled") {
       const nextRows = new Map(
-        result.rows.map((row) => [row.threadId, row] as const),
+        lifecycle.value.rows.map((row) => [row.threadId, row] as const),
       );
       cacheLifecycleRows(rpc, nextRows);
       setRows(nextRows);
-    } catch {
-      void 0; // Keep the last known rows during a backend reload or transient RPC
-      // failure. The next realtime signal or mount retries the refresh.
+    }
+    if (putAway.status === "fulfilled") {
+      const nextRecords = new Map(
+        putAway.value.records.map((record) => [record.threadId, record] as const),
+      );
+      setPutAwayRecords((held) =>
+        samePutAwayRecords(held, nextRecords) ? held : nextRecords,
+      );
     }
   }, [rpc]);
 
@@ -395,6 +440,16 @@ export function useLifecycle(
       unsnooze: (threadId) => mutate({ method: "unsnooze", threadId }),
       snooze: (threadId, snoozedUntil) =>
         mutate({ method: "snooze", threadId, snoozedUntil }),
+      putAwayRecords,
+      putAwayFor: (threadId, at) => isPutAway(putAwayRecords.get(threadId), at),
+      takeBack: async (threadId) => {
+        if (!putAwayRecords.has(threadId)) return;
+        try {
+          await rpc.call("takeBackPutAway", { threadId });
+        } catch {
+          void 0; // The record stays; the thread stays quiet until a later take-back.
+        }
+      },
     };
-  }, [now, rows, rpc]);
+  }, [now, rows, rpc, putAwayRecords]);
 }
