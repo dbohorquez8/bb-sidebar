@@ -22,8 +22,9 @@ export interface PutAwayRecord {
  * passed (kind !== "snoozed" || snoozedUntil > at). An undefined record is not
  * put away.
  */
-export function isPutAway(_record: PutAwayRecord | undefined, _at: number): boolean {
-  throw new Error("not implemented");
+export function isPutAway(record: PutAwayRecord | undefined, at: number): boolean {
+  if (!record) return false;
+  return record.kind !== "snoozed" || (record.snoozedUntil !== null && record.snoozedUntil > at);
 }
 
 export interface AudibleContext {
@@ -35,6 +36,8 @@ export interface AudibleContext {
 }
 
 /** settings.playSounds && that status's switch && !putAway && threadId !== activeThreadId. */
-export function isAudibleEntry(_entry: ChimeEntry, _ctx: AudibleContext): boolean {
-  throw new Error("not implemented");
+export function isAudibleEntry(entry: ChimeEntry, ctx: AudibleContext): boolean {
+  const { settings } = ctx;
+  const switchOn = entry.status === "needs-you" ? settings.needsYouEnabled : settings.doneEnabled;
+  return settings.playSounds && switchOn && !ctx.putAway && entry.threadId !== ctx.activeThreadId;
 }

@@ -35,9 +35,32 @@ export interface PlayRequest {
  * The period opens whether or not the requested play later starts (AC-49).
  */
 export function scheduleEntries(
-  _quiet: QuietPeriod | null,
-  _audible: readonly ChimeEntry[],
-  _settings: SoundSettings,
+  quiet: QuietPeriod | null,
+  audible: readonly ChimeEntry[],
+  settings: SoundSettings,
 ): { quiet: QuietPeriod | null; plays: PlayRequest[] } {
-  throw new Error("not implemented");
+  const rank = (e: ChimeEntry) => (e.status === "needs-you" ? 0 : 1);
+  const ordered = audible
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) =>
+      a.entry.learnedAt - b.entry.learnedAt || rank(a.entry) - rank(b.entry) || a.index - b.index)
+    .map((x) => x.entry);
+
+  const plays: PlayRequest[] = [];
+  let current = quiet;
+  for (const entry of ordered) {
+    const t = entry.learnedAt;
+    const outside = current === null || t >= current.until;
+    const upgrade = !outside && current!.openedBy === "done" && entry.status === "needs-you";
+    if (!outside && !upgrade) continue;
+    plays.push({
+      threadId: entry.threadId,
+      status: entry.status,
+      sound: entry.status === "needs-you" ? settings.needsYouSound : settings.doneSound,
+      volume: settings.volume,
+      learnedAt: t,
+    });
+    current = { until: t + QUIET_PERIOD_MS, openedBy: entry.status };
+  }
+  return { quiet: current, plays };
 }

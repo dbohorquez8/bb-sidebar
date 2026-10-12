@@ -56,11 +56,16 @@ export const THEME_PAIRS: Readonly<Record<ThemeId, { needsYou: SoundId; done: So
 };
 
 /** The theme whose pair is exactly (needsYou, done), in that order; otherwise "custom". */
-export function themeForPair(_needsYou: SoundId, _done: SoundId): ThemeId | "custom" {
-  throw new Error("not implemented");
+export function themeForPair(needsYou: SoundId, done: SoundId): ThemeId | "custom" {
+  for (const theme of THEME_IDS) {
+    const pair = THEME_PAIRS[theme];
+    if (pair.needsYou === needsYou && pair.done === done) return theme;
+  }
+  return "custom";
 }
 
 /** Returns settings with both sounds replaced by the theme's pair; nothing else changes. */
-export function applyTheme(_settings: SoundSettings, _theme: ThemeId): SoundSettings {
-  throw new Error("not implemented");
+export function applyTheme(settings: SoundSettings, theme: ThemeId): SoundSettings {
+  const pair = THEME_PAIRS[theme];
+  return { ...settings, needsYouSound: pair.needsYou, doneSound: pair.done };
 }

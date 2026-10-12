@@ -4,8 +4,8 @@ import type { PlayRequest } from "./quiet";
 export const CUTOFF_MS = 3_000;
 
 /** now - play.learnedAt <= CUTOFF_MS. */
-export function canStart(_play: PlayRequest, _now: number): boolean {
-  throw new Error("not implemented");
+export function canStart(play: PlayRequest, now: number): boolean {
+  return now - play.learnedAt <= CUTOFF_MS;
 }
 
 /**
@@ -17,8 +17,8 @@ export function canStart(_play: PlayRequest, _now: number): boolean {
  *          "Entry and put-away in the same update")
  */
 export function decidePlayback(
-  _pending: readonly PlayRequest[],
-  _ctx: {
+  pending: readonly PlayRequest[],
+  ctx: {
     now: number;
     isPlayingWindow: boolean;
     isTracked(threadId: string): boolean;
@@ -26,5 +26,14 @@ export function decidePlayback(
     isPutAway(threadId: string): boolean;
   },
 ): { start: PlayRequest[]; keep: PlayRequest[]; dropped: PlayRequest[] } {
-  throw new Error("not implemented");
+  const start: PlayRequest[] = [];
+  const keep: PlayRequest[] = [];
+  const dropped: PlayRequest[] = [];
+  for (const p of pending) {
+    const ok = canStart(p, ctx.now) && ctx.isTracked(p.threadId) && !ctx.isPutAway(p.threadId);
+    if (!ok) dropped.push(p);
+    else if (ctx.isPlayingWindow) start.push(p);
+    else keep.push(p);
+  }
+  return { start, keep, dropped };
 }

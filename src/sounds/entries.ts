@@ -7,8 +7,8 @@ export type StatusKey = string;
 export const NO_STATUS = "none";
 
 /** "needs-you" -> "needs-you"; "done" -> "done"; every other key (and NO_STATUS) -> null. */
-export function chimeStatusOf(_key: StatusKey): ChimeStatus | null {
-  throw new Error("not implemented");
+export function chimeStatusOf(key: StatusKey): ChimeStatus | null {
+  return key === "needs-you" || key === "done" ? key : null;
 }
 
 export interface ThreadSnapshot {
@@ -37,8 +37,12 @@ export interface ChimeEntry {
 }
 
 /** Baseline: every status in the snapshot is held; nothing is an entry (AC-14). */
-export function startListening(_snapshot: ThreadSnapshot, _at: number): EntryTracker {
-  throw new Error("not implemented");
+export function startListening(snapshot: ThreadSnapshot, at: number): EntryTracker {
+  return {
+    listeningSince: at,
+    held: new Map(snapshot.statuses),
+    returning: new Set(),
+  };
 }
 
 /**
@@ -61,9 +65,36 @@ export function startListening(_snapshot: ThreadSnapshot, _at: number): EntryTra
  * in snapshot iteration order, all with learnedAt = at.
  */
 export function detectEntries(
-  _tracker: EntryTracker,
-  _snapshot: ThreadSnapshot,
-  _at: number,
+  tracker: EntryTracker,
+  snapshot: ThreadSnapshot,
+  at: number,
 ): { tracker: EntryTracker; entries: ChimeEntry[] } {
-  throw new Error("not implemented");
+  const entries: ChimeEntry[] = [];
+  const held = new Map<string, StatusKey>();
+  const returning = new Set(tracker.returning);
+
+  for (const [threadId, next] of snapshot.statuses) {
+    const nextChime = chimeStatusOf(next);
+    const previous = tracker.held.get(threadId);
+    held.set(threadId, next);
+    if (previous !== undefined) {
+      if (previous === "failed" && next === "done") continue;
+      if (nextChime !== null && nextChime !== chimeStatusOf(previous)) {
+        entries.push({ threadId, status: nextChime, learnedAt: at });
+      }
+      continue;
+    }
+    const createdAt = snapshot.createdAt.get(threadId);
+    const oldThread =
+      returning.has(threadId) || (createdAt !== undefined && createdAt <= tracker.listeningSince);
+    if (oldThread) continue;
+    if (nextChime !== null) entries.push({ threadId, status: nextChime, learnedAt: at });
+  }
+
+  for (const threadId of snapshot.archived) returning.add(threadId);
+  for (const threadId of tracker.held.keys()) {
+    if (!snapshot.statuses.has(threadId) && snapshot.archived.has(threadId)) returning.add(threadId);
+  }
+
+  return { tracker: { listeningSince: tracker.listeningSince, held, returning }, entries };
 }
