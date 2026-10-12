@@ -51,6 +51,7 @@ import { threadPullRequestSchema } from "./pull-requests";
 import { ownedPortTargetSchema, closePortsResultSchema } from "./close-owned-ports";
 
 import { PROJECT_COLORS_CHANNEL } from "./project-colors";
+import { CONTEXT_USAGE_CHANNEL } from "./context-usage";
 import { createAttentionObserver, THREAD_ATTENTION_TABLE } from "./attention/observer";
 import {
   PROJECT_ATTENTION_CHANNEL,
@@ -171,6 +172,9 @@ interface SidebarSettingsDbRow {
 }
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
+
+const CONTEXT_SOFT_LIMIT = 150_000;
+const CONTEXT_USAGE_EVENT_TYPES = new Set(["thread/contextWindowUsage/updated", "thread/tokenUsage/updated"]);
 
 /**
  * What parking a thread released. These counts are what the toast reminds the
@@ -329,6 +333,10 @@ export const bbSidebarRpcContract = defineRpcContract({
   getThreadPullRequests: {
     input: threadIdSchema.strict(),
     output: z.object({ pullRequests: z.array(threadPullRequestSchema) }).strict(),
+  },
+  getThreadContextUsage: {
+    input: threadIdSchema.strict(),
+    output: z.object({ percent: z.number().nullable(), zonePercent: z.number().nullable() }).strict(),
   },
   getThreadExecutionDetails: {
     input: threadIdSchema.strict(),
@@ -1652,6 +1660,41 @@ export default async function plugin(bb: BbPluginApi) {
     await evaluatePolicies();
   });
 
+  // How full each thread's context window is, as
+  // the context-ring plugin reads it, pushed again whenever a turn moves it.
+  // `percent` is the real window fill; `zonePercent` is usage against the
+  // context-ring plugin's soft limit (150k, its default and the owner's
+  // setting), which drives the colour exactly as the ring's does.
+  async function readContextUsage(
+    threadId: string,
+  ): Promise<{ percent: number | null; zonePercent: number | null }> {
+    try {
+      const timeline = await bb.sdk.threads.timeline({ threadId, summaryOnly: "true", segmentLimit: "1" });
+      const usage = timeline.contextWindowUsage;
+      if (!usage || usage.usedTokens === null) return { percent: null, zonePercent: null };
+      const window = usage.modelContextWindow && usage.modelContextWindow > 0 ? usage.modelContextWindow : null;
+      const zonePercent = Math.round((usage.usedTokens / CONTEXT_SOFT_LIMIT) * 100);
+      return { percent: window ? Math.round((usage.usedTokens / window) * 100) : zonePercent, zonePercent };
+    } catch (error) {
+      bb.log.warn(`context usage read failed for ${threadId}: ${String(error)}`);
+      return { percent: null, zonePercent: null };
+    }
+  }
+  const unsubscribeContextUsage = bb.sdk.subscribe({
+    event: "thread:changed",
+    callback: (event) => {
+      const threadId = event.id;
+      if (typeof threadId !== "string" || threadId === "") return;
+      const eventTypes = event.metadata?.eventTypes;
+      if (!Array.isArray(eventTypes)) return;
+      if (!eventTypes.some((type) => CONTEXT_USAGE_EVENT_TYPES.has(type))) return;
+      void readContextUsage(threadId).then((usage) => {
+        bb.realtime.publish(CONTEXT_USAGE_CHANNEL, { threadId, ...usage });
+      });
+    },
+  });
+  bb.onDispose(() => unsubscribeContextUsage());
+
   bb.rpc.register(bbSidebarRpcContract, {
     getOpenPorts,
     getThreadPorts: threadPortActions.getThreadPorts,
@@ -1824,6 +1867,9 @@ export default async function plugin(bb: BbPluginApi) {
       } finally {
         getOpenPorts.invalidate();
       }
+    },
+    async getThreadContextUsage({ threadId }) {
+      return await readContextUsage(threadId);
     },
     async getThreadExecutionDetails({ threadId }) {
       const options = await bb.sdk.threads.defaultExecutionOptions({ threadId });

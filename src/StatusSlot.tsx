@@ -5,12 +5,13 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { useContext, useId, useMemo } from "react";
 import { isWorkingIndicator } from "./child-status";
+import { Icon } from "./components/Icon";
 import { cn } from "./lib/utils";
 import { relativeTimeLabel } from "./relative-time";
 import { useWorkingSinceContext } from "./useWorkingSince";
 import { statusWithDuration } from "./working-since";
 import { AttentionContext } from "./useAttention";
-import type { AttentionView, ResolvedStatus, WashKind } from "./attention";
+import type { AttentionView, ResolvedStatus } from "./attention";
 
 /**
  * The default trailing slot for cards and flat rows: fixed and right-aligned.
@@ -65,21 +66,6 @@ function attentionLabelClass(status: ResolvedStatus): string {
   }
 }
 
-/** The whole-card wash for a status, or "" for none (needs-you, check, failed only; an unread Done card has none). */
-export function attentionWashClass(wash: WashKind | null): string {
-  switch (wash) {
-    case "needs-you":
-      return "bg-[color:var(--bb-sidebar-wash-needs-you)] hover:bg-[color:var(--bb-sidebar-wash-needs-you-hover)]";
-    case "check":
-      return "bg-[color:var(--bb-sidebar-wash-check)] hover:bg-[color:var(--bb-sidebar-wash-check-hover)]";
-    case "failed":
-      return "bg-[color:var(--bb-sidebar-wash-failed)] hover:bg-[color:var(--bb-sidebar-wash-failed-hover)]";
-    case null:
-    default:
-      return "";
-  }
-}
-
 export function StatusOrTime({
   thread: listedThread,
   now,
@@ -120,31 +106,101 @@ function AttentionStatusOrTime({
       </span>
     );
   }
-  return (
-    <>
+  // The status slot is one element. Working and Background show an icon, the
+  // workflow stage, and the time; Needs you and Done are filled pills with an
+  // animated icon; everything else is plain text.
+  const kind = view.status.kind;
+  const ariaLabel = listedThread.hasPendingInteraction
+    ? view.label
+    : (listedThread.indicatorLabel ?? view.label);
+  const describedBy = view.timeLabel !== null ? descriptionId : undefined;
+  const description =
+    view.timeLabel !== null ? (
+      <span id={descriptionId} className="sr-only">
+        {view.accessibleText}
+      </span>
+    ) : null;
+  const time =
+    view.timeLabel !== null ? <span className="tabular-nums opacity-80">{view.timeLabel}</span> : null;
+  const badge = "inline-flex h-[18px] min-w-0 items-center gap-1 rounded-full px-1.5 text-2xs font-semibold leading-4";
+
+  if (kind === "working" || kind === "background") {
+    return (
       <span
-        aria-label={
-          listedThread.hasPendingInteraction
-            ? view.label
-            : (listedThread.indicatorLabel ?? view.label)
-        }
-        aria-describedby={view.timeLabel !== null ? descriptionId : undefined}
+        aria-label={ariaLabel}
+        aria-describedby={describedBy}
         className={cn(
-          "max-w-full truncate text-2xs font-medium",
-          attentionLabelClass(view.status),
+          // No fill: only Needs you and an unread Done get a badge.
+          "inline-flex h-5 min-w-0 items-center gap-1 text-2xs font-semibold leading-4",
+          kind === "working"
+            ? "text-[color:var(--bb-sidebar-status-working)]"
+            : "text-[color:var(--bb-sidebar-status-background)]",
         )}
+      >
+        <Icon
+          name={kind === "working" ? "Loading" : "Gear"}
+          aria-hidden="true"
+          className={cn("size-3 shrink-0", kind === "working" ? "animate-spin" : "animate-[spin_4s_linear_infinite]")}
+        />
+        {/* Outside a workflow the status word stands in for the stage. */}
+        <span className="truncate">{view.stage ? view.stage.stageLabel : view.label}</span>
+        {view.timeLabel !== null ? (
+          <span className="font-normal tabular-nums text-muted-foreground">{view.timeLabel}</span>
+        ) : null}
+        {description}
+      </span>
+    );
+  }
+  if (kind === "needs-you") {
+    return (
+      <span
+        aria-label={ariaLabel}
+        aria-describedby={describedBy}
+        className={cn(
+          badge,
+          "bg-[color:var(--bb-sidebar-pill-needs-you)] text-[color:var(--bb-sidebar-status-needs-you)]",
+        )}
+      >
+        {/* A bell that rings briefly every few seconds, like the spinner and gear beside it. */}
+        <Icon name="Bell" aria-hidden="true" className="bb-sidebar-needs-you-bell size-3 shrink-0" />
+        <span className="truncate">{view.label}</span>
+        {time}
+        {description}
+      </span>
+    );
+  }
+  if (kind === "done") {
+    // A white badge like Needs you, with a check that pops now and then.
+    return (
+      <span
+        aria-label={ariaLabel}
+        aria-describedby={describedBy}
+        className={cn(
+          badge,
+          "bg-[color:var(--bb-sidebar-pill-done-unread)] text-[color:var(--bb-sidebar-status-done-unread)]",
+        )}
+      >
+        <Icon name="CheckCircle" aria-hidden="true" className="bb-sidebar-done-check size-3 shrink-0" />
+        <span className="truncate">{view.label}</span>
+        {time}
+        {description}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex h-5 min-w-0 items-center gap-1 text-2xs leading-4">
+      <span
+        aria-label={ariaLabel}
+        aria-describedby={describedBy}
+        className={cn("max-w-full truncate font-medium", attentionLabelClass(view.status))}
       >
         {view.label}
       </span>
       {view.timeLabel !== null ? (
-        <span className="ml-1 text-2xs tabular-nums text-muted-foreground"> {view.timeLabel}</span>
+        <span className="tabular-nums text-muted-foreground">{view.timeLabel}</span>
       ) : null}
-      {view.timeLabel !== null ? (
-        <span id={descriptionId} className="sr-only">
-          {view.accessibleText}
-        </span>
-      ) : null}
-    </>
+      {description}
+    </span>
   );
 }
 
@@ -328,33 +384,6 @@ export function threadStatusLabel(
  */
 function isMonitoringLabel(label: string | null): boolean {
   return label?.toLocaleLowerCase().includes("monitoring") ?? false;
-}
-
-/**
- * A faint background wash across a whole row container, for the two states the
- * user must not miss: a raised hand (amber) and finished-but-unread (emerald).
- * No border — the tint alone carries it. Returns "" for every other state so a
- * normal row keeps its default background.
- *
- * `isActive` suppresses the wash: an open thread already has the accent tint,
- * and stacking the status wash on top muddies it. The amber reuses the
- * needs-you tint tokens so cards match child rows.
- */
-export function statusRowWashClass(
-  indicator: PluginSidebarThreadIndicator,
-  isActive: boolean,
-): string {
-  if (isActive) return "";
-  // Both tints are theme tokens in theme.css; the dark unread tint uses a mid
-  // green at low alpha so it tints the row instead of reading as a muddy patch.
-  switch (indicator) {
-    case "waiting-for-input":
-      return "bg-[color:var(--bb-sidebar-needs-you-tint)] hover:bg-[color:var(--bb-sidebar-needs-you-tint-hover)]";
-    case "unread-success":
-      return "bg-[color:var(--bb-sidebar-unread-tint)] hover:bg-[color:var(--bb-sidebar-unread-tint-hover)]";
-    default:
-      return "";
-  }
 }
 
 /** Status palette shared by cards, child labels, and glyphs. */

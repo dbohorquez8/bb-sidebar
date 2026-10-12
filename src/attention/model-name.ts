@@ -1,12 +1,17 @@
 const FAMILY_ABBREVIATIONS: Readonly<Record<string, string>> = {
-  opus: "op",
-  sonnet: "so",
-  haiku: "ha",
-  fable: "fa",
+  fable: "F",
+  opus: "O",
+  sonnet: "S",
+  haiku: "H",
 };
 
 function findFamily(segments: readonly string[]): { abbreviation: string; index: number } | null {
-  if (segments[0] === "gpt") return { abbreviation: "gpt", index: 0 };
+  // Codex ids name the tier after the version ("gpt-5.6-terra"): the tier's
+  // initial (A, S, T, L) leads, and the version still follows it.
+  if (segments[0] === "gpt") {
+    const tier = segments.slice(1).find((segment) => /^[a-z]+$/.test(segment));
+    return { abbreviation: tier ? tier[0].toUpperCase() : "G", index: 0 };
+  }
   for (const [index, segment] of segments.entries()) {
     const abbreviation = FAMILY_ABBREVIATIONS[segment];
     if (abbreviation) return { abbreviation, index };

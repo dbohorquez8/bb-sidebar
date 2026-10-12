@@ -255,9 +255,6 @@ export function useAttention(
       const statusSinceValue =
         since && since.key === statusKey(status) ? since.since : wallNow;
 
-      const openInThisWindow =
-        thread.id === options.activeThreadId || options.openThreadIds.has(thread.id);
-
       const ticket = parseTicketId(
         {
           title: thread.title ?? thread.titleFallback ?? "",
@@ -266,14 +263,12 @@ export function useAttention(
         },
         settings.ticketPrefixes,
       );
-      const stage = currentStage(observation?.steps ?? {}, settings.enabledPresets);
+      const stage = currentStage(observation?.steps ?? {}, settings.enabledPresets, observation?.turnStartedAt ?? null);
 
       const view = buildAttentionView({
         status,
         statusSince: statusSinceValue,
         silenceOrigin: origin,
-        unreadResult: input.unreadResult,
-        openInThisWindow,
         stage,
         ticket,
         background: liveBackground,

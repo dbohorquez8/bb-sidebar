@@ -6,16 +6,16 @@ import type { AttentionPreset } from "./types";
 // an argument.
 
 const DDD_STAGES = [
-  { id: "scaffold", label: "Scaffold" },
-  { id: "explore", label: "Explore" },
-  { id: "propose", label: "Propose" },
-  { id: "spec", label: "Spec" },
-  { id: "validation-plan", label: "Validation plan" },
-  { id: "plan", label: "Plan" },
-  { id: "slice", label: "Slice" },
-  { id: "build", label: "Build" },
-  { id: "verify", label: "Verify" },
-  { id: "ship", label: "Ship" },
+  { id: "scaffold", label: "Scaffolding" },
+  { id: "explore", label: "Exploring" },
+  { id: "propose", label: "Proposing" },
+  { id: "spec", label: "Specifying" },
+  { id: "validation-plan", label: "Validating" },
+  { id: "plan", label: "Planning" },
+  { id: "slice", label: "Slicing" },
+  { id: "build", label: "Building" },
+  { id: "verify", label: "Verifying" },
+  { id: "ship", label: "Shipping" },
 ] as const;
 
 export const ATTENTION_PRESETS: readonly AttentionPreset[] = [
@@ -52,7 +52,7 @@ export const ATTENTION_PRESETS: readonly AttentionPreset[] = [
     id: "coding-loop-workflow",
     label: "coding-loop workflow",
     kind: "workflow",
-    workflow: { id: "coding-loop", label: "Coding loop", stages: [{ id: "loop", label: "Loop" }] },
+    workflow: { id: "coding-loop", label: "Coding loop", stages: [{ id: "loop", label: "Looping" }] },
     rules: [{ step: "coding-loop", stageId: "loop" }],
   },
 ];

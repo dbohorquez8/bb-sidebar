@@ -63,6 +63,7 @@ export function mapStepToStage(
 export function currentStage(
   steps: Readonly<Record<string, ObservedStep>>,
   enabledPresets: readonly AttentionPreset[],
+  turnStartedAt: number | null = null,
 ): StageView | null {
   let best: { preset: Extract<AttentionPreset, { kind: "workflow" }>; observed: ObservedStep } | null = null;
   for (const preset of enabledPresets) {
@@ -79,6 +80,11 @@ export function currentStage(
   if (position === -1) return null;
   const stage = best.preset.workflow.stages[position];
   const total = best.preset.workflow.stages.length;
+  // The last stage of a multi-stage workflow ends it: it shows only during the
+  // turn that ran it. A later turn is work outside the workflow, so it gets the
+  // plain status rather than a stale "Shipping".
+  const finalStage = total > 1 && position === total - 1;
+  if (finalStage && turnStartedAt !== null && turnStartedAt > best.observed.at) return null;
   return {
     presetId: best.preset.id,
     workflowLabel: best.preset.workflow.label,

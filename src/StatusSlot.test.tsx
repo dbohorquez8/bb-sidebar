@@ -99,7 +99,6 @@ const workingView: AttentionView = {
   label: "Working",
   timeLabel: null,
   since: null,
-  wash: null,
   stage: null,
   ticket: null,
   background: { workers: 0, commands: 0, workflows: 0 },

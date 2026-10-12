@@ -434,19 +434,23 @@ function render(
 
 
 /**
- * The card's trailing slot and the two spans it stacks: the status, and the
- * park actions that replace it on a hover device. On touch both stay put, so
- * the tests need each span separately.
+ * The card's trailing slot and the two spans beside each other in it: the
+ * status (which never hides) and the park actions, which slide in to its left
+ * on hover or focus and are always shown on touch. The status word may be
+ * nested at different depths (a pill, an unfilled element, a plain word), so
+ * the wrapper is found as the nearest right-aligned flex box.
  */
 function statusSlotParts(row: HTMLElement, statusText: string) {
   const status = within(row).getByText(statusText);
-  const statusWrapper = status.parentElement!;
+  const statusWrapper = status.closest<HTMLElement>(".justify-end")!;
   const slot = statusWrapper.parentElement!;
+  const first = slot.firstElementChild as HTMLElement;
   return {
     status,
     statusWrapper,
     slot,
-    actions: slot.lastElementChild as HTMLElement,
+    // Absent on rows that offer no park actions.
+    actions: first === statusWrapper ? null : first,
   };
 }
 
@@ -2135,9 +2139,10 @@ describe("ThreadInbox", () => {
       name: "Open grandchild thread: Grandchild",
     });
     expect(grandchildRow.getAttribute("aria-current")).toBe("page");
+    // The open row wears the same selected fill as the open parent card.
     expect(
       grandchildRow.closest("[data-child-thread-row]")?.className,
-    ).toContain("bg-sidebar-accent");
+    ).toContain("--bb-sidebar-selected");
   });
 
   it("marks a child from another project than its parent", () => {
@@ -2301,7 +2306,10 @@ describe("ThreadInbox", () => {
     // The slot takes exactly the width its label needs, up to the 112px the
     // longest status wants, so a short status or age hands the rest back to a
     // child title that a narrow sidebar has little room for.
-    const monitoringSlot = within(childList).getByText("Working").parentElement!;
+    // "Working" sits inside the unfilled status element, which sits in the slot.
+    const monitoringStatus = within(childList).getByText("Working").parentElement!;
+    expect(monitoringStatus.className).toContain("text-[color:var(--bb-sidebar-status-working)]");
+    const monitoringSlot = monitoringStatus.parentElement!;
     expect(monitoringSlot.className).toContain("w-auto");
     expect(monitoringSlot.className).toContain("max-w-28");
     expect(monitoringSlot.className.split(" ")).not.toContain("w-28");
@@ -2548,7 +2556,7 @@ describe("ThreadInbox", () => {
     });
     expect(activeRow.getAttribute("aria-current")).toBe("page");
     expect(activeRow.closest("[data-child-thread-row]")?.className).toContain(
-      "bg-sidebar-accent",
+      "--bb-sidebar-selected",
     );
 
     fireEvent.click(badge);
@@ -5510,9 +5518,9 @@ describe("parking threads", () => {
       );
       expect(card("Asking work").classList.contains("h-8")).toBe(false);
       expect(card("Idle work").classList.contains("h-8")).toBe(false);
-      // The compact slot reads through StatusOrTime now, word and time only —
-      // no spinner glyph, folded or not.
-      expect(card("Busy work").querySelector('[data-icon="Loading"]')).toBeNull();
+      // The compact slot reads through the same status element, folded or not:
+      // the spinning loader icon, then the word.
+      expect(card("Busy work").querySelector('[data-icon="Loading"]')).not.toBeNull();
       expect(within(card("Busy work") as HTMLElement).getByText("Working")).toBeDefined();
     },
   );
@@ -5804,33 +5812,33 @@ describe("parking threads", () => {
         row,
         statusText,
       );
+      expect(actions).not.toBeNull();
       expect(actions).not.toBe(statusWrapper);
       expect(status.getAttribute("aria-hidden")).toBeNull();
       expect(status.hasAttribute("hidden")).toBe(false);
       expect(statusWrapper.getAttribute("aria-hidden")).toBeNull();
-      // Touch: both spans return to the flow at full opacity, and the slot
-      // widens so they sit side by side instead of stacked.
-      for (const className of [
-        "[@media(hover:none)]:static",
-        "[@media(hover:none)]:opacity-100",
-      ]) {
-        expect(statusWrapper.className).toContain(className);
-        expect(actions.className).toContain(className);
-      }
-      expect(slot.className).toContain("[@media(hover:none)]:w-auto");
-      expect(slot.className).toContain("[@media(hover:none)]:gap-1.5");
-      expect(statusWrapper.className).not.toContain(
-        "[@media(hover:none)]:opacity-0",
-      );
-      // A hover device still trades the status for the actions.
-      expect(statusWrapper.className).toContain(
-        "[@media(hover:hover)]:group-hover/card:opacity-0",
-      );
+      // The status is never faded or swapped out: only the actions come and go.
+      expect(statusWrapper.className).not.toContain("opacity-0");
+      expect(statusWrapper.className).not.toContain("group-hover/card");
+      // Touch: the actions are always open beside the status.
+      expect(actions!.className).toContain("[@media(hover:none)]:w-auto");
+      expect(actions!.className).toContain("[@media(hover:none)]:opacity-100");
+      // A hover device starts them collapsed and slides them in to the
+      // status's left, widening the slot (the title truncates instead).
+      expect(actions!.className).toContain("w-0");
+      expect(actions!.className).toContain("opacity-0");
+      expect(actions!.className).toContain("[@media(hover:hover)]:group-hover/card:w-auto");
+      expect(actions!.className).toContain("[@media(hover:hover)]:group-hover/card:opacity-100");
+      // Keyboard focus reveals them too.
+      expect(actions!.className).toContain("focus-within:w-auto");
+      expect(actions!.className).toContain("focus-within:opacity-100");
+      expect(slot.className).toContain("w-auto");
+      expect(slot.className).toContain("gap-1");
     }
   });
 
-  // Opening the snooze menu pins the actions open on a hover device by hiding
-  // the status. On touch the two already share the row, so the status stays.
+  // Opening the snooze menu pins the actions open, so the menu's trigger does
+  // not collapse under the pointer. The status stays visible throughout.
   it("keeps the touch status visible while the snooze menu is open", async () => {
     renderSlot(inbox, listProps, {
       sidebarThreads: {
@@ -5850,12 +5858,13 @@ describe("parking threads", () => {
     );
     await screen.findByRole("option", { name: "1 hour" });
 
-    const { statusWrapper } = statusSlotParts(row, "Failed");
+    const { statusWrapper, actions } = statusSlotParts(row, "Failed");
     expect(within(row).getByText("Failed")).toBeDefined();
-    expect(statusWrapper.className).toContain("opacity-0");
-    expect(statusWrapper.className).toContain(
-      "[@media(hover:none)]:opacity-100",
-    );
+    expect(statusWrapper.className).not.toContain("opacity-0");
+    // Held open: the actions are at full width and opacity with no pointer over the card.
+    expect(actions!.className).toContain("w-auto");
+    expect(actions!.className).toContain("opacity-100");
+    expect(actions!.className).not.toContain("opacity-0");
   });
 
   // A working or blocked thread cannot be parked, so it has no actions to
@@ -5902,10 +5911,11 @@ describe("parking threads", () => {
       expect(
         within(row).queryByRole("button", { name: "Settle thread" }),
       ).toBeNull();
-      const { status, statusWrapper, slot } = statusSlotParts(row, statusText);
+      const { status, statusWrapper, slot, actions } = statusSlotParts(row, statusText);
       expect(status.getAttribute("aria-hidden")).toBeNull();
       expect(statusWrapper.className).not.toContain("opacity-0");
-      // Intrinsic width with a floor: nothing is layered over the status.
+      // No actions in the slot at all; intrinsic width with a floor.
+      expect(actions).toBeNull();
       expect(slot.className).toContain("w-auto");
       expect(slot.className).toContain("min-w-20");
     }
@@ -7762,9 +7772,11 @@ describe("card metadata", () => {
       }),
     ]);
     expect(await screen.findByLabelText("Agent is working")).toBeDefined();
-    expect(screen.getByText("Working").className).toContain(
-      "text-[color:var(--bb-sidebar-status-working)]",
-    );
+    // The colour lives on the status element (icon, stage or word, and time),
+    // not on the word's own span.
+    expect(
+      screen.getByText("Working").closest('[class*="--bb-sidebar-status-working"]'),
+    ).not.toBeNull();
     expect(screen.queryByText("3h")).toBeNull();
   });
 
@@ -7924,21 +7936,21 @@ describe("attention states", () => {
       true,
       "Needs you",
       "Needs you",
-      "text-[color:var(--bb-sidebar-status-needs-you)]",
+      "--bb-sidebar-status-needs-you",
     ],
     [
       "unread-error",
       false,
       "Unread thread failed",
       "Failed",
-      "text-[color:var(--bb-sidebar-status-failed)]",
+      "--bb-sidebar-status-failed",
     ],
     [
       "unread-success",
       false,
       "Unread thread succeeded",
       "Done",
-      "text-[color:var(--bb-sidebar-status-done)]",
+      "--bb-sidebar-status-done-unread",
     ],
   ] as const;
 
@@ -7958,7 +7970,11 @@ describe("attention states", () => {
       // for that one case; scope to the card's row instead.
       const row = await screen.findByRole("listitem");
       expect(within(row).getByLabelText(ariaLabel)).toBeDefined();
-      expect(within(row).getByText(shortLabel).className).toContain(toneClass);
+      // Needs you and Done are pills and Failed a plain word, so the colour sits
+      // on whichever status element wraps the word; find it from the word.
+      expect(
+        within(row).getByText(shortLabel).closest(`[class*="${toneClass}"]`),
+      ).not.toBeNull();
       expect(within(row).queryByText("3h")).toBeNull();
     });
   }

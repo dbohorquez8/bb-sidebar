@@ -1,5 +1,5 @@
 import { relativeTimeLabel } from "../relative-time";
-import type { AttentionStatus, BackgroundWork, BbWord, ResolvedStatus, WashKind } from "./types";
+import type { AttentionStatus, BackgroundWork, BbWord, ResolvedStatus } from "./types";
 
 export const STATUS_LABELS: Readonly<Record<Exclude<AttentionStatus, "idle">, string>> = {
   "needs-you": "Needs you",
@@ -29,16 +29,4 @@ export function formatTimeInStatus(since: number, now: number): string {
 
 export function backgroundWorkCount(work: BackgroundWork): number {
   return work.workers + work.commands + work.workflows;
-}
-
-export function washFor(
-  status: ResolvedStatus,
-  unreadResult: boolean,
-  openInThisWindow: boolean,
-): WashKind | null {
-  if (openInThisWindow) return null;
-  if (status.kind === "needs-you" || status.kind === "check" || status.kind === "failed") {
-    return status.kind;
-  }
-  return null;
 }
