@@ -59,6 +59,13 @@ import {
   type RawProjectAttention,
 } from "./attention";
 import { SOUND_IDS } from "./sounds/catalog";
+import { normalizeSoundSettings, SOUND_SETTINGS_CHANNEL, type SoundSettings } from "./sounds/settings";
+import type { PutAwayRecord } from "./sounds/audible";
+import {
+  createSoundWindowRegistry,
+  PRUNE_INTERVAL_MS,
+  type SoundWindowsSnapshot,
+} from "./sounds/windows";
 
 const migrations = [
   `CREATE TABLE IF NOT EXISTS thread_lifecycle (
@@ -132,6 +139,32 @@ const migrations = [
   // A cache plus the reading position; the observer reconciles it with BB's
   // event history before any of it is returned.
   THREAD_ATTENTION_TABLE,
+  `CREATE TABLE IF NOT EXISTS sound_settings (
+  id    INTEGER PRIMARY KEY CHECK (id = 1),
+  value TEXT NOT NULL
+)`,
+  `CREATE TABLE IF NOT EXISTS thread_put_away (
+  thread_id     TEXT PRIMARY KEY,
+  kind          TEXT NOT NULL CHECK (kind IN ('parked', 'snoozed', 'settled')),
+  since         INTEGER NOT NULL,
+  snoozed_until INTEGER
+)`,
+  // Backfill from today's lifecycle rows, so threads already put away at upgrade stay quiet.
+  // A settled row that also keeps a past snooze (a woken snooze later auto-settled) is 'settled'.
+  `INSERT OR IGNORE INTO thread_put_away (thread_id, kind, since, snoozed_until)
+SELECT thread_id,
+       CASE WHEN parked_at IS NOT NULL THEN 'parked'
+            WHEN snoozed_until IS NOT NULL
+                 AND (settled_at IS NULL
+                      OR snoozed_until > CAST(strftime('%s','now') AS INTEGER) * 1000) THEN 'snoozed'
+            ELSE 'settled' END,
+       COALESCE(parked_at, snoozed_at, settled_at, 0),
+       CASE WHEN parked_at IS NULL AND snoozed_until IS NOT NULL
+                 AND (settled_at IS NULL
+                      OR snoozed_until > CAST(strftime('%s','now') AS INTEGER) * 1000)
+            THEN snoozed_until END
+  FROM thread_lifecycle
+ WHERE parked_at IS NOT NULL OR snoozed_until IS NOT NULL OR settled_at IS NOT NULL`,
 ];
 
 export interface StoredLifecycleRow {
@@ -151,6 +184,20 @@ interface LifecycleDbRow {
   snoozed_until: number | null;
   snoozed_at: number | null;
 }
+
+interface PutAwayDbRow {
+  thread_id: string;
+  kind: PutAwayRecord["kind"];
+  since: number;
+  snoozed_until: number | null;
+}
+
+const putAwayFromRow = (row: PutAwayDbRow): PutAwayRecord => ({
+  threadId: row.thread_id,
+  kind: row.kind,
+  since: row.since,
+  snoozedUntil: row.snoozed_until,
+});
 
 interface SidebarSettingsDbRow {
   snooze_presets: string;
@@ -1167,6 +1214,53 @@ export default async function plugin(bb: BbPluginApi) {
     bb.realtime.publish(LIFECYCLE_CHANNEL, { threadIds });
   };
 
+  // The owner's put-away choice. Separate from thread_lifecycle on purpose:
+  // thread.active and automatic returns never touch it. Callers publish.
+  const readPutAway = (threadId: string): PutAwayRecord | null => {
+    const row = db
+      .prepare(`SELECT thread_id, kind, since, snoozed_until FROM thread_put_away WHERE thread_id = ?`)
+      .get(threadId) as PutAwayDbRow | undefined;
+    return row ? putAwayFromRow(row) : null;
+  };
+  const upsertPutAway = (record: PutAwayRecord): void => {
+    db.prepare(
+      `INSERT INTO thread_put_away (thread_id, kind, since, snoozed_until)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(thread_id) DO UPDATE SET
+         kind = excluded.kind,
+         since = excluded.since,
+         snoozed_until = excluded.snoozed_until`,
+    ).run(record.threadId, record.kind, record.since, record.snoozedUntil);
+  };
+  const deletePutAway = (threadId: string): boolean =>
+    db.prepare(`DELETE FROM thread_put_away WHERE thread_id = ?`).run(threadId).changes > 0;
+
+  const soundWindows = createSoundWindowRegistry(Date.now);
+  let publishedSoundWindows: SoundWindowsSnapshot = soundWindows.snapshot();
+  const publishSoundWindows = (next: SoundWindowsSnapshot): void => {
+    if (
+      next.playingWindowId === publishedSoundWindows.playingWindowId &&
+      next.activeThreadId === publishedSoundWindows.activeThreadId
+    ) return;
+    publishedSoundWindows = next;
+    bb.realtime.publish(SOUND_WINDOWS_CHANNEL, next);
+  };
+  const pruneTimer = setInterval(() => {
+    const changed = soundWindows.prune();
+    if (changed !== null) publishSoundWindows(changed);
+  }, PRUNE_INTERVAL_MS);
+  bb.onDispose(() => clearInterval(pruneTimer));
+
+  const readSoundSettings = (): SoundSettings => {
+    const row = db.prepare(`SELECT value FROM sound_settings WHERE id = 1`).get() as { value: string } | undefined;
+    if (!row) return normalizeSoundSettings(null);
+    try {
+      return normalizeSoundSettings(JSON.parse(row.value));
+    } catch {
+      return normalizeSoundSettings(null);
+    }
+  };
+
   const clear = (threadId: string): void => {
     db.prepare(`DELETE FROM thread_lifecycle WHERE thread_id = ?`).run(
       threadId,
@@ -1347,6 +1441,8 @@ export default async function plugin(bb: BbPluginApi) {
     settledAt: number;
     expiresAt: number;
     previous: Array<{ threadId: string; parentThreadId: string | null; row: StoredLifecycleRow | null }>;
+    /** Each settled id's put-away row before the settle, so an undo restores it. */
+    previousPutAway: Record<string, PutAwayRecord | null>;
   }>();
   bb.onDispose(() => settleUndos.clear());
   let lastManualSettleAt = 0;
@@ -1536,6 +1632,7 @@ export default async function plugin(bb: BbPluginApi) {
     ) => {
       for (const { decision, row, threadId } of changes) {
         if (decision === "settle") {
+          upsertPutAway({ threadId, kind: "settled", since: now, snoozedUntil: null });
           write(
             {
               threadId,
@@ -1993,25 +2090,38 @@ export default async function plugin(bb: BbPluginApi) {
       return { rows: readAll() };
     },
     async getSoundSettings() {
-      throw new Error("not implemented");
+      return readSoundSettings();
     },
-    async updateSoundSettings() {
-      throw new Error("not implemented");
+    async updateSoundSettings(patch) {
+      const next = { ...readSoundSettings(), ...patch };
+      db.prepare(
+        `INSERT INTO sound_settings (id, value) VALUES (1, ?)
+         ON CONFLICT(id) DO UPDATE SET value = excluded.value`,
+      ).run(JSON.stringify(next));
+      bb.realtime.publish(SOUND_SETTINGS_CHANNEL, {});
+      return next;
     },
     async listPutAway() {
-      throw new Error("not implemented");
+      const rows = db
+        .prepare(`SELECT thread_id, kind, since, snoozed_until FROM thread_put_away`)
+        .all() as PutAwayDbRow[];
+      return { records: rows.map(putAwayFromRow) };
     },
-    async takeBackPutAway() {
-      throw new Error("not implemented");
+    async takeBackPutAway({ threadId }) {
+      if (deletePutAway(threadId)) bb.realtime.publish(LIFECYCLE_CHANNEL, { threadId });
+      return { ok: true as const };
     },
-    async reportSoundWindow() {
-      throw new Error("not implemented");
+    async reportSoundWindow(report) {
+      const next = soundWindows.report(report);
+      publishSoundWindows(next);
+      return next;
     },
-    async leaveSoundWindow() {
-      throw new Error("not implemented");
+    async leaveSoundWindow({ windowId }) {
+      publishSoundWindows(soundWindows.leave(windowId));
+      return { ok: true as const };
     },
-    async claimSoundPlay() {
-      throw new Error("not implemented");
+    async claimSoundPlay(claim) {
+      return { granted: soundWindows.claim(claim) };
     },
     async pin({ threadId }) {
       return withPinParentChange(threadId, async () => {
@@ -2021,6 +2131,7 @@ export default async function plugin(bb: BbPluginApi) {
         }
         // Preserve the previous shelf if the native pin fails.
         await bb.sdk.threads.pin({ threadId });
+        deletePutAway(threadId);
         write({
           threadId,
           parkedAt: null,
@@ -2034,9 +2145,11 @@ export default async function plugin(bb: BbPluginApi) {
     },
     async park({ threadId }) {
       await bb.sdk.threads.unpin({ threadId });
+      const parkedAt = Date.now();
+      upsertPutAway({ threadId, kind: "parked", since: parkedAt, snoozedUntil: null });
       write({
         threadId,
-        parkedAt: Date.now(),
+        parkedAt,
         settledAt: null,
         settledOverride: null,
         snoozedUntil: null,
@@ -2045,6 +2158,7 @@ export default async function plugin(bb: BbPluginApi) {
       return { ok: true, reclaim: await reclaimThreadResources(threadId) };
     },
     async resume({ threadId }) {
+      deletePutAway(threadId);
       write({
         threadId,
         settledAt: null,
@@ -2059,7 +2173,7 @@ export default async function plugin(bb: BbPluginApi) {
       const ids = new Set(threadTreeIds(allThreads, threadId));
       const tree = allThreads.filter((thread) => ids.has(thread.id));
       if (!tree.some((thread) => thread.id === threadId)) throw new Error("Thread is no longer available");
-      const { currentTree, now, previous, cleanupRows, cleanupOwner } = await withThreadChanges([...ids], async () => {
+      const { currentTree, now, previous, previousPutAway, cleanupRows, cleanupOwner } = await withThreadChanges([...ids], async () => {
         const busy = tree.find((thread) => !canPark(threadSignals(thread)));
         if (busy) throw new Error(`Cannot settle while ${busy.title ?? "a thread"} is working or waiting for input`);
         const beforeRows = new Map(tree.map((thread) => [thread.id, readOne(thread.id)]));
@@ -2085,18 +2199,25 @@ export default async function plugin(bb: BbPluginApi) {
           const previous = currentTree.map((thread) => ({
             threadId: thread.id, parentThreadId: thread.parentThreadId, row: readOne(thread.id),
           }));
-          writeMany(currentTree.map((thread) => ({
-            threadId: thread.id,
-            settledAt: now,
-            settledOverride: "settled" as const,
-            snoozedUntil: null,
-            snoozedAt: null,
-          })));
+          const previousPutAway: Record<string, PutAwayRecord | null> = {};
+          for (const thread of currentTree) previousPutAway[thread.id] = readPutAway(thread.id);
+          db.transaction(() => {
+            writeMany(currentTree.map((thread) => ({
+              threadId: thread.id,
+              settledAt: now,
+              settledOverride: "settled" as const,
+              snoozedUntil: null,
+              snoozedAt: null,
+            })));
+            for (const thread of currentTree) {
+              upsertPutAway({ threadId: thread.id, kind: "settled", since: now, snoozedUntil: null });
+            }
+          })();
           publishLifecycleChanges(currentTree.map((thread) => thread.id));
           // Capture ownership before yielding back to another shelf action.
           const cleanupRows = new Map(currentTree.map((thread) => [thread.id, readOne(thread.id)]));
           const cleanupOwner = { threadId, row: readOne(threadId) };
-          return { currentTree, now, previous, cleanupRows, cleanupOwner };
+          return { currentTree, now, previous, previousPutAway, cleanupRows, cleanupOwner };
         } catch (error) {
           const failed: string[] = [];
           for (const original of unpinned.reverse()) {
@@ -2132,7 +2253,7 @@ export default async function plugin(bb: BbPluginApi) {
         if (undo.expiresAt <= Date.now()) settleUndos.delete(token);
       }
       while (settleUndos.size >= 50) settleUndos.delete(settleUndos.keys().next().value!);
-      settleUndos.set(undoToken, { threadId, settledAt: now, expiresAt: Date.now() + 5 * 60_000, previous });
+      settleUndos.set(undoToken, { threadId, settledAt: now, expiresAt: Date.now() + 5 * 60_000, previous, previousPutAway });
       return { ok: true, reclaim, undoToken };
     },
     async unsettle({ threadId, undoToken }) {
@@ -2152,6 +2273,9 @@ export default async function plugin(bb: BbPluginApi) {
                 !matchesSettle(readOne(thread.id), undo.settledAt)) continue;
             if (previous.row) write(previous.row, false);
             else db.prepare("DELETE FROM thread_lifecycle WHERE thread_id = ?").run(thread.id);
+            const putAway = undo.previousPutAway[thread.id] ?? null;
+            if (putAway) upsertPutAway(putAway);
+            else deletePutAway(thread.id);
             ids.push(thread.id);
           }
           return ids;
@@ -2163,7 +2287,11 @@ export default async function plugin(bb: BbPluginApi) {
       const threads = await loadPolicyThreads(true);
       const tree = settleTree(threads, threadId);
       const restoring = tree.filter((thread) => thread.id === threadId || readOne(thread.id)?.settledAt != null);
+      // Return to Active takes back the whole tree, including descendants whose
+      // lifecycle row thread.active already removed.
+      const treeIds = threadTreeIds(threads, threadId);
       db.transaction(() => {
+        for (const id of treeIds) deletePutAway(id);
         for (const thread of restoring) {
           if (thread.id === threadId) {
             write({ threadId, settledAt: null, settledOverride: "active", snoozedUntil: null, snoozedAt: null }, false);
@@ -2174,7 +2302,7 @@ export default async function plugin(bb: BbPluginApi) {
           }
         }
       })();
-      publishLifecycleChanges(restoring.map((thread) => thread.id));
+      publishLifecycleChanges([...new Set([...restoring.map((thread) => thread.id), ...treeIds])]);
       await wakeAncestors(tree.find((thread) => thread.id === threadId)!, {
         threadsById: new Map(threads.map(thread => [thread.id, thread])),
       });
@@ -2183,6 +2311,7 @@ export default async function plugin(bb: BbPluginApi) {
     async snooze({ threadId, snoozedUntil }) {
       await bb.sdk.threads.unpin({ threadId });
       const now = Date.now();
+      upsertPutAway({ threadId, kind: "snoozed", since: now, snoozedUntil });
       write({
         threadId,
         settledAt: null,
@@ -2211,12 +2340,14 @@ export default async function plugin(bb: BbPluginApi) {
       return { ok: true };
     },
     async unsnooze({ threadId }) {
+      deletePutAway(threadId);
       clear(threadId);
       return { ok: true };
     },
     async acknowledgeWake({ threadId }) {
       // A woken snooze row is retained only to make the marker durable. Once
       // the user opens or dismisses it, the thread is ordinary active work.
+      deletePutAway(threadId);
       clear(threadId);
       return { ok: true };
     },
@@ -2438,6 +2569,7 @@ export default async function plugin(bb: BbPluginApi) {
   // A deleted thread must not leave a row behind that would park a future
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", ({ thread }) => {
+    deletePutAway(thread.id);
     clear(thread.id);
     const removed = db
       .prepare(`DELETE FROM inbox_order WHERE thread_id = ?`)
