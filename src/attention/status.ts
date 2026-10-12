@@ -27,12 +27,9 @@ export function resolveAttentionStatus(input: AttentionInput): ResolvedStatus {
   if (input.failureReported && !input.turnRunning) return { kind: "failed" };
   if (input.turnRunning || input.verdict === "working") return { kind: "working" };
   if (backgroundCount > 0) return { kind: "background" };
-  if (
-    input.unreadResult ||
-    ((input.verdict === "done" || input.verdict === "background") && !input.onInactiveShelf)
-  ) {
-    return { kind: "done" };
-  }
+  // Done marks a result waiting for the owner: once it has been read, the
+  // card is Idle, whatever the final reply's state line said (AC-52).
+  if (input.unreadResult) return { kind: "done" };
   if (input.bbWord !== null) return { kind: "bb-word", word: input.bbWord };
   return { kind: "idle" };
 }
