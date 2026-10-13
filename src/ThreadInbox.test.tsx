@@ -285,6 +285,24 @@ it("orders hover card subthreads by the saved child sort", async () => {
   });
 });
 
+it.each([
+  ["branch", "managed-worktree-none", "other", "feature/baseline", null],
+  ["worktree", "ws-baseline", "managed-worktree", "main", "ws-baseline"],
+] as const)("drops the mono %s name 1px onto the sans baseline of the bottom line", (_kind, _id, kind, branchName, name) => {
+  renderSlot(inbox, listProps, {
+    sidebarThreads: {
+      status: "ready",
+      threads: [thread({ title: "Baseline", environment: {
+        id: "env_baseline", name, branchName, workspaceDisplayKind: kind, path: null, isWorktree: null, providerId: null,
+      } })],
+      projects: [],
+    },
+    rpc: { listLifecycle: () => ({ rows: [] }) },
+  });
+  const text = name ?? branchName;
+  expect(screen.getByText(text).className.split(" ")).toEqual(expect.arrayContaining(["relative", "top-px", "font-mono"]));
+});
+
 it("shows port details in the thread hover card", async () => {
   localStorage.setItem("bb-sidebar:port-link-host:v1", "host_local");
   const openUrl = vi.fn(() => true);
