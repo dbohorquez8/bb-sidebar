@@ -2285,23 +2285,16 @@ describe("ThreadInbox", () => {
     ]) {
       expect(within(childList).getByRole("button", { name })).toBeDefined();
     }
-    // Tint plus a leading rule: in dark the amber fill is only a 1.07:1 step
-    // off the sidebar, so the rule is what actually finds the row.
+    // Status stays local to its badge; it does not tint or rule the child row.
     const needsYouRow = within(childList).getByRole("button", {
       name: "Open child thread: Pending runtime child, Needs you",
     }).parentElement!;
-    expect(needsYouRow.className).toContain(
+    expect(needsYouRow.className).not.toContain(
       "bg-[color:var(--bb-sidebar-needs-you-tint)]",
     );
-    expect(needsYouRow.className).toContain(
+    expect(needsYouRow.className).not.toContain(
       "shadow-[inset_2px_0_0_0_var(--bb-sidebar-needs-you-accent)]",
     );
-    // and only that row: the rule is the tint's partner, not a row border.
-    expect(
-      within(childList).getByRole("button", {
-        name: "Open child thread: Failed child, Failed",
-      }).parentElement?.className,
-    ).not.toContain("--bb-sidebar-needs-you-accent");
 
     // The slot takes exactly the width its label needs, up to the 112px the
     // longest status wants, so a short status or age hands the rest back to a

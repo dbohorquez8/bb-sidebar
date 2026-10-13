@@ -424,7 +424,6 @@ function ChildThreadRow({
   disclosure?: GrandchildDisclosure;
 }) {
   const title = threadDisplayTitle(thread);
-  const needsYou = thread.hasPendingInteraction;
   const effectiveNow = now ?? Date.now();
   const workingSince = useWorkingSinceContext();
   const statusThread = useThreadWithDraft(thread);
@@ -451,17 +450,6 @@ function ChildThreadRow({
           variant === "header"
             ? "hover:bg-accent"
             : "h-7 hover:bg-sidebar-accent/60",
-          variant === "sidebar" &&
-            needsYou &&
-            !isActive &&
-            cn(
-              "bg-[color:var(--bb-sidebar-needs-you-tint)]",
-              "hover:bg-[color:var(--bb-sidebar-needs-you-tint-hover)]",
-              // In dark the amber fill is only a 1.07:1 step off the sidebar,
-              // so a leading rule carries where the fill cannot. It is
-              // transparent in light, where the cream band already reads.
-              "shadow-[inset_2px_0_0_0_var(--bb-sidebar-needs-you-accent)]",
-            ),
           // The open chat gets the same tint as an active parent card, so the
           // eye finds it in a long tree the way it finds a card in the list.
           isActive &&
