@@ -93,15 +93,6 @@
   --bb-sidebar-badge-working-fg: var(--bb-sidebar-sky-700);
   --bb-sidebar-badge-working-bg: var(--bb-sidebar-sky-100);
 
-  /*
-   * A needs-you child row. In light the cream band is a full step brighter
-   * than the sidebar, so it needs no help; the accent below is the dark
-   * theme's substitute for a brightness step amber-950 cannot deliver.
-   */
-  --bb-sidebar-needs-you-tint: var(--bb-sidebar-amber-50);
-  --bb-sidebar-needs-you-tint-hover: var(--bb-sidebar-amber-50);
-  --bb-sidebar-needs-you-accent: transparent;
-
   --bb-sidebar-settle-active: var(--bb-sidebar-emerald-700);
   --bb-sidebar-snooze-active: var(--bb-sidebar-orange-600);
   /* The settle sweep's wash and glow, and the brighter sparkle over it. */
@@ -170,15 +161,6 @@
   --bb-sidebar-badge-done-bg: color-mix(in oklab, var(--bb-sidebar-emerald-950) 60%, transparent);
   --bb-sidebar-badge-working-fg: var(--bb-sidebar-sky-300);
   --bb-sidebar-badge-working-bg: color-mix(in oklab, var(--bb-sidebar-sky-950) 60%, transparent);
-
-  /*
-   * amber-950 at 30% was a 1.03:1 luminance step off the sidebar — the row
-   * read by hue alone. 60% matches the child badge's tint and a 2px inset
-   * rule down the leading edge carries where the fill cannot.
-   */
-  --bb-sidebar-needs-you-tint: color-mix(in oklab, var(--bb-sidebar-amber-950) 60%, transparent);
-  --bb-sidebar-needs-you-tint-hover: color-mix(in oklab, var(--bb-sidebar-amber-950) 80%, transparent);
-  --bb-sidebar-needs-you-accent: color-mix(in oklab, var(--bb-sidebar-amber-300) 55%, transparent);
 
   --bb-sidebar-settle-active: var(--bb-sidebar-emerald-300);
   --bb-sidebar-snooze-active: var(--bb-sidebar-orange-300);
