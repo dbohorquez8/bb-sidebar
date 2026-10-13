@@ -606,6 +606,14 @@ export function ThreadCard({
   );
 }
 
+/**
+ * Mono glyphs sit about 1px above the sans text beside them on the bottom line,
+ * so the name drops 1px onto the shared baseline. A `text-box` trim (as
+ * TicketChip uses) would clip descenders here: names are lowercase and
+ * `truncate` hides overflow.
+ */
+const LOCATION_NAME_CLASS = "relative top-px truncate font-mono";
+
 function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
   const branchName = thread.environment?.branchName;
   const worktreeName = threadWorktreeName(thread);
@@ -617,7 +625,7 @@ function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
           aria-label="Worktree branch"
           className="size-3 shrink-0 text-muted-foreground/60"
         />
-        <span className="truncate font-mono">{worktreeName}</span>
+        <span className={LOCATION_NAME_CLASS}>{worktreeName}</span>
       </span>
     );
   }
@@ -629,7 +637,7 @@ function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
           aria-label="Branch"
           className="size-3 shrink-0 text-muted-foreground/60"
         />
-        <span className="truncate font-mono">{branchName}</span>
+        <span className={LOCATION_NAME_CLASS}>{branchName}</span>
       </span>
     );
   }
