@@ -51,7 +51,12 @@ import { threadPullRequestSchema } from "./pull-requests";
 import { ownedPortTargetSchema, closePortsResultSchema } from "./close-owned-ports";
 
 import { PROJECT_COLORS_CHANNEL } from "./project-colors";
-import { CONTEXT_USAGE_CHANNEL } from "./context-usage";
+import {
+  CONTEXT_RING_PLUGIN_ID,
+  CONTEXT_USAGE_CHANNEL,
+  DEFAULT_CONTEXT_SOFT_LIMIT,
+  resolveContextSoftLimit,
+} from "./context-usage";
 import { createAttentionObserver, THREAD_ATTENTION_TABLE } from "./attention/observer";
 import {
   PROJECT_ATTENTION_CHANNEL,
@@ -221,7 +226,6 @@ interface SidebarSettingsDbRow {
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
 
-const CONTEXT_SOFT_LIMIT = 150_000;
 const CONTEXT_USAGE_EVENT_TYPES = new Set(["thread/contextWindowUsage/updated", "thread/tokenUsage/updated"]);
 
 /**
@@ -1825,11 +1829,20 @@ export default async function plugin(bb: BbPluginApi) {
     await evaluatePolicies();
   });
 
-  // How full each thread's context window is, as
-  // the context-ring plugin reads it, pushed again whenever a turn moves it.
-  // `percent` is the real window fill; `zonePercent` is usage against the
-  // context-ring plugin's soft limit (150k, its default and the owner's
-  // setting), which drives the colour exactly as the ring's does.
+  // The context-ring plugin's soft limit, read from its `softLimit` setting on
+  // every call so an edit applies without a restart. Falls back to 150k when
+  // context-ring is absent or the value is invalid.
+  async function readContextSoftLimit(): Promise<number> {
+    try {
+      const ring = await bb.sdk.plugins.getSettings({ pluginId: CONTEXT_RING_PLUGIN_ID });
+      return resolveContextSoftLimit(ring.values);
+    } catch {
+      return DEFAULT_CONTEXT_SOFT_LIMIT;
+    }
+  }
+  // How full each thread's context window is, as the context-ring plugin reads
+  // it, pushed again whenever a turn moves it. `percent` is the real window
+  // fill; `zonePercent` is usage against the soft limit and drives the colour.
   async function readContextUsage(
     threadId: string,
   ): Promise<{ percent: number | null; zonePercent: number | null }> {
@@ -1838,7 +1851,7 @@ export default async function plugin(bb: BbPluginApi) {
       const usage = timeline.contextWindowUsage;
       if (!usage || usage.usedTokens === null) return { percent: null, zonePercent: null };
       const window = usage.modelContextWindow && usage.modelContextWindow > 0 ? usage.modelContextWindow : null;
-      const zonePercent = Math.round((usage.usedTokens / CONTEXT_SOFT_LIMIT) * 100);
+      const zonePercent = Math.round((usage.usedTokens / (await readContextSoftLimit())) * 100);
       return { percent: window ? Math.round((usage.usedTokens / window) * 100) : zonePercent, zonePercent };
     } catch (error) {
       bb.log.warn(`context usage read failed for ${threadId}: ${String(error)}`);
