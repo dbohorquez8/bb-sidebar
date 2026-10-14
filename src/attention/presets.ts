@@ -1,11 +1,11 @@
-import type { AttentionPreset } from "./types";
+import type { AttentionPreset, WorkflowStage } from "./types";
 
 // Boundary rule (upstreamability): this is the only shipped source file that
 // may contain the literals NEEDS YOU, 🔴, 🟢, 🟡, ⚪, ddd:, coding-loop, DDD,
 // or Coding loop. Every other attention function receives presets or rules as
 // an argument.
 
-const DDD_STAGES = [
+const DDD_STAGES: readonly WorkflowStage[] = [
   { id: "scaffold", label: "Scaffolding" },
   { id: "explore", label: "Exploring" },
   { id: "propose", label: "Proposing" },
@@ -13,10 +13,10 @@ const DDD_STAGES = [
   { id: "validation-plan", label: "Validating" },
   { id: "plan", label: "Planning" },
   { id: "slice", label: "Slicing" },
-  { id: "build", label: "Building" },
+  { id: "build", label: "Building", progress: "slices" },
   { id: "verify", label: "Verifying" },
   { id: "ship", label: "Shipping" },
-] as const;
+];
 
 export const ATTENTION_PRESETS: readonly AttentionPreset[] = [
   {

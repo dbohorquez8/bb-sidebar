@@ -1,4 +1,4 @@
-import type { AttentionPreset, ObservedStep, StageView, ThreadEventRowLike } from "./types";
+import type { AttentionPreset, ObservedStep, SliceProgress, StageView, ThreadEventRowLike } from "./types";
 
 interface ToolCallStartedData {
   item?: { type?: string; tool?: string; arguments?: { skill?: unknown } };
@@ -64,6 +64,7 @@ export function currentStage(
   steps: Readonly<Record<string, ObservedStep>>,
   enabledPresets: readonly AttentionPreset[],
   turnStartedAt: number | null = null,
+  slices?: SliceProgress,
 ): StageView | null {
   let best: { preset: Extract<AttentionPreset, { kind: "workflow" }>; observed: ObservedStep } | null = null;
   for (const preset of enabledPresets) {
@@ -92,5 +93,15 @@ export function currentStage(
     position: position + 1,
     total,
     showMarks: total > 1,
+    ...(stage.progress === "slices" && slices && slices.total >= 1
+      ? { sliceProgress: { done: Math.min(slices.done.length, slices.total), total: slices.total } }
+      : {}),
   };
+}
+
+/** The stage name as shown on the card: "Building", or "Building 2/5" with slice progress. */
+export function stageText(stage: StageView): string {
+  return stage.sliceProgress
+    ? `${stage.stageLabel} ${stage.sliceProgress.done}/${stage.sliceProgress.total}`
+    : stage.stageLabel;
 }

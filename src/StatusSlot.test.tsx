@@ -147,4 +147,62 @@ describe("StatusOrTime", () => {
 
     cleanup();
   });
+
+  // WS-30 (AC-65, AC-66): the Building stage carries the finished/total slice count.
+  const buildStage = (sliceProgress?: { done: number; total: number }): AttentionView["stage"] => ({
+    presetId: "ddd-workflow",
+    workflowLabel: "DDD",
+    stageLabel: "Building",
+    position: 8,
+    total: 10,
+    showMarks: true,
+    ...(sliceProgress ? { sliceProgress } : {}),
+  });
+  const renderView = async (view: AttentionView) => {
+    currentView = view;
+    const rendered = renderSlot(harnessSlot, listProps, {
+      sidebarThreads: {
+        status: "ready",
+        threads: [thread()],
+        projects: [{ id: "proj_1", name: "bb", isPersonal: false, href: "", settingsHref: "" }],
+      },
+      rpc: { listLifecycle: () => ({ rows: [] }) },
+    });
+    return rendered;
+  };
+
+  it("shows 'Building 2/5' with the time while Working (AC-65)", async () => {
+    await renderView({ ...workingView, stage: buildStage({ done: 2, total: 5 }), timeLabel: "3m" });
+    expect(await screen.findByText("Building 2/5")).toBeTruthy();
+    expect(screen.getByText("3m")).toBeTruthy();
+    cleanup();
+  });
+
+  it("shows plain 'Building' when no slice count is known (AC-66)", async () => {
+    await renderView({ ...workingView, stage: buildStage() });
+    expect(await screen.findByText("Building")).toBeTruthy();
+    expect(screen.queryByText(/Building \d/)).toBeNull();
+    cleanup();
+  });
+
+  it("shows no stage or count for Needs you and Done (AC-26)", async () => {
+    await renderView({
+      ...workingView,
+      status: { kind: "needs-you" },
+      label: "Needs you",
+      stage: buildStage({ done: 2, total: 5 }),
+    });
+    expect(await screen.findByText("Needs you")).toBeTruthy();
+    expect(screen.queryByText(/Building/)).toBeNull();
+    cleanup();
+    await renderView({
+      ...workingView,
+      status: { kind: "done" },
+      label: "Done",
+      stage: buildStage({ done: 5, total: 5 }),
+    });
+    expect(await screen.findByText("Done")).toBeTruthy();
+    expect(screen.queryByText(/Building/)).toBeNull();
+    cleanup();
+  });
 });

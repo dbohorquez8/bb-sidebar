@@ -419,7 +419,7 @@ export function useAttention(
         },
         settings.ticketPrefixes,
       );
-      const stage = currentStage(observation?.steps ?? {}, settings.enabledPresets, observation?.turnStartedAt ?? null);
+      const stage = currentStage(observation?.steps ?? {}, settings.enabledPresets, observation?.turnStartedAt ?? null, observation?.slices);
 
       const view = buildAttentionView({
         status,

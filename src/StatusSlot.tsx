@@ -11,7 +11,7 @@ import { relativeTimeLabel } from "./relative-time";
 import { useWorkingSinceContext } from "./useWorkingSince";
 import { statusWithDuration } from "./working-since";
 import { AttentionContext } from "./useAttention";
-import type { AttentionView, ResolvedStatus } from "./attention";
+import { stageText, type AttentionView, type ResolvedStatus } from "./attention";
 
 /**
  * The default trailing slot for cards and flat rows: fixed and right-aligned.
@@ -149,7 +149,7 @@ function AttentionStatusOrTime({
           className={cn("size-3 shrink-0", kind === "working" ? "animate-spin" : "animate-[spin_4s_linear_infinite]")}
         />
         {/* Outside a workflow the status word stands in for the stage. */}
-        <span className="truncate">{view.stage ? view.stage.stageLabel : view.label}</span>
+        <span className="truncate">{view.stage ? stageText(view.stage) : view.label}</span>
         {view.timeLabel !== null ? (
           <span className="font-normal tabular-nums text-muted-foreground">{view.timeLabel}</span>
         ) : null}

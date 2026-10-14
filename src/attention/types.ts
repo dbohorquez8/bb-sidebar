@@ -26,6 +26,8 @@ export interface StateMarkerRule {
 export interface WorkflowStage {
   id: string;
   label: string;
+  /** "slices": the stage shows finished/total slices of the build, when known. */
+  progress?: "slices";
 }
 
 export interface WorkflowStepRule {
@@ -68,6 +70,13 @@ export interface ObservedStep {
   at: number;
 }
 
+/** Slice workers' progress on an orchestrator thread (WS-30). `done` is a set of slice numbers. */
+export interface SliceProgress {
+  feature: string;
+  total: number;
+  done: number[];
+}
+
 export interface ThreadObservation {
   v: 2;
   threadId: string;
@@ -85,6 +94,8 @@ export interface ThreadObservation {
   steps: Readonly<Record<string, ObservedStep>>;
   /** When the workflow was last reset, per workflow preset id; older steps never count. */
   stepResets?: Readonly<Record<string, number>>;
+  /** Slice workers' progress; set only on an orchestrator thread, cleared by a workflow reset. */
+  slices?: SliceProgress;
   /** Latest background activity: the thread's own rows, and its child threads' rows. */
   lastActivityAt: number | null;
   /** When the pending question or approval was raised; null when none is pending. */
@@ -118,6 +129,8 @@ export interface StageView {
   position: number; // 1-based
   total: number;
   showMarks: boolean; // total > 1
+  /** Finished/total slices; only on a stage marked `progress: "slices"` with a known total. */
+  sliceProgress?: { done: number; total: number };
 }
 
 export interface TicketMatch {

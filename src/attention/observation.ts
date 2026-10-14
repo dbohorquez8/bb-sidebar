@@ -155,6 +155,13 @@ export function applyObservationEvent(
         const mapped = mapStepToStage(event.step, preset);
         if (mapped) steps[preset.id] = { stageId: mapped.stageId, at: event.at };
       }
+      const reset = presets.some(
+        (preset) => preset.kind === "workflow" && preset.resetSteps?.includes(event.step),
+      );
+      if (reset) {
+        const { slices: _slices, ...rest } = base;
+        return { ...rest, steps, stepResets };
+      }
       return { ...base, steps, stepResets };
     }
     case "background-activity":
@@ -199,6 +206,45 @@ export function mergeChildSteps(
     steps[preset.id] = incoming;
   }
   return steps ? { ...parent, steps } : parent;
+}
+
+/** `<feature-slug>-slice-<NN>`: the worktree name a slice build worker gets. */
+export function sliceNumberOf(name: string | null | undefined): { feature: string; slice: number } | null {
+  if (!name) return null;
+  const match = /^(.+)-slice-(\d+)$/.exec(name);
+  return match ? { feature: match[1]!, slice: Number(match[2]) } : null;
+}
+
+/** Slices in a `slices.md`: every `## N.` heading, else the `Total slices: N` line. */
+export function countSlicesInPlan(markdown: string): number | null {
+  const headings = markdown.match(/^## \d+\./gm)?.length ?? 0;
+  if (headings > 0) return headings;
+  const total = /Total slices:\s*(\d+)/.exec(markdown);
+  return total ? Number(total[1]) : null;
+}
+
+/**
+ * Folds one slice worker into the orchestrator's progress. `done` only grows
+ * (a set of slice numbers); the newest worker's feature wins. A worker last active before
+ * the parent's last reset is ignored. Returns the same
+ * object when nothing changes.
+ */
+export function mergeSliceProgress(
+  parent: ThreadObservation,
+  worker: { feature: string; slice: number; finished: boolean; at: number },
+  planTotal: number | null,
+): ThreadObservation {
+  // A worker from before the parent's last workflow reset belongs to older work.
+  const resetAt = Math.max(0, ...Object.values(parent.stepResets ?? {}));
+  if (worker.at < resetAt) return parent;
+  const current = parent.slices;
+  const sameFeature = current?.feature === worker.feature;
+  const total = planTotal ?? (sameFeature ? current.total : null);
+  if (total === null || total < 1) return parent;
+  const kept = sameFeature ? current.done : [];
+  const done = worker.finished && !kept.includes(worker.slice) ? [...kept, worker.slice].sort((a, b) => a - b) : kept;
+  if (sameFeature && current.total === total && done === kept) return parent;
+  return { ...parent, slices: { feature: worker.feature, total, done } };
 }
 
 export function coldReadComplete(
