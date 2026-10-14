@@ -70,11 +70,15 @@ export interface ObservedStep {
   at: number;
 }
 
-/** Slice workers' progress on an orchestrator thread (WS-30). `done` is a set of slice numbers. */
+/**
+ * Slice workers' progress on an orchestrator thread (WS-30). `done` is a set of slice
+ * numbers; `at` is the latest worker activity for `feature` (the newest feature wins).
+ */
 export interface SliceProgress {
   feature: string;
   total: number;
   done: number[];
+  at: number;
 }
 
 export interface ThreadObservation {

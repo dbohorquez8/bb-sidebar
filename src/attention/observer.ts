@@ -303,7 +303,7 @@ export function createAttentionObserver(
           includeDirectories: "false",
           limit: "100",
           query: `${feature}/slices.md`,
-        } as never);
+        });
         const matches = found.paths
           .map((entry) => entry.path)
           .filter((path) => new RegExp(`^docs/features/[^/]*-${feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/slices\\.md$`).test(path));

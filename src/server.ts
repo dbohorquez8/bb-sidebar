@@ -363,7 +363,7 @@ const threadObservationSchema = z.object({
     })
     .nullable(),
   steps: z.record(z.string(), z.object({ stageId: z.string(), at: z.number() })),
-  slices: z.object({ feature: z.string(), total: z.number(), done: z.array(z.number()) }).optional(),
+  slices: z.object({ feature: z.string(), total: z.number(), done: z.array(z.number()), at: z.number() }).optional(),
   lastActivityAt: z.number().nullable(),
   interactionAt: z.number().nullable(),
   observedAt: z.number(),

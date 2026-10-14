@@ -239,12 +239,15 @@ export function mergeSliceProgress(
   if (worker.at < resetAt) return parent;
   const current = parent.slices;
   const sameFeature = current?.feature === worker.feature;
+  // An older feature's worker (re-scanned every sync) must not displace the newer feature's count.
+  if (current && !sameFeature && worker.at <= current.at) return parent;
   const total = planTotal ?? (sameFeature ? current.total : null);
   if (total === null || total < 1) return parent;
   const kept = sameFeature ? current.done : [];
   const done = worker.finished && !kept.includes(worker.slice) ? [...kept, worker.slice].sort((a, b) => a - b) : kept;
-  if (sameFeature && current.total === total && done === kept) return parent;
-  return { ...parent, slices: { feature: worker.feature, total, done } };
+  const at = sameFeature ? Math.max(current.at, worker.at) : worker.at;
+  if (sameFeature && current.total === total && done === kept && current.at === at) return parent;
+  return { ...parent, slices: { feature: worker.feature, total, done, at } };
 }
 
 export function coldReadComplete(
