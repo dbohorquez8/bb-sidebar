@@ -2294,7 +2294,7 @@ describe("ThreadInbox", () => {
 
     for (const name of [
       "Open child thread: Failed child, Failed",
-      "Open child thread: Unread child, Unread",
+      "Open child thread: Unread child, Done",
       "Open child thread: Waiting child, Needs you",
       "Open child thread: Monitoring child, Monitoring · 5m",
       "Open child thread: Planning child, Planning · 5m",
@@ -7925,7 +7925,7 @@ describe("card metadata", () => {
     // useAttention's own draft fold) is both the visible text and the
     // fallback aria-label when bb gives no indicatorLabel of its own.
     expect(await screen.findByLabelText("Draft")).toBeDefined();
-    expect(screen.getByText("Draft").className).toContain("text-[color:var(--bb-sidebar-tone-draft)]");
+    expect(screen.getByText("Draft").className).toContain("text-[color:var(--ws-orange-text)]");
     // Locked contract (AC-14): working-draft counts as turnRunning, so it
     // resolves to the canonical Working word, not bb's own "Drafting".
     expect(screen.getByLabelText("Thread working")).toBeDefined();

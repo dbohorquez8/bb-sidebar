@@ -78,8 +78,10 @@ describe("childStatusSummary", () => {
     expect(summary).toEqual({
       failed: 0,
       needsYou: 1,
+      check: 0,
       done: 1,
       working: 1,
+      background: 0,
       dominant: "needs-you",
     });
     expect(childStatusPhrase(summary)).toBe(", 1 need you, 1 done, 1 working");

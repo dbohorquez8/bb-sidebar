@@ -135,6 +135,7 @@
   --bb-sidebar-status-working: var(--ws-yellow);
   --bb-sidebar-status-background: var(--ws-green-text);
   --bb-sidebar-status-done-unread: var(--ws-gray-strong);
+  --bb-sidebar-status-done: var(--ws-gray-text);
 
   /* Selected card fill and ring, status dots; status words per the 2026-10-12 audit. */
   --bb-sidebar-selected: color-mix(in oklab, #171922 7%, transparent);
@@ -200,6 +201,7 @@
   --bb-sidebar-status-working: var(--ws-yellow);
   --bb-sidebar-status-background: var(--ws-green-text);
   --bb-sidebar-status-done-unread: var(--ws-gray-strong);
+  --bb-sidebar-status-done: var(--ws-gray-text);
 
   --bb-sidebar-selected: color-mix(in oklab, #ffffff 13%, transparent);
   --bb-sidebar-selected-ring: color-mix(in oklab, var(--color-foreground, #ffffff) 8%, transparent);
