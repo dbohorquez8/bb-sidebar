@@ -161,9 +161,9 @@ export function ChildThreadDots({
 }
 
 /**
- * The badge tint for the subtree's most urgent state. Needs-you keeps the
- * amber the rest of the sidebar uses for a raised hand in a child row; the
- * others borrow the status glyph tones so the card and the child rows agree.
+ * The badge tint for the subtree's most urgent state. Each fill is the
+ * status's own sidebar pill and the text its status word, so the card and the
+ * child rows agree.
  */
 function childStatusBadgeClass(kind: ChildStatusKind | null): string {
   switch (kind) {
@@ -172,13 +172,13 @@ function childStatusBadgeClass(kind: ChildStatusKind | null): string {
     case "needs-you":
       return "bg-[color:var(--bb-sidebar-badge-needs-you-bg)] text-[color:var(--bb-sidebar-badge-needs-you-fg)]";
     case "check":
-      return "bg-[color:var(--ws-orange-bg)] text-[color:var(--ws-orange-text)]";
+      return "bg-[color:var(--bb-sidebar-pill-check)] text-[color:var(--ws-orange-text)]";
     case "done":
       return "bg-[color:var(--bb-sidebar-badge-done-bg)] text-[color:var(--bb-sidebar-badge-done-fg)]";
     case "working":
       return "bg-[color:var(--bb-sidebar-badge-working-bg)] text-[color:var(--bb-sidebar-badge-working-fg)]";
     case "background":
-      return "bg-[color:var(--ws-green-bg)] text-[color:var(--ws-green-text)]";
+      return "bg-[color:var(--bb-sidebar-pill-background)] text-[color:var(--ws-green-text)]";
     default:
       return "bg-muted text-foreground";
   }
