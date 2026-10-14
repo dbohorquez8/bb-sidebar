@@ -1,0 +1,102 @@
+/*
+ * Workspace design tokens: the single source of every --ws-* value (WS-37).
+ *
+ * Copy verbatim into each plugin as tokens.css; never edit a copy.
+ * Change this file, then re-copy.
+ *
+ * Color values come from the sidebar source, bb-sidebar/src/theme.css, via
+ * docs/features/006-plugin-design-system/color-palette.md v2. Themes follow
+ * BB's class on <html> (.light / .dark), never the operating system.
+ */
+
+:root,
+.light {
+  --ws-red-text: oklch(45% 0.19 27);
+  --ws-red: oklch(50.5% 0.213 27.518);
+  --ws-red-bg: oklch(93.6% 0.032 17.717);
+  --ws-red-pill: color-mix(in oklab, oklch(62% 0.2 27) 18%, var(--ws-tint-base));
+  --ws-yellow: oklch(42% 0.10 95);
+  --ws-yellow-bg: oklch(96.2% 0.059 95.617);
+  --ws-orange-text: oklch(42% 0.12 55);
+  --ws-orange: oklch(64.6% 0.222 41.116);
+  --ws-orange-bg: color-mix(in oklab, oklch(64.6% 0.222 41.116) 12%, var(--ws-tint-base));
+  --ws-green-text: oklch(42% 0.10 155);
+  --ws-green: oklch(50.8% 0.118 165.612);
+  --ws-green-bg: oklch(95% 0.052 163.051);
+  --ws-blue-text: oklch(50% 0.134 242.749);
+  --ws-blue: oklch(58.8% 0.158 241.966);
+  --ws-blue-bg: oklch(95.1% 0.026 236.824);
+  --ws-violet-text: oklch(49.1% 0.15 292.581);
+  --ws-violet: oklch(54.1% 0.17 293.009);
+  --ws-violet-bg: oklch(94.3% 0.029 294.588);
+  --ws-gray-strong: oklch(25% 0.01 260);
+  --ws-gray-text: oklch(40% 0.015 260);
+  --ws-gray-pill: color-mix(in oklab, oklch(25% 0.01 260) 18%, var(--ws-tint-base));
+  --ws-tint-base: oklch(96.21% 0.0081 278.64);
+}
+
+.dark {
+  --ws-red-text: oklch(80% 0.12 27);
+  --ws-red: oklch(80.8% 0.114 19.571);
+  --ws-red-bg: color-mix(in oklab, oklch(25.8% 0.092 26.042) 60%, var(--ws-tint-base));
+  --ws-red-pill: color-mix(in oklab, oklch(62% 0.2 27) 30%, var(--ws-tint-base));
+  --ws-yellow: oklch(88% 0.10 95);
+  --ws-yellow-bg: color-mix(in oklab, oklch(87.9% 0.169 91.605) 14%, var(--ws-tint-base));
+  --ws-orange-text: oklch(84% 0.085 55);
+  --ws-orange: oklch(83.7% 0.128 66.29);
+  --ws-orange-bg: color-mix(in oklab, oklch(83.7% 0.128 66.29) 16%, var(--ws-tint-base));
+  --ws-green-text: oklch(82% 0.085 155);
+  --ws-green: oklch(84.5% 0.143 164.978);
+  --ws-green-bg: color-mix(in oklab, oklch(26.2% 0.051 172.552) 60%, var(--ws-tint-base));
+  --ws-blue-text: oklch(82.8% 0.111 230.318);
+  --ws-blue: oklch(74.6% 0.16 232.661);
+  --ws-blue-bg: color-mix(in oklab, oklch(29.3% 0.066 243.157) 60%, var(--ws-tint-base));
+  --ws-violet-text: oklch(81.1% 0.111 293.571);
+  --ws-violet: oklch(81.1% 0.111 293.571);
+  --ws-violet-bg: color-mix(in oklab, oklch(29% 0.07 291.089) 60%, var(--ws-tint-base));
+  --ws-gray-strong: oklch(96% 0.005 260);
+  --ws-gray-text: oklch(88% 0.015 260);
+  --ws-gray-pill: color-mix(in oklab, oklch(96% 0.005 260) 28%, var(--ws-tint-base));
+  --ws-tint-base: oklch(31.62% 0.0216 277.66);
+}
+
+:root,
+.light,
+.dark {
+  --ws-brand-claude: #D97757;
+
+  --ws-font-2xs: 0.625rem;
+  --ws-font-xs: 0.6875rem;
+  --ws-font-sm: 0.75rem;
+  --ws-font-md: 0.8125rem;
+  --ws-font-lg: 0.875rem;
+  --ws-font-display: 1.375rem;
+
+  --ws-weight-regular: 400;
+  --ws-weight-medium: 500;
+  --ws-weight-semibold: 600;
+  --ws-weight-bold: 700;
+
+  --ws-radius-sm: calc(var(--radius) - 4px);
+  --ws-radius-md: calc(var(--radius) - 2px);
+  --ws-radius-lg: var(--radius);
+  --ws-radius-pill: 9999px;
+
+  --ws-space-1: 0.25rem;
+  --ws-space-2: 0.5rem;
+  --ws-space-3: 0.75rem;
+  --ws-space-4: 1rem;
+  --ws-space-5: 1.5rem;
+  --ws-space-6: 2rem;
+
+  --ws-size-control: 1.75rem;
+  --ws-size-hit: 2.75rem;
+
+  --ws-surface-1: color-mix(in oklch, var(--ink) 6%, var(--canvas));
+  --ws-surface-2: color-mix(in oklch, var(--ink) 10%, var(--canvas));
+  --ws-hairline: color-mix(in oklch, var(--input) 70%, transparent);
+
+  --ws-text: var(--ink);
+  --ws-text-muted: var(--muted-foreground);
+  --ws-text-subtle: var(--subtle-foreground);
+}

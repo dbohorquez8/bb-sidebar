@@ -132,7 +132,7 @@ export function ThreadDetailsTooltip({
             <ProviderGlyph providerId={thread.providerId} provider={provider ?? null} className="size-3.5 [&_span]:size-3.5" />
             {statusThread.indicator !== "none" ? (
               <span className="absolute -bottom-1 -right-1 rounded-full bg-popover">
-                <StatusGlyph indicator={statusThread.indicator} label={status} className="size-2.5" />
+                <StatusGlyph indicator={statusThread.indicator} label={status} className="size-2.5" status={attentionView?.status} />
               </span>
             ) : null}
           </span>
@@ -199,6 +199,7 @@ function SubthreadRow({ thread, onOpen }: { thread: PluginSidebarThread; onOpen:
   const { providers } = useProviders();
   const provider = providers.find((entry) => entry.id === thread.providerId);
   const statusThread = useThreadWithDraft(thread);
+  const attention = useContext(AttentionContext);
   const status = thread.hasPendingInteraction ? "Needs you" : statusThread.indicatorLabel ?? "Idle";
   return (
     <button
@@ -222,7 +223,7 @@ function SubthreadRow({ thread, onOpen }: { thread: PluginSidebarThread; onOpen:
         <span className="block truncate">{threadDisplayTitle(thread)}</span>
         <span className="flex items-center gap-1 text-[11px] leading-4 text-muted-foreground">
           <span className="truncate">{provider?.displayName ?? thread.providerId} · {status}</span>
-          <StatusGlyph indicator={thread.hasPendingInteraction ? "waiting-for-input" : statusThread.indicator} label={null} className="size-2.5" />
+          <StatusGlyph indicator={thread.hasPendingInteraction ? "waiting-for-input" : statusThread.indicator} label={null} className="size-2.5" status={attention?.viewFor(thread.id)?.status} />
         </span>
       </span>
     </button>

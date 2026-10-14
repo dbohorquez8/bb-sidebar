@@ -57,9 +57,15 @@ function attentionLabelClass(status: ResolvedStatus): string {
     case "done":
       return "text-[color:var(--bb-sidebar-status-done)]";
     case "bb-word":
-      return status.word === "draft" || status.word === "queued"
-        ? "text-[color:var(--bb-sidebar-tone-draft)]"
-        : "text-[color:var(--bb-sidebar-tone-working)]";
+      switch (status.word) {
+        case "draft":
+        case "queued":
+          return "text-[color:var(--ws-orange-text)]";
+        case "planning":
+          return "text-[color:var(--ws-gray-text)]";
+        case "goal":
+          return "text-[color:var(--ws-green-text)]";
+      }
     case "idle":
     default:
       return "text-muted-foreground";
@@ -298,7 +304,7 @@ export function shortStatus(
     case "waiting-for-input":
       return { label: "Needs you", className, showsDuration: false };
     case "unread-success":
-      return { label: "Unread", className, showsDuration: false };
+      return { label: "Done", className, showsDuration: false };
     case "runtime":
       return {
         label: isMonitoringLabel(indicatorLabel) ? "Monitoring" : "Working",
@@ -392,21 +398,25 @@ export function statusToneClass(
 ): string {
   switch (indicator) {
     case "unread-error":
-      return "text-[color:var(--bb-sidebar-tone-error)]";
+      return "text-[color:var(--ws-red-text)]";
     case "waiting-for-input":
-      return "text-[color:var(--bb-sidebar-tone-pending)]";
+      return "text-[color:var(--ws-red-text)]";
     case "unread-success":
-      return "text-[color:var(--bb-sidebar-tone-success)]";
+      return "text-[color:var(--ws-gray-text)]";
     case "runtime":
+      return "text-[color:var(--ws-yellow)]";
     case "workflow":
     case "background-agent":
     case "background-command":
+      return "text-[color:var(--ws-green-text)]";
     case "plan-mode":
+      return "text-[color:var(--ws-gray-text)]";
     case "goal":
-      return "text-[color:var(--bb-sidebar-tone-working)]";
+      return "text-[color:var(--ws-green-text)]";
     case "draft":
+      return "text-[color:var(--ws-orange-text)]";
     case "working-draft":
-      return "text-[color:var(--bb-sidebar-tone-draft)]";
+      return "text-[color:var(--ws-yellow)]";
     case "none":
     default:
       return "text-muted-foreground";

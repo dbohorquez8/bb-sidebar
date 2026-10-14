@@ -25,7 +25,8 @@ export function resolveAttentionStatus(input: AttentionInput): ResolvedStatus {
     return { kind: "check" };
   }
   if (input.failureReported && !input.turnRunning) return { kind: "failed" };
-  if (input.turnRunning || input.verdict === "working") return { kind: "working" };
+  if (input.turnRunning) return { kind: "working" };
+  if (input.verdict === "working") return { kind: "background" };
   if (backgroundCount > 0) return { kind: "background" };
   // Done marks a result waiting for the owner: once it has been read, the
   // card is Idle, whatever the final reply's state line said (AC-52).

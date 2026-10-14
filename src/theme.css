@@ -1,3 +1,5 @@
+@import "../tokens.css";
+
 /*
  * Every colour in this plugin that differs between BB's light and dark themes.
  *
@@ -84,14 +86,14 @@
 
   --bb-sidebar-woke: var(--bb-sidebar-amber-700);
 
-  --bb-sidebar-badge-failed-fg: var(--bb-sidebar-red-700);
-  --bb-sidebar-badge-failed-bg: var(--bb-sidebar-red-100);
-  --bb-sidebar-badge-needs-you-fg: var(--bb-sidebar-amber-700);
-  --bb-sidebar-badge-needs-you-bg: var(--bb-sidebar-amber-100);
-  --bb-sidebar-badge-done-fg: var(--bb-sidebar-emerald-700);
-  --bb-sidebar-badge-done-bg: var(--bb-sidebar-emerald-100);
-  --bb-sidebar-badge-working-fg: var(--bb-sidebar-sky-700);
-  --bb-sidebar-badge-working-bg: var(--bb-sidebar-sky-100);
+  --bb-sidebar-badge-failed-fg: var(--ws-red-text);
+  --bb-sidebar-badge-failed-bg: var(--ws-red-bg);
+  --bb-sidebar-badge-needs-you-fg: var(--ws-red-text);
+  --bb-sidebar-badge-needs-you-bg: var(--ws-red-bg);
+  --bb-sidebar-badge-done-fg: var(--ws-gray-text);
+  --bb-sidebar-badge-done-bg: var(--ws-gray-pill);
+  --bb-sidebar-badge-working-fg: var(--ws-yellow);
+  --bb-sidebar-badge-working-bg: var(--ws-yellow-bg);
 
   --bb-sidebar-settle-active: var(--bb-sidebar-emerald-700);
   --bb-sidebar-snooze-active: var(--bb-sidebar-orange-600);
@@ -127,20 +129,18 @@
   --bb-sidebar-monogram-7-fg: var(--bb-sidebar-red-700);
 
   /* Attention status words (StatusOrTime). */
-  --bb-sidebar-status-needs-you: oklch(45% 0.19 27);
-  --bb-sidebar-status-check: oklch(42% 0.12 55);
-  --bb-sidebar-status-failed: oklch(42% 0.14 335);
-  --bb-sidebar-status-working: oklch(42% 0.10 95);
-  --bb-sidebar-status-background: oklch(42% 0.10 155);
-  --bb-sidebar-status-done-unread: oklch(25% 0.01 260);
-  --bb-sidebar-status-done: oklch(40% 0.015 260);
+  --bb-sidebar-status-needs-you: var(--ws-red-text);
+  --bb-sidebar-status-check: var(--ws-orange-text);
+  --bb-sidebar-status-failed: var(--ws-red-text);
+  --bb-sidebar-status-working: var(--ws-yellow);
+  --bb-sidebar-status-background: var(--ws-green-text);
+  --bb-sidebar-status-done-unread: var(--ws-gray-strong);
 
   /* Selected card fill and ring, status dots; status words per the 2026-10-12 audit. */
   --bb-sidebar-selected: color-mix(in oklab, #171922 7%, transparent);
   --bb-sidebar-selected-ring: color-mix(in oklab, var(--color-foreground, #171922) 8%, transparent);
-  --bb-sidebar-unread-dot: var(--bb-sidebar-emerald-600);
   /* Badge fills are solid against the sidebar, so a badge on the open card keeps its contrast. */
-  --bb-sidebar-pill-done-unread: color-mix(in oklab, var(--bb-sidebar-status-done-unread) 18%, var(--sidebar, #f1f2f8));
+  --bb-sidebar-pill-done-unread: var(--ws-gray-pill);
   --bb-sidebar-pill-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 18%, var(--sidebar, #f1f2f8));
 }
 
@@ -153,14 +153,14 @@
 
   --bb-sidebar-woke: var(--bb-sidebar-amber-300);
 
-  --bb-sidebar-badge-failed-fg: var(--bb-sidebar-red-300);
-  --bb-sidebar-badge-failed-bg: color-mix(in oklab, var(--bb-sidebar-red-950) 60%, transparent);
-  --bb-sidebar-badge-needs-you-fg: var(--bb-sidebar-amber-300);
-  --bb-sidebar-badge-needs-you-bg: color-mix(in oklab, var(--bb-sidebar-amber-950) 60%, transparent);
-  --bb-sidebar-badge-done-fg: var(--bb-sidebar-emerald-300);
-  --bb-sidebar-badge-done-bg: color-mix(in oklab, var(--bb-sidebar-emerald-950) 60%, transparent);
-  --bb-sidebar-badge-working-fg: var(--bb-sidebar-sky-300);
-  --bb-sidebar-badge-working-bg: color-mix(in oklab, var(--bb-sidebar-sky-950) 60%, transparent);
+  --bb-sidebar-badge-failed-fg: var(--ws-red-text);
+  --bb-sidebar-badge-failed-bg: var(--ws-red-bg);
+  --bb-sidebar-badge-needs-you-fg: var(--ws-red-text);
+  --bb-sidebar-badge-needs-you-bg: var(--ws-red-bg);
+  --bb-sidebar-badge-done-fg: var(--ws-gray-text);
+  --bb-sidebar-badge-done-bg: var(--ws-gray-pill);
+  --bb-sidebar-badge-working-fg: var(--ws-yellow);
+  --bb-sidebar-badge-working-bg: var(--ws-yellow-bg);
 
   --bb-sidebar-settle-active: var(--bb-sidebar-emerald-300);
   --bb-sidebar-snooze-active: var(--bb-sidebar-orange-300);
@@ -190,18 +190,16 @@
   --bb-sidebar-monogram-7-bg: color-mix(in oklab, var(--bb-sidebar-red-950) 80%, transparent);
   --bb-sidebar-monogram-7-fg: var(--bb-sidebar-red-300);
 
-  --bb-sidebar-status-needs-you: oklch(80% 0.12 27);
-  --bb-sidebar-status-check: oklch(84% 0.085 55);
-  --bb-sidebar-status-failed: oklch(82% 0.085 335);
-  --bb-sidebar-status-working: oklch(88% 0.10 95);
-  --bb-sidebar-status-background: oklch(82% 0.085 155);
-  --bb-sidebar-status-done-unread: oklch(96% 0.005 260);
-  --bb-sidebar-status-done: oklch(88% 0.015 260);
+  --bb-sidebar-status-needs-you: var(--ws-red-text);
+  --bb-sidebar-status-check: var(--ws-orange-text);
+  --bb-sidebar-status-failed: var(--ws-red-text);
+  --bb-sidebar-status-working: var(--ws-yellow);
+  --bb-sidebar-status-background: var(--ws-green-text);
+  --bb-sidebar-status-done-unread: var(--ws-gray-strong);
 
   --bb-sidebar-selected: color-mix(in oklab, #ffffff 13%, transparent);
   --bb-sidebar-selected-ring: color-mix(in oklab, var(--color-foreground, #ffffff) 8%, transparent);
-  --bb-sidebar-unread-dot: var(--bb-sidebar-emerald-400);
-  --bb-sidebar-pill-done-unread: color-mix(in oklab, var(--bb-sidebar-status-done-unread) 28%, var(--sidebar, #2f313d));
+  --bb-sidebar-pill-done-unread: var(--ws-gray-pill);
   --bb-sidebar-pill-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 30%, var(--sidebar, #2f313d));
 }
 

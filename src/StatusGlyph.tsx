@@ -1,5 +1,6 @@
 import type { PluginSidebarThreadIndicator } from "@get-bb/plugin-sdk";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import { useContext } from "react";
 import { Icon } from "./components/Icon";
 import { cn } from "./lib/utils";
 import { relativeTimeLabel } from "./relative-time";
@@ -10,6 +11,27 @@ import {
   useThreadWithDraft,
 } from "./StatusSlot";
 import { useWorkingSinceContext } from "./useWorkingSince";
+import type { ResolvedStatus } from "./attention";
+import { AttentionContext } from "./useAttention";
+
+/** Maps the resolved attention model back to the existing glyph vocabulary. */
+export function glyphIndicatorForStatus(
+  status: ResolvedStatus,
+): PluginSidebarThreadIndicator | null {
+  switch (status.kind) {
+    case "failed": return "unread-error";
+    case "needs-you": return "waiting-for-input";
+    case "done": return "unread-success";
+    case "working": return "runtime";
+    case "background": return "background-agent";
+    case "bb-word":
+      return status.word === "planning" ? "plan-mode"
+        : status.word === "goal" ? "goal"
+        : status.word === "draft" ? "draft"
+        : null;
+    default: return null;
+  }
+}
 
 /**
  * This plugin's status glyphs, matching bb's own sidebar shape for shape: the
@@ -58,21 +80,25 @@ export function StatusGlyph({
   indicator,
   label,
   className,
+  status,
 }: {
   indicator: PluginSidebarThreadIndicator;
   label: string | null;
   className?: string;
+  /** The resolved model wins whenever attention data has loaded. */
+  status?: ResolvedStatus | null;
 }) {
+  const resolvedIndicator = status ? glyphIndicatorForStatus(status) : indicator;
   const shared = cn("size-3.5 shrink-0", className);
   const aria = label ?? undefined;
 
-  switch (indicator) {
+  switch (resolvedIndicator) {
     case "unread-error":
       return (
         <Icon
           name="CircleX"
           aria-label={aria}
-          className={cn(shared, statusToneClass(indicator))}
+          className={cn(shared, statusToneClass(resolvedIndicator))}
         />
       );
     case "waiting-for-input":
@@ -80,7 +106,7 @@ export function StatusGlyph({
         <Icon
           name="CircleQuestion"
           aria-label={aria}
-          className={cn(shared, statusToneClass(indicator))}
+          className={cn(shared, statusToneClass(resolvedIndicator))}
         />
       );
     case "runtime":
@@ -91,7 +117,7 @@ export function StatusGlyph({
           className={cn(
             shared,
             "animate-spin opacity-75",
-            statusToneClass(indicator),
+            statusToneClass(resolvedIndicator),
           )}
         />
       );
@@ -100,7 +126,7 @@ export function StatusGlyph({
         <ShineIcon
           name="Workflow"
           label={aria}
-          className={cn(shared, statusToneClass(indicator))}
+          className={cn(shared, statusToneClass(resolvedIndicator))}
         />
       );
     case "background-agent":
@@ -108,7 +134,7 @@ export function StatusGlyph({
         <ShineIcon
           name="UserRoundPlus"
           label={aria}
-          className={cn(shared, statusToneClass(indicator))}
+          className={cn(shared, statusToneClass(resolvedIndicator))}
         />
       );
     case "background-command":
@@ -116,7 +142,7 @@ export function StatusGlyph({
         <ShineIcon
           name="Terminal"
           label={aria}
-          className={cn(shared, statusToneClass(indicator))}
+          className={cn(shared, statusToneClass(resolvedIndicator))}
         />
       );
     case "plan-mode":
@@ -124,7 +150,7 @@ export function StatusGlyph({
         <ShineIcon
           name="ListTodo"
           label={aria}
-          className={cn(shared, statusToneClass(indicator))}
+          className={cn(shared, statusToneClass(resolvedIndicator))}
         />
       );
     case "goal":
@@ -132,7 +158,7 @@ export function StatusGlyph({
         <ShineIcon
           name="Target"
           label={aria}
-          className={cn(shared, statusToneClass(indicator))}
+          className={cn(shared, statusToneClass(resolvedIndicator))}
         />
       );
     case "draft":
@@ -141,7 +167,7 @@ export function StatusGlyph({
         <Icon
           name="Edit"
           aria-label={aria}
-          className={cn(shared, statusToneClass(indicator))}
+          className={cn(shared, statusToneClass(resolvedIndicator))}
         />
       );
     case "unread-success":
@@ -154,7 +180,7 @@ export function StatusGlyph({
           className={cn(
             "flex items-center justify-center",
             shared,
-            statusToneClass(indicator),
+            statusToneClass(resolvedIndicator),
           )}
         >
           <span className="size-[5px] rounded-full bg-current" />
@@ -199,6 +225,7 @@ export function CompactLiveStatus({
   now: number;
 }) {
   const thread = useThreadWithDraft(listedThread);
+  const attention = useContext(AttentionContext);
   const workingSince = useWorkingSinceContext();
   const status = threadShortStatus(thread);
   if (status === null) return null;
@@ -213,7 +240,12 @@ export function CompactLiveStatus({
       )}
     >
       <span aria-hidden="true" className="flex items-center">
-        <StatusGlyph indicator={thread.indicator} label={null} className="size-3" />
+        <StatusGlyph
+          indicator={thread.indicator}
+          label={null}
+          className="size-3"
+          status={attention?.viewFor(thread.id)?.status}
+        />
       </span>
       {elapsed === "now" ? null : <span aria-hidden="true">{elapsed}</span>}
       <span className="sr-only">{shortStatusLabel(status, startedAt, now)}</span>

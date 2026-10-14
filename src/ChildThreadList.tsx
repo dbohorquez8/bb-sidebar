@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useContext, useId, useState, type ReactNode } from "react";
 import {
   experimental_useSidebarThreadSplit,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -40,6 +40,7 @@ import {
 import { ProviderGlyph } from "./ProviderGlyph";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { PROJECT_ICONS_CHANNEL, projectIconUrl } from "./project-icons";
+import { AttentionContext } from "./useAttention";
 
 const MAX_CHILD_DOTS = 3;
 
@@ -170,10 +171,14 @@ function childStatusBadgeClass(kind: ChildStatusKind | null): string {
       return "bg-[color:var(--bb-sidebar-badge-failed-bg)] text-[color:var(--bb-sidebar-badge-failed-fg)]";
     case "needs-you":
       return "bg-[color:var(--bb-sidebar-badge-needs-you-bg)] text-[color:var(--bb-sidebar-badge-needs-you-fg)]";
+    case "check":
+      return "bg-[color:var(--ws-orange-bg)] text-[color:var(--ws-orange-text)]";
     case "done":
       return "bg-[color:var(--bb-sidebar-badge-done-bg)] text-[color:var(--bb-sidebar-badge-done-fg)]";
     case "working":
       return "bg-[color:var(--bb-sidebar-badge-working-bg)] text-[color:var(--bb-sidebar-badge-working-fg)]";
+    case "background":
+      return "bg-[color:var(--ws-green-bg)] text-[color:var(--ws-green-text)]";
     default:
       return "bg-muted text-foreground";
   }
@@ -193,12 +198,14 @@ export function ChildThreadBadge({
   controls: string;
   onToggle: () => void;
 }) {
+  const attention = useContext(AttentionContext);
   const visibleThreads = threads.filter((thread) => !thread.isArchived);
   const count = visibleThreads.length;
   const summary = childStatusSummary(
     childrenByParent
       ? childSubtree(visibleThreads, childrenByParent)
       : visibleThreads,
+    (threadId) => attention?.viewFor(threadId) ?? null,
   );
   const tooltip = `${count} child thread${count === 1 ? "" : "s"}${childStatusPhrase(summary)}`;
 
@@ -273,6 +280,7 @@ export function ChildThreadList({
 }) {
   const disclosureId = useId();
   const { projects } = useSidebarThreads();
+  const attention = useContext(AttentionContext);
   const visibleThreads = expanded
     ? threads.filter((thread) => !thread.isArchived)
     : collapsedChildThreads(
@@ -423,6 +431,7 @@ function ChildThreadRow({
   onOpenThread: (threadId: string) => void;
   disclosure?: GrandchildDisclosure;
 }) {
+  const attention = useContext(AttentionContext);
   const title = threadDisplayTitle(thread);
   const effectiveNow = now ?? Date.now();
   const workingSince = useWorkingSinceContext();
@@ -526,6 +535,7 @@ function ChildThreadRow({
                 <StatusGlyph
                   indicator={statusThread.indicator}
                   label={statusThread.indicatorLabel}
+                  status={attention?.viewFor(thread.id)?.status}
                 />
               </span>
             ) : null}

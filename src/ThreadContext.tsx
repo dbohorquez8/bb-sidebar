@@ -51,11 +51,11 @@ export function useThreadContextUsage(threadId: string, enabled: boolean): Conte
   return usage;
 }
 
-/** The context-ring zones: the Needs you red at the soft limit, amber past 75% of it, muted below. */
+/** The context-ring zones: red at the soft limit, orange past 75%, muted below. */
 function zoneTone(zonePercent: number | null): string {
   if (zonePercent === null) return "text-muted-foreground";
-  if (zonePercent >= 100) return "text-[color:var(--bb-sidebar-status-needs-you)]";
-  if (zonePercent >= 75) return "text-warning-text";
+  if (zonePercent >= 100) return "text-[color:var(--ws-red-text)]";
+  if (zonePercent >= 75) return "text-[color:var(--ws-orange-text)]";
   return "text-muted-foreground";
 }
 
