@@ -349,28 +349,20 @@ const putAwayRecordSchema = z.object({
   snoozedUntil: z.number().nullable(),
 });
 
-const stateLineMatchSchema = z.object({
-  kind: z.enum(["needs-you", "working", "background", "done"]),
-  line: z.number().int().nonnegative(),
-});
 const threadObservationSchema = z.object({
   v: z.literal(2),
   threadId: z.string(),
   cursorSeq: z.number().nullable(),
   turnStartedAt: z.number().nullable(),
   turnEndedAt: z.number().nullable(),
-  reply: z
-    .object({
-      endedAt: z.number(),
-      matches: z.record(z.string(), stateLineMatchSchema),
-    })
-    .nullable(),
+  reply: z.object({ endedAt: z.number() }).nullable(),
   rules: z.object({
     version: z.string().nullable(),
     status: z.enum(["needs-you", "working", "background", "done"]).nullable(),
-    label: z.object({ text: z.string(), tone: z.enum(["muted", "primary", "success", "warning", "danger"]).optional() }).nullable(),
+    label: z.object({ text: z.string(), tone: z.enum(["muted", "primary", "success", "warning", "danger"]).optional(), progress: z.literal("slices").optional() }).nullable(),
+    labelAt: z.number().optional(),
   }).optional(),
-  steps: z.record(z.string(), z.object({ stageId: z.string(), at: z.number() })),
+  labelResetAt: z.number().optional(),
   slices: z.object({ feature: z.string(), total: z.number(), done: z.array(z.number()), at: z.number() }).optional(),
   lastActivityAt: z.number().nullable(),
   interactionAt: z.number().nullable(),

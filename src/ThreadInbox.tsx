@@ -657,7 +657,7 @@ export function ThreadInbox({
     for (const thread of split.inbox) {
       const lockedShelf = renamingShelfLocks.get(thread.id);
       // A thread needing the owner — BB's own pending-interaction signal or
-      // the attention preset's state-line marker — never hides in Working
+      // a rule's reply marker — never hides in Working
       // behind running work. It ages into Inactive like any other thread.
       const needsAttention =
         threadNeedsAttention(thread) || attention.isNeedsYou(thread.id);

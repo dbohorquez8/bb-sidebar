@@ -1,12 +1,8 @@
-import { evaluateRuleEvent, rulesDocumentVersion, type AttentionRulesDocument, type RuleOutcome } from "./rules";
-import { matchStateLine } from "./state-line";
-import { extractStepInvocation, mapStepToStage } from "./stage";
+import { evaluateRuleEvent, resetsLabel, ruleSkills, rulesDocumentVersion, type AttentionRulesDocument, type RuleOutcome } from "./rules";
+import { extractStepInvocation } from "./stage";
 import type {
-  AttentionPreset,
   ObservationEvent,
   ObservedRules,
-  ObservedStep,
-  StateLineMatch,
   ThreadEventRowLike,
   ThreadObservation,
 } from "./types";
@@ -119,7 +115,7 @@ function foldRules(
   event: ObservationEvent,
 ): ObservedRules {
   const version = rulesDocumentVersion(document);
-  const held = base.rules && base.rules.version === version ? base.rules : { version, status: null, label: null };
+  const held: ObservedRules = base.rules && base.rules.version === version ? base.rules : { version, status: null, label: null };
   const previous: RuleOutcome = { status: held.status, label: held.label };
   let outcome = previous;
   if (event.kind === "turn-started") outcome = { ...previous, status: null };
@@ -129,25 +125,39 @@ function foldRules(
   } else if (event.kind === "step-invoked") {
     outcome = evaluateRuleEvent(document, previous, { kind: "skill", skill: event.step });
   }
-  return { version, status: outcome.status, label: outcome.label };
+  const labelAt = outcome.label === null ? undefined : outcome.label === previous.label ? held.labelAt : (event as { at?: number }).at;
+  return { version, status: outcome.status, label: outcome.label, ...(labelAt !== undefined ? { labelAt } : {}) };
+}
+
+/**
+ * Folds a child thread's label into its parent's: the newest label wins, and a
+ * label set before the parent's last reset never counts. Returns the same
+ * object when nothing changes.
+ */
+export function mergeChildLabel(parent: ThreadObservation, child: ThreadObservation | null | undefined): ThreadObservation {
+  const incoming = child?.rules;
+  if (!incoming?.label || incoming.labelAt === undefined || !parent.rules) return parent;
+  if (incoming.version !== parent.rules.version) return parent;
+  if (incoming.labelAt < (parent.labelResetAt ?? 0)) return parent;
+  if (parent.rules.labelAt !== undefined && parent.rules.labelAt >= incoming.labelAt) return parent;
+  return { ...parent, rules: { ...parent.rules, label: incoming.label, labelAt: incoming.labelAt } };
 }
 
 export function applyObservationEvent(
   previous: ThreadObservation | undefined,
   threadId: string,
   event: ObservationEvent,
-  presets: readonly AttentionPreset[],
   rules?: AttentionRulesDocument | null,
 ): ThreadObservation {
-  const next = applyLegacyEvent(previous, threadId, event, presets);
+  const next = applyObservedEvent(previous, threadId, event, rules);
   return { ...next, rules: foldRules(next, rules, event) };
 }
 
-function applyLegacyEvent(
+function applyObservedEvent(
   previous: ThreadObservation | undefined,
   threadId: string,
   event: ObservationEvent,
-  presets: readonly AttentionPreset[],
+  rules: AttentionRulesDocument | null | undefined,
 ): ThreadObservation {
   const base: ThreadObservation = previous ?? {
     v: 2,
@@ -156,7 +166,6 @@ function applyLegacyEvent(
     turnStartedAt: null,
     turnEndedAt: null,
     reply: null,
-    steps: {},
     lastActivityAt: null,
     interactionAt: null,
     observedAt: 0,
@@ -165,37 +174,14 @@ function applyLegacyEvent(
   switch (event.kind) {
     case "turn-started":
       return { ...base, reply: null, turnStartedAt: event.at };
-    case "turn-ended": {
-      const matches: Record<string, StateLineMatch> = {};
-      for (const preset of presets) {
-        if (preset.kind !== "state-markers") continue;
-        const match = matchStateLine(event.finalReply, preset.rules);
-        if (match) matches[preset.id] = match;
-      }
-      return { ...base, turnEndedAt: event.at, reply: { endedAt: event.at, matches } };
-    }
+    case "turn-ended":
+      return { ...base, turnEndedAt: event.at, reply: { endedAt: event.at } };
     case "turn-failed":
       return { ...base, turnEndedAt: event.at, reply: null };
     case "step-invoked": {
-      const steps = { ...base.steps };
-      const stepResets = { ...base.stepResets };
-      for (const preset of presets) {
-        if (preset.kind !== "workflow") continue;
-        if (preset.resetSteps?.includes(event.step)) {
-          delete steps[preset.id];
-          stepResets[preset.id] = event.at;
-        }
-        const mapped = mapStepToStage(event.step, preset);
-        if (mapped) steps[preset.id] = { stageId: mapped.stageId, at: event.at };
-      }
-      const reset = presets.some(
-        (preset) => preset.kind === "workflow" && preset.resetSteps?.includes(event.step),
-      );
-      if (reset) {
-        const { slices: _slices, ...rest } = base;
-        return { ...rest, steps, stepResets };
-      }
-      return { ...base, steps, stepResets };
+      if (!resetsLabel(rules, event.step)) return base;
+      const { slices: _slices, ...rest } = base;
+      return { ...rest, labelResetAt: event.at };
     }
     case "background-activity":
       return {
@@ -214,31 +200,6 @@ function applyLegacyEvent(
     default:
       return base;
   }
-}
-
-/**
- * Folds a child thread's steps into its parent's: per workflow, the newest step
- * wins, and a step from before the parent's last reset never counts. Returns
- * the same object when nothing changes.
- */
-export function mergeChildSteps(
-  parent: ThreadObservation,
-  childSteps: Readonly<Record<string, ObservedStep>>,
-  presets: readonly AttentionPreset[],
-): ThreadObservation {
-  let steps: Record<string, ObservedStep> | null = null;
-  for (const preset of presets) {
-    if (preset.kind !== "workflow") continue;
-    const incoming = childSteps[preset.id];
-    if (!incoming) continue;
-    const resetAt = parent.stepResets?.[preset.id];
-    if (resetAt !== undefined && incoming.at < resetAt) continue;
-    const current = (steps ?? parent.steps)[preset.id];
-    if (current && current.at >= incoming.at) continue;
-    steps ??= { ...parent.steps };
-    steps[preset.id] = incoming;
-  }
-  return steps ? { ...parent, steps } : parent;
 }
 
 /** `<feature-slug>-slice-<NN>`: the worktree name a slice build worker gets. */
@@ -268,7 +229,7 @@ export function mergeSliceProgress(
   planTotal: number | null,
 ): ThreadObservation {
   // A worker from before the parent's last workflow reset belongs to older work.
-  const resetAt = Math.max(0, ...Object.values(parent.stepResets ?? {}));
+  const resetAt = parent.labelResetAt ?? 0;
   if (worker.at < resetAt) return parent;
   const current = parent.slices;
   const sameFeature = current?.feature === worker.feature;
@@ -285,11 +246,12 @@ export function mergeSliceProgress(
 
 export function coldReadComplete(
   rowsNewestFirst: readonly ThreadEventRowLike[],
-  presets: readonly AttentionPreset[],
+  rules: AttentionRulesDocument | null | undefined,
 ): boolean {
+  const skills = ruleSkills(rules);
   let hasTurnStarted = false;
   let hasBackgroundActivity = false;
-  let hasMappedStep = false;
+  let hasMappedStep = skills.size === 0;
 
   for (const row of rowsNewestFirst) {
     if (row.type === "turn/started") hasTurnStarted = true;
@@ -297,14 +259,7 @@ export function coldReadComplete(
       hasBackgroundActivity = true;
     }
     const step = extractStepInvocation(row);
-    if (
-      step !== null &&
-      presets.some(
-        (preset) => preset.kind === "workflow" && preset.rules.some((rule) => rule.step === step),
-      )
-    ) {
-      hasMappedStep = true;
-    }
+    if (step !== null && skills.has(step)) hasMappedStep = true;
   }
 
   return hasTurnStarted && hasBackgroundActivity && hasMappedStep;

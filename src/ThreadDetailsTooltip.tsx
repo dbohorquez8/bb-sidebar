@@ -22,7 +22,7 @@ import { ThreadPullRequestDetails } from "./ThreadPullRequests";
 import { compareChildThreads, useChildThreadDisplay } from "./ChildThreadDisplay";
 import { cn } from "./lib/utils";
 import { AttentionContext } from "./useAttention";
-import { backgroundWorkCount, ruleLabelText, stageText, type AttentionView } from "./attention";
+import { backgroundWorkCount, ruleLabelText, type AttentionView } from "./attention";
 
 /**
  * The Workflow and per-kind Background rows (AC-31). No SDK hook: takes the
@@ -34,12 +34,6 @@ export function AttentionHoverRows({ view }: { view: AttentionView | null }) {
     <>
       {view?.ruleLabel ? (
         <DetailRow icon="Workflow" label="Workflow" value={ruleLabelText(view.ruleLabel)} />
-      ) : view?.stage ? (
-        <DetailRow
-          icon="Workflow"
-          label="Workflow"
-          value={`${view.stage.workflowLabel} › ${stageText(view.stage)}`}
-        />
       ) : null}
       {view && backgroundWorkCount(view.background) > 0 ? (
         <DetailRow

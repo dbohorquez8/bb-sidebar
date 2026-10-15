@@ -101,7 +101,6 @@ const workingView: AttentionView = {
   label: "Working",
   timeLabel: null,
   since: null,
-  stage: null,
   ruleLabel: null,
   ticket: null,
   background: { workers: 0, commands: 0, workflows: 0 },
@@ -150,13 +149,9 @@ describe("StatusOrTime", () => {
   });
 
   // WS-30 (AC-65, AC-66): the Building stage carries the finished/total slice count.
-  const buildStage = (sliceProgress?: { done: number; total: number }): AttentionView["stage"] => ({
-    presetId: "ddd-workflow",
-    workflowLabel: "DDD",
-    stageLabel: "Building",
-    position: 8,
-    total: 10,
-    showMarks: true,
+  const buildLabel = (sliceProgress?: { done: number; total: number }): AttentionView["ruleLabel"] => ({
+    text: "Building",
+    progress: "slices",
     ...(sliceProgress ? { sliceProgress } : {}),
   });
   const renderView = async (view: AttentionView) => {
@@ -173,14 +168,14 @@ describe("StatusOrTime", () => {
   };
 
   it("shows 'Building 2/5' with the time while Working (AC-65)", async () => {
-    await renderView({ ...workingView, stage: buildStage({ done: 2, total: 5 }), timeLabel: "3m" });
+    await renderView({ ...workingView, ruleLabel: buildLabel({ done: 2, total: 5 }), timeLabel: "3m" });
     expect(await screen.findByText("Building 2/5")).toBeTruthy();
     expect(screen.getByText("3m")).toBeTruthy();
     cleanup();
   });
 
   it("shows plain 'Building' when no slice count is known (AC-66)", async () => {
-    await renderView({ ...workingView, stage: buildStage() });
+    await renderView({ ...workingView, ruleLabel: buildLabel() });
     expect(await screen.findByText("Building")).toBeTruthy();
     expect(screen.queryByText(/Building \d/)).toBeNull();
     cleanup();
@@ -191,7 +186,7 @@ describe("StatusOrTime", () => {
       ...workingView,
       status: { kind: "needs-you" },
       label: "Needs you",
-      stage: buildStage({ done: 2, total: 5 }),
+      ruleLabel: buildLabel({ done: 2, total: 5 }),
     });
     expect(await screen.findByText("Needs you")).toBeTruthy();
     expect(screen.queryByText(/Building/)).toBeNull();
@@ -200,7 +195,7 @@ describe("StatusOrTime", () => {
       ...workingView,
       status: { kind: "done" },
       label: "Done",
-      stage: buildStage({ done: 5, total: 5 }),
+      ruleLabel: buildLabel({ done: 5, total: 5 }),
     });
     expect(await screen.findByText("Done")).toBeTruthy();
     expect(screen.queryByText(/Building/)).toBeNull();

@@ -18,16 +18,15 @@ import {
   HISTORY_EVENT_TYPES,
   HISTORY_PAGE_SIZE,
   countSlicesInPlan,
-  mergeChildSteps,
+  mergeChildLabel,
   mergeSliceProgress,
   parseStoredObservation,
   rowsToObservationEvents,
   sliceNumberOf,
 } from "./observation";
-import { ATTENTION_PRESETS } from "./presets";
 import { rulesDocumentVersion, type AttentionRulesDocument } from "./rules";
 import { ATTENTION_CHANNEL } from "./settings";
-import type { AttentionPreset, ObservedStep, ThreadEventRowLike, ThreadObservation } from "./types";
+import type { ThreadEventRowLike, ThreadObservation } from "./types";
 
 const CHILD_SCAN_LIMIT = 20; // newest children read per parent
 const CHILD_SCAN_TTL_MS = 30_000; // events cover changes between scans
@@ -60,7 +59,6 @@ function emptyObservation(threadId: string, observedAt: number, rulesVersion: st
     turnStartedAt: null,
     turnEndedAt: null,
     reply: null,
-    steps: {},
     lastActivityAt: null,
     interactionAt: null,
     observedAt,
@@ -86,7 +84,6 @@ export function createAttentionObserver(
   deps: {
     db: ReturnType<BbPluginApi["storage"]["database"]>;
     now?: () => number;
-    presets?: readonly AttentionPreset[];
     /** The active rules document; read on every sync so a reload applies without restart. */
     rules?: () => AttentionRulesDocument | null;
     concurrency?: number; // threads synced at once by list(); default 4
@@ -101,7 +98,6 @@ export function createAttentionObserver(
 } {
   const { db } = deps;
   const now = deps.now ?? Date.now;
-  const presets = deps.presets ?? ATTENTION_PRESETS;
   const activeRules = deps.rules ?? (() => null);
   const isCurrent = (record: ThreadObservation) =>
     record.rules !== undefined && record.rules.version === rulesDocumentVersion(activeRules());
@@ -192,7 +188,7 @@ export function createAttentionObserver(
       const page = await readPage(threadId, { order: "desc", beforeSeq });
       newestFirst.push(...page);
       if (page.length < HISTORY_PAGE_SIZE) break;
-      if (coldReadComplete(newestFirst, presets)) break;
+      if (coldReadComplete(newestFirst, activeRules())) break;
       if (newestFirst.length >= COLD_READ_MAX_ROWS) break;
       beforeSeq = Math.min(...page.map((row) => row.seq));
     }
@@ -245,7 +241,7 @@ export function createAttentionObserver(
       }
 
       next = stored ?? emptyObservation(threadId, now(), rulesDocumentVersion(rules));
-      for (const event of events) next = applyObservationEvent(next, threadId, event, presets, rules);
+      for (const event of events) next = applyObservationEvent(next, threadId, event, rules);
     } catch {
       return { result: "unavailable", newestAt: null, observedAt: null };
     }
@@ -258,11 +254,11 @@ export function createAttentionObserver(
   }
 
   // A child's own rows count as its parent's background activity, and its
-  // workflow steps count as the parent's (newest wins, resets respected).
+  // label and slice progress count toward the parent's (newest wins, resets respected).
   async function bumpParent(
     parentId: string,
     at: number | null,
-    childSteps: Readonly<Record<string, ObservedStep>>,
+    child: ThreadObservation | undefined,
     slice: SliceReport | null,
   ): Promise<boolean> {
     return serialized(parentId, async () => {
@@ -270,8 +266,8 @@ export function createAttentionObserver(
       // A parent record made under other rules restarts empty; its own sync reads it cold.
       const stored = existing && isCurrent(existing) ? existing : undefined;
       let next = stored ?? emptyObservation(parentId, now(), rulesDocumentVersion(activeRules()));
-      if (at !== null) next = applyObservationEvent(next, parentId, { kind: "background-activity", at }, presets, activeRules());
-      next = mergeChildSteps(next, childSteps, presets);
+      if (at !== null) next = applyObservationEvent(next, parentId, { kind: "background-activity", at }, activeRules());
+      next = mergeChildLabel(next, child);
       if (slice) next = mergeSliceProgress(next, slice, slice.planTotal);
       if (stored && comparable(stored) === comparable(next)) return false;
       writeRecord(next);
@@ -355,13 +351,11 @@ export function createAttentionObserver(
     const parentId = parents.get(threadId) ?? null;
     if (parentId !== null && parentId !== threadId) {
       const childRecord = readRecord(threadId);
-      const childSteps = childRecord?.steps ?? {};
-      const hasSteps = Object.keys(childSteps).length > 0;
       // Hidden and visible slice workers both pass here, so each counts once.
       const slice = childRecord ? await sliceReport(threadId, parentId, childRecord) : null;
       if (
-        (outcome.newestAt !== null || hasSteps || slice !== null) &&
-        (await bumpParent(parentId, outcome.newestAt, childSteps, slice))
+        (outcome.newestAt !== null || childRecord?.rules?.label != null || slice !== null) &&
+        (await bumpParent(parentId, outcome.newestAt, childRecord, slice))
       ) {
         changedIds.push(parentId);
       }

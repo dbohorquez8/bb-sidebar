@@ -11,7 +11,7 @@ import { relativeTimeLabel } from "./relative-time";
 import { useWorkingSinceContext } from "./useWorkingSince";
 import { statusWithDuration } from "./working-since";
 import { AttentionContext } from "./useAttention";
-import { LABEL_TONE_COLOURS, ruleLabelText, stageText, type AttentionView, type ResolvedStatus } from "./attention";
+import { LABEL_TONE_COLOURS, ruleLabelText, type AttentionView, type ResolvedStatus } from "./attention";
 
 /**
  * The default trailing slot for cards and flat rows: fixed and right-aligned.
@@ -153,7 +153,7 @@ function AttentionStatusOrTime({
           className="truncate"
           style={view.ruleLabel?.tone ? { color: LABEL_TONE_COLOURS[view.ruleLabel.tone] } : undefined}
         >
-          {view.ruleLabel ? ruleLabelText(view.ruleLabel) : (view.stage ? stageText(view.stage) : view.label)}
+          {view.ruleLabel ? ruleLabelText(view.ruleLabel) : view.label}
         </span>
         {view.timeLabel !== null ? (
           <span className="font-normal tabular-nums text-muted-foreground">{view.timeLabel}</span>

@@ -7,7 +7,7 @@ export interface AttentionInput {
   failureReported: boolean;
   unreadResult: boolean;
   background: BackgroundWork;
-  /** From the enabled state-marker presets; null when none matched or none enabled. */
+  /** From the active rules; null when none matched. */
   verdict: StateRuleKind | null;
   silent: boolean; // isSilentPastThreshold(silenceOrigin(...), now, threshold)
   onInactiveShelf: boolean; // today's isInactiveThread(...) result

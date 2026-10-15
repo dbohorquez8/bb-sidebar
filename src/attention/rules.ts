@@ -149,10 +149,21 @@ export function evaluateRuleEvent(
   const sets = selectedRuleSets(document);
   if (event.kind === "reply") {
     if (!event.text) return previous;
+    // A marker matches at the start of a line (emoji variation selectors ignored);
+    // the longest marker wins within a line and the last matching line wins.
+    const normalize = (value: string) => value.replace(/\uFE0F/g, "");
     let status = previous.status;
-    for (const set of sets) {
-      for (const rule of set.replyMarkers) {
-        if (event.text.split(/\r?\n/).some((line) => line.trimStart() === rule.marker)) status = rule.status;
+    for (const line of event.text.split(/\r?\n/)) {
+      const text = normalize(line.trimStart());
+      let longest = -1;
+      for (const set of sets) {
+        for (const rule of set.replyMarkers) {
+          const marker = normalize(rule.marker);
+          if (text.startsWith(marker) && marker.length >= longest) {
+            longest = marker.length;
+            status = rule.status;
+          }
+        }
       }
     }
     return { ...previous, status };
@@ -168,6 +179,20 @@ export function evaluateRuleEvent(
     for (const rule of set.skillStatuses) if (rule.skill === event.skill) status = rule.status;
   }
   return { status, label };
+}
+
+/** Every skill name any selected rule set reacts to. */
+export function ruleSkills(document: AttentionRulesDocument | null | undefined): ReadonlySet<string> {
+  const skills = new Set<string>();
+  for (const set of selectedRuleSets(document)) {
+    for (const rule of [...set.skillStatuses, ...set.skillLabels, ...set.labelResets]) skills.add(rule.skill);
+  }
+  return skills;
+}
+
+/** True when invoking the skill resets the label under a selected rule set. */
+export function resetsLabel(document: AttentionRulesDocument | null | undefined, skill: string): boolean {
+  return selectedRuleSets(document).some((set) => set.labelResets.some((rule) => rule.skill === skill));
 }
 
 export function rulesVersionOf(document: AttentionRulesDocument | null | undefined): number | null {

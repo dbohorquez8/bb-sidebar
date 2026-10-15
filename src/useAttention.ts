@@ -14,6 +14,7 @@ import {
   ATTENTION_RULES_CHANNEL,
   backgroundSignature,
   buildAttentionView,
+  ruleLabelView,
   historySince,
   isSilentPastThreshold,
   parseTicketId,
@@ -428,15 +429,7 @@ export function useAttention(
         status,
         statusSince: statusSinceValue,
         silenceOrigin: origin,
-        stage: null,
-        ruleLabel: currentRules?.label
-          ? {
-              ...currentRules.label,
-              ...(currentRules.label.progress === "slices" && observation?.slices && observation.slices.total >= 1
-                ? { sliceProgress: { done: Math.min(observation.slices.done.length, observation.slices.total), total: observation.slices.total } }
-                : {}),
-            }
-          : null,
+        ruleLabel: ruleLabelView(currentRules?.label, observation?.slices),
         ticket,
         background: liveBackground,
         ageLabel: relativeTimeLabel(thread.updatedAt, now),
