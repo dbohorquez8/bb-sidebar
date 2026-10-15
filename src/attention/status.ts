@@ -1,4 +1,5 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import { childFailureReported } from "../child-failure";
 import { isTurnInFlight } from "../lifecycle";
 import type { BackgroundWork, BbWord, ObservedReply, ResolvedStatus, StateRuleKind, AttentionPreset } from "./types";
 
@@ -42,6 +43,9 @@ export function attentionInputFromThread(
     silent: boolean;
     onInactiveShelf: boolean;
     failureAcknowledged: boolean;
+    /** Child-failure inputs (WS-51); omitted means no status-derived failure. */
+    parentArchived?: boolean;
+    now?: number;
   },
 ): AttentionInput {
   const turnRunning =
@@ -50,10 +54,16 @@ export function attentionInputFromThread(
     thread.indicator === "working-draft";
 
   const failureReported =
-    (thread.indicator === "unread-error" ||
+    ((thread.indicator === "unread-error" ||
       thread.queuedWork === "failed" ||
       thread.indicator === "queued-failed") &&
-    !context.failureAcknowledged;
+      !context.failureAcknowledged) ||
+    (context.now !== undefined &&
+      childFailureReported(thread, {
+        parentArchived: context.parentArchived ?? false,
+        acknowledged: context.failureAcknowledged,
+        now: context.now,
+      }));
 
   const unreadResult = thread.indicator === "unread-success";
 

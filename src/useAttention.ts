@@ -359,6 +359,7 @@ export function useAttention(
     const byThreadId = new Map<string, ResolvedThread>();
     const now = options.now;
     const wallNow = Date.now();
+    const threadsById = new Map(threads.map((t) => [t.id, t]));
 
     for (const rawThread of threads) {
       if (rawThread.isArchived) continue;
@@ -393,17 +394,22 @@ export function useAttention(
       const silent = isSilentPastThreshold(origin, now, silenceThresholdMinutes);
 
       const failureAcknowledged = failedAck.has(thread.id);
+      const parentArchived =
+        thread.parentThreadId != null &&
+        (threadsById.get(thread.parentThreadId)?.isArchived ?? false);
       const input = attentionInputFromThread(thread, {
         verdict,
         silent,
         onInactiveShelf,
         failureAcknowledged,
+        parentArchived,
+        now: wallNow,
       });
       const status = resolveAttentionStatus(input);
       // An acknowledged failure is still a reported one; reading the
       // post-acknowledgement flag would drop the acknowledgement next pass.
       const failing = failureAcknowledged
-        ? attentionInputFromThread(thread, { verdict, silent, onInactiveShelf, failureAcknowledged: false })
+        ? attentionInputFromThread(thread, { verdict, silent, onInactiveShelf, failureAcknowledged: false, parentArchived, now: wallNow })
             .failureReported
         : input.failureReported;
 

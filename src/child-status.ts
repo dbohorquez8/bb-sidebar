@@ -3,6 +3,7 @@ import type {
   PluginSidebarThreadIndicator,
 } from "@get-bb/plugin-sdk/app";
 import type { AttentionView } from "./attention";
+import { childFailureReported, type ChildFailureContext } from "./child-failure";
 
 /**
  * What a parent card says about its subtree when the list is collapsed.
@@ -53,6 +54,8 @@ export function isWorkingIndicator(
 export function childStatusKind(
   thread: PluginSidebarThread,
   view: AttentionView | null = null,
+  /** When given, an errored child shows Failed under the WS-51 rule. */
+  failure: ChildFailureContext | null = null,
 ): ChildStatusKind | null {
   if (view) {
     switch (view.status.kind) {
@@ -67,6 +70,7 @@ export function childStatusKind(
   }
   if (thread.indicator === "unread-error" || thread.queuedWork === "failed")
     return "failed";
+  if (failure && childFailureReported(thread, failure)) return "failed";
   if (thread.hasPendingInteraction || thread.indicator === "waiting-for-input")
     return "needs-you";
   if (thread.indicator === "unread-success") return "done";
