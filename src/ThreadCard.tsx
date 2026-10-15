@@ -558,14 +558,17 @@ export function ThreadCard({
                   className="size-3 shrink-0 text-muted-foreground/60"
                 />
               ) : null}
-              {shortModel !== null ? (
-                <span className="shrink-0 font-medium leading-none tabular-nums">{shortModel}</span>
-              ) : null}
+              {/* The provider logo leads its model name as one unit. */}
+              <span className="flex shrink-0 items-center gap-1">
+                <ProviderGlyph
+                  providerId={thread.providerId}
+                  provider={provider}
+                />
+                {shortModel !== null ? (
+                  <span className="shrink-0 font-medium leading-none tabular-nums">{shortModel}</span>
+                ) : null}
+              </span>
               {isVisible ? <ThreadPullRequest threadId={thread.id} /> : null}
-              <ProviderGlyph
-                providerId={thread.providerId}
-                provider={provider}
-              />
               <ThreadContextPercent usage={contextUsage} />
             </div>
             </>
