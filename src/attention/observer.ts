@@ -247,8 +247,11 @@ export function createAttentionObserver(
     }
     next = { ...next, observedAt: now() };
 
-    const changed = !existing || comparable(existing) !== comparable(next);
-    if (changed) writeRecord(next);
+    // The cursor moves past rows that change nothing (an ignored operation, a plain
+    // message): that is stored without reporting a change.
+    const withoutCursor = (record: ThreadObservation) => comparable({ ...record, cursorSeq: null });
+    const changed = !existing || withoutCursor(existing) !== withoutCursor(next);
+    if (changed || comparable(existing) !== comparable(next)) writeRecord(next);
     const newestAt = rows.length > 0 ? Math.max(...rows.map((row) => row.createdAt)) : null;
     return { result: changed ? "changed" : "unchanged", newestAt, observedAt: next.observedAt };
   }

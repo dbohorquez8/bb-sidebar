@@ -211,6 +211,12 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
+ * Bumped when the meaning of stored observations changes, so every record is
+ * rebuilt from the history once. 2: /clear resets sticky state (WS-70).
+ */
+const OBSERVATION_REVISION = 2;
+
+/**
  * Stamp of one active document's content: it changes whenever any rule, label,
  * enabled flag, or prefix changes and is stable across restarts. Stored
  * observations carry it so records made under other rules are rebuilt.
@@ -219,7 +225,7 @@ export function rulesDocumentVersion(document: AttentionRulesDocument | null | u
   if (!document) return null;
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
-  for (const char of canonicalJson(document)) {
+  for (const char of `r${OBSERVATION_REVISION}\u0000${canonicalJson(document)}`) {
     const code = char.codePointAt(0)!;
     h1 = Math.imul(h1 ^ code, 2654435761);
     h2 = Math.imul(h2 ^ code, 1597334677);

@@ -272,8 +272,6 @@ export function coldReadComplete(
   let hasMappedStep = skills.size === 0;
 
   for (const row of rowsNewestFirst) {
-    // Nothing before a /clear can shape the card, so the read has gone far enough.
-    if (isContextClear(row)) return true;
     if (row.type === "turn/started") hasTurnStarted = true;
     if (isBackgroundItemStart(row) || BACKGROUND_ROW_TYPES.has(row.type)) {
       hasBackgroundActivity = true;
