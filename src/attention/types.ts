@@ -100,6 +100,8 @@ export type ObservationEvent =
   | { kind: "background-activity"; at: number }
   | { kind: "interaction-raised"; at: number }
   | { kind: "interaction-resolved"; at: number }
+  /** The conversation was reset (/clear): sticky label and reply-marker status no longer apply. */
+  | { kind: "context-cleared"; at: number }
   | { kind: "cursor"; seq: number }; // highest seq of a filtered batch
 
 export interface TicketMatch {

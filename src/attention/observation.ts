@@ -20,6 +20,13 @@ function isBackgroundItemStart(row: ThreadEventRowLike): boolean {
   return data.item?.type === "backgroundTask" || data.item?.type === "delegation";
 }
 
+/** BB records /clear as a thread-level operation row (WS-70); other operations never reset anything. */
+function isContextClear(row: ThreadEventRowLike): boolean {
+  if (row.type !== "system/operation") return false;
+  const data = row.data as { operation?: string; status?: string };
+  return data.operation === "context_clear" && data.status === "completed";
+}
+
 // One sequence space (plan Auditor Finding 1): the observer reads BB's event
 // history only through bb.sdk.threads.events.list with
 // types: HISTORY_EVENT_TYPES, and cursorSeq is the highest seq among rows
@@ -34,6 +41,7 @@ export const HISTORY_EVENT_TYPES = [
   "item/delegation/completed",
   "item/backgroundTask/progress",
   "item/backgroundTask/completed",
+  "system/operation",
 ] as const;
 
 export const HISTORY_PAGE_SIZE = 100; // BB refuses a larger limit (observed 2026-10-11)
@@ -71,6 +79,11 @@ export function rowsToObservationEvents(
     const step = extractStepInvocation(row);
     if (step !== null) {
       events.push({ kind: "step-invoked", at: row.createdAt, step });
+      continue;
+    }
+
+    if (isContextClear(row)) {
+      events.push({ kind: "context-cleared", at: row.createdAt });
       continue;
     }
 
@@ -120,6 +133,7 @@ function foldRules(
   let outcome = previous;
   if (event.kind === "turn-started") outcome = { ...previous, status: null };
   else if (event.kind === "turn-failed") outcome = { ...previous, status: null };
+  else if (event.kind === "context-cleared") outcome = { status: null, label: null };
   else if (event.kind === "turn-ended") {
     outcome = evaluateRuleEvent(document, { ...previous, status: null }, { kind: "reply", text: event.finalReply });
   } else if (event.kind === "step-invoked") {
@@ -182,6 +196,10 @@ function applyObservedEvent(
       if (!resetsLabel(rules, event.step)) return base;
       const { slices: _slices, ...rest } = base;
       return { ...rest, labelResetAt: event.at };
+    }
+    case "context-cleared": {
+      const { slices: _slices, ...rest } = base;
+      return { ...rest, reply: null, labelResetAt: event.at };
     }
     case "background-activity":
       return {
@@ -254,6 +272,8 @@ export function coldReadComplete(
   let hasMappedStep = skills.size === 0;
 
   for (const row of rowsNewestFirst) {
+    // Nothing before a /clear can shape the card, so the read has gone far enough.
+    if (isContextClear(row)) return true;
     if (row.type === "turn/started") hasTurnStarted = true;
     if (isBackgroundItemStart(row) || BACKGROUND_ROW_TYPES.has(row.type)) {
       hasBackgroundActivity = true;
