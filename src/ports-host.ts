@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readlink, realpath, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { platform } from "node:os";
 import { promisify } from "node:util";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
@@ -155,6 +155,14 @@ async function viewPullRequests(urls: string[], signal: AbortSignal) {
   return { pullRequests };
 }
 
+function touchesRulesFile(change: { path: string; type: string }, rootPath: string): boolean {
+  if (basename(change.path) === ATTENTION_RULES_FILENAME) return true;
+  const full = resolve(rootPath, change.path);
+  if (full === rootPath) return true;
+  // A sibling (temp file) deleted from the directory is the other half of a rename onto the rules file.
+  return dirname(full) === rootPath && change.type === "delete";
+}
+
 export default experimental_defineHostEntry({
   contract: portScanContract,
   experimental_signals: attentionRulesHostSignals,
@@ -193,7 +201,9 @@ export default experimental_defineHostEntry({
             await context.experimental_emitSignal("attentionRulesWatchError", { message: event.message });
             return;
           }
-          if (event.kind === "changed" && !event.changes.some((change) => change.path === ATTENTION_RULES_FILENAME)) return;
+          // The daemon reports absolute paths, and an atomic save arrives as a temp-file create plus the target's create.
+          // Re-read for the rules file by basename, for the watched directory itself, or for a rename of any file in it.
+          if (event.kind === "changed" && !event.changes.some((change) => touchesRulesFile(change, rootPath))) return;
           const path = join(rootPath, ATTENTION_RULES_FILENAME);
           try {
             await context.experimental_emitSignal("attentionRulesChanged", { exists: true, content: await readFile(path, "utf8") });

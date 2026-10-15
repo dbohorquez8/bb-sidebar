@@ -134,6 +134,20 @@ describe("host attention rules file (persistent data directory)", () => {
     ]);
   });
 
+  it("AC-16 — absolute paths, a directory-level event and a rename's temp file all trigger a re-read", async () => {
+    await rules.experimental_call("watchAttentionRules", {});
+    await writeTextFile(join(dataDir, FILE), "abs");
+    await listener!({ kind: "changed", changes: [{ path: join(dataDir, FILE), type: "update" }] });
+    await writeTextFile(join(dataDir, FILE), "dir");
+    await listener!({ kind: "changed", changes: [{ path: dataDir, type: "update" }] });
+    await writeTextFile(join(dataDir, FILE), "renamed");
+    await listener!({ kind: "changed", changes: [{ path: join(dataDir, "sedAbC123"), type: "delete" }, { path: join(dataDir, FILE), type: "create" }] });
+    await writeTextFile(join(dataDir, FILE), "temp-only");
+    await listener!({ kind: "changed", changes: [{ path: join(dataDir, "tmp123"), type: "delete" }] });
+    await listener!({ kind: "changed", changes: [{ path: join(dataDir, "notes.txt"), type: "update" }] });
+    expect(rules.experimental_getSignals().map((s) => (s.payload as { content: string }).content)).toEqual(["abs", "dir", "renamed", "temp-only"]);
+  });
+
   it("reports a deleted rules file as absent", async () => {
     await rules.experimental_call("watchAttentionRules", {});
     await listener!({ kind: "changed", changes: [{ path: FILE, type: "delete" }] });
