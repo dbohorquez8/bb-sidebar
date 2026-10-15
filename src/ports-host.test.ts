@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile as readTextFile, rm, writeFile as writeTextFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 
@@ -19,12 +23,13 @@ const sockets = `COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
 node 123 u 1u IPv4 0x1 0t0 TCP 127.0.0.1:3000 (LISTEN)
 node 456 u 1u IPv4 0x2 0t0 TCP 127.0.0.1:4000 (LISTEN)
 `;
-let harness: ReturnType<typeof experimental_createHostEntryHarness<typeof entry.contract, {}>>;
+const makeHarness = (options?: Parameters<typeof experimental_createHostEntryHarness>[1]) => experimental_createHostEntryHarness(entry, options);
+let harness: ReturnType<typeof makeHarness>;
 
 beforeEach(() => {
   mocks.run.mockReset();
   mocks.platform.mockReturnValue("darwin");
-  harness = experimental_createHostEntryHarness(entry);
+  harness = makeHarness();
 });
 afterEach(async () => { await harness.experimental_dispose(); });
 
@@ -79,5 +84,76 @@ describe("host pull request lookup", () => {
     expect(result.pullRequests).toEqual([
       { url: "https://github.com/o/r/pull/1", number: 1, title: "Fix", state: "draft" },
     ]);
+  });
+});
+
+describe("host attention rules file (persistent data directory)", () => {
+  const FILE = "attention-rules.json";
+  let dataDir: string;
+  let listener: ((event: unknown) => void | Promise<void>) | null;
+  let rules: ReturnType<typeof makeHarness>;
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "rules-host-"));
+    listener = null;
+    rules = makeHarness({
+      experimental_paths: { dataDir, tempDir: dataDir },
+      experimental_watch: (_options, next) => {
+        listener = next as never;
+        return { dispose: async () => undefined };
+      },
+    });
+  });
+  afterEach(async () => {
+    await rules.experimental_dispose();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it("AC-11 — read reports an absent file and never creates it", async () => {
+    await expect(rules.experimental_call("readAttentionRules", {})).resolves.toEqual({ exists: false, content: null });
+    await rules.experimental_call("watchAttentionRules", {});
+    expect(existsSync(join(dataDir, FILE))).toBe(false);
+  });
+
+  it("AC-01 — install writes the example once and keeps an existing file", async () => {
+    const first = await rules.experimental_call("installAttentionRulesExample", { content: '{"version":1}' });
+    expect(first).toEqual({ exists: true, content: '{"version":1}' });
+    const second = await rules.experimental_call("installAttentionRulesExample", { content: '{"version":2}' });
+    expect(second.content).toBe('{"version":1}');
+    expect(await readTextFile(join(dataDir, FILE), "utf8")).toBe('{"version":1}');
+  });
+
+  it("AC-16 — a detected edit of the rules file emits its current content as a signal", async () => {
+    await expect(rules.experimental_call("watchAttentionRules", {})).resolves.toEqual({ watching: true });
+    await writeTextFile(join(dataDir, FILE), "edited");
+    await listener!({ kind: "changed", changes: [{ path: FILE, type: "update" }] });
+    await listener!({ kind: "changed", changes: [{ path: "other.txt", type: "update" }] });
+    expect(rules.experimental_getSignals()).toEqual([
+      { signal: "attentionRulesChanged", payload: { exists: true, content: "edited" } },
+    ]);
+  });
+
+  it("reports a deleted rules file as absent", async () => {
+    await rules.experimental_call("watchAttentionRules", {});
+    await listener!({ kind: "changed", changes: [{ path: FILE, type: "delete" }] });
+    expect(rules.experimental_getSignals()).toEqual([
+      { signal: "attentionRulesChanged", payload: { exists: false, content: null } },
+    ]);
+  });
+
+  it("signals a watcher error and reports an unavailable watcher without throwing", async () => {
+    await rules.experimental_call("watchAttentionRules", {});
+    await listener!({ kind: "watch-error", message: "inotify limit" });
+    expect(rules.experimental_getSignals()).toEqual([
+      { signal: "attentionRulesWatchError", payload: { message: "inotify limit" } },
+    ]);
+    const broken = makeHarness({
+      experimental_paths: { dataDir, tempDir: dataDir },
+      experimental_watch: () => { throw new Error("watch unavailable"); },
+    });
+    await expect(broken.experimental_call("watchAttentionRules", {})).resolves.toMatchObject({ watching: false });
+    await broken.experimental_dispose();
+    await tick();
   });
 });

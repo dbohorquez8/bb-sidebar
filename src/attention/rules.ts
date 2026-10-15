@@ -167,3 +167,33 @@ export function evaluateRuleEvent(
 export function rulesVersionOf(document: AttentionRulesDocument | null | undefined): number | null {
   return document?.version ?? null;
 }
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Stamp of one active document's content: it changes whenever any rule, label,
+ * enabled flag, or prefix changes and is stable across restarts. Stored
+ * observations carry it so records made under other rules are rebuilt.
+ */
+export function rulesDocumentVersion(document: AttentionRulesDocument | null | undefined): string | null {
+  if (!document) return null;
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (const char of canonicalJson(document)) {
+    const code = char.codePointAt(0)!;
+    h1 = Math.imul(h1 ^ code, 2654435761);
+    h2 = Math.imul(h2 ^ code, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return `v${ATTENTION_RULES_VERSION}-${(h2 >>> 0).toString(16).padStart(8, "0")}${(h1 >>> 0).toString(16).padStart(8, "0")}`;
+}

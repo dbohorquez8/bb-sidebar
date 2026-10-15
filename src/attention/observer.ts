@@ -25,6 +25,7 @@ import {
   sliceNumberOf,
 } from "./observation";
 import { ATTENTION_PRESETS } from "./presets";
+import { rulesDocumentVersion, type AttentionRulesDocument } from "./rules";
 import { ATTENTION_CHANNEL } from "./settings";
 import type { AttentionPreset, ObservedStep, ThreadEventRowLike, ThreadObservation } from "./types";
 
@@ -50,9 +51,10 @@ export const THREAD_ATTENTION_TABLE = `CREATE TABLE IF NOT EXISTS thread_attenti
   record    TEXT NOT NULL
 )`;
 
-function emptyObservation(threadId: string, observedAt: number): ThreadObservation {
+function emptyObservation(threadId: string, observedAt: number, rulesVersion: string | null): ThreadObservation {
   return {
     v: 2,
+    rules: { version: rulesVersion, status: null, label: null },
     threadId,
     cursorSeq: null,
     turnStartedAt: null,
@@ -85,6 +87,8 @@ export function createAttentionObserver(
     db: ReturnType<BbPluginApi["storage"]["database"]>;
     now?: () => number;
     presets?: readonly AttentionPreset[];
+    /** The active rules document; read on every sync so a reload applies without restart. */
+    rules?: () => AttentionRulesDocument | null;
     concurrency?: number; // threads synced at once by list(); default 4
   },
 ): {
@@ -92,10 +96,15 @@ export function createAttentionObserver(
     threads: readonly { id: string; parentId: string | null }[],
   ): Promise<{ observations: ThreadObservation[]; unavailable: string[] }>;
   sync(threadId: string, finalReplyHint?: string | null): Promise<"changed" | "unchanged" | "unavailable">;
+  /** Rebuilds every stored record made under other rules; returns the threads whose record changed. */
+  rebuildStale(): Promise<string[]>;
 } {
   const { db } = deps;
   const now = deps.now ?? Date.now;
   const presets = deps.presets ?? ATTENTION_PRESETS;
+  const activeRules = deps.rules ?? (() => null);
+  const isCurrent = (record: ThreadObservation) =>
+    record.rules !== undefined && record.rules.version === rulesDocumentVersion(activeRules());
   const concurrency = Math.max(1, Math.floor(deps.concurrency ?? 4));
   db.exec(THREAD_ATTENTION_TABLE);
 
@@ -200,7 +209,10 @@ export function createAttentionObserver(
     threadId: string,
     hint: string | null | undefined,
   ): Promise<{ result: SyncResult; newestAt: number | null; observedAt: number | null }> {
-    const stored = readRecord(threadId);
+    // A record made under other rules is rebuilt from the history, never reused.
+    const existing = readRecord(threadId);
+    const stored = existing && isCurrent(existing) ? existing : undefined;
+    const rules = activeRules();
     let next: ThreadObservation;
     let rows: ThreadEventRowLike[];
     try {
@@ -232,14 +244,14 @@ export function createAttentionObserver(
         }
       }
 
-      next = stored ?? emptyObservation(threadId, now());
-      for (const event of events) next = applyObservationEvent(next, threadId, event, presets);
+      next = stored ?? emptyObservation(threadId, now(), rulesDocumentVersion(rules));
+      for (const event of events) next = applyObservationEvent(next, threadId, event, presets, rules);
     } catch {
       return { result: "unavailable", newestAt: null, observedAt: null };
     }
     next = { ...next, observedAt: now() };
 
-    const changed = !stored || comparable(stored) !== comparable(next);
+    const changed = !existing || comparable(existing) !== comparable(next);
     if (changed) writeRecord(next);
     const newestAt = rows.length > 0 ? Math.max(...rows.map((row) => row.createdAt)) : null;
     return { result: changed ? "changed" : "unchanged", newestAt, observedAt: next.observedAt };
@@ -254,9 +266,11 @@ export function createAttentionObserver(
     slice: SliceReport | null,
   ): Promise<boolean> {
     return serialized(parentId, async () => {
-      const stored = readRecord(parentId);
-      let next = stored ?? emptyObservation(parentId, now());
-      if (at !== null) next = applyObservationEvent(next, parentId, { kind: "background-activity", at }, presets);
+      const existing = readRecord(parentId);
+      // A parent record made under other rules restarts empty; its own sync reads it cold.
+      const stored = existing && isCurrent(existing) ? existing : undefined;
+      let next = stored ?? emptyObservation(parentId, now(), rulesDocumentVersion(activeRules()));
+      if (at !== null) next = applyObservationEvent(next, parentId, { kind: "background-activity", at }, presets, activeRules());
       next = mergeChildSteps(next, childSteps, presets);
       if (slice) next = mergeSliceProgress(next, slice, slice.planTotal);
       if (stored && comparable(stored) === comparable(next)) return false;
@@ -468,9 +482,27 @@ export function createAttentionObserver(
       for (const threadId of ids) {
         if (unavailable.has(threadId)) continue;
         const stored = readRecord(threadId);
-        if (stored) observations.push({ ...stored, observedAt: observedAt.get(threadId) ?? stored.observedAt });
+        // Old-version outcomes are withheld; a sync above rebuilt every reachable one.
+        if (stored && isCurrent(stored)) observations.push({ ...stored, observedAt: observedAt.get(threadId) ?? stored.observedAt });
       }
       return { observations, unavailable: ids.filter((id) => unavailable.has(id)) };
+    },
+    async rebuildStale() {
+      const rows = db.prepare(`SELECT thread_id FROM thread_attention`).all() as { thread_id: string }[];
+      const stale = rows.map((row) => row.thread_id).filter((id) => {
+        const record = readRecord(id);
+        return record !== undefined && !isCurrent(record);
+      });
+      const changed = new Set<string>();
+      let index = 0;
+      const worker = async () => {
+        while (index < stale.length) {
+          const outcome = await syncWithParent(stale[index++]!);
+          for (const id of outcome.changedIds) changed.add(id);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(concurrency, stale.length) }, worker));
+      return [...changed];
     },
     async sync(threadId, finalReplyHint) {
       const { result } = await syncWithParent(threadId, finalReplyHint);

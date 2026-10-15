@@ -81,6 +81,13 @@ export interface SliceProgress {
   at: number;
 }
 
+export interface ObservedRules {
+  /** Active document stamp (rulesDocumentVersion), or null when no document was active. */
+  version: string | null;
+  status: "needs-you" | "working" | "background" | "done" | null;
+  label: { text: string; tone?: "muted" | "primary" | "success" | "warning" | "danger" } | null;
+}
+
 export interface ThreadObservation {
   v: 2;
   threadId: string;
@@ -94,6 +101,8 @@ export interface ThreadObservation {
   turnEndedAt: number | null;
   /** Cleared when a turn starts. Holds rule outcomes only — never reply text. */
   reply: ObservedReply | null;
+  /** Declarative rule outcome and the rules version that produced it; absent on pre-rules records. */
+  rules?: ObservedRules;
   /** Latest mapped step per workflow preset id. */
   steps: Readonly<Record<string, ObservedStep>>;
   /** When the workflow was last reset, per workflow preset id; older steps never count. */

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFile, readlink, realpath } from "node:fs/promises";
+import { mkdir, readFile, readlink, realpath, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { platform } from "node:os";
 import { promisify } from "node:util";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
@@ -10,6 +11,7 @@ import type { OpenPort } from "./open-ports";
 import { isBbInternalListener, parseProcessCommands } from "./port-processes";
 import { macProcessEnvironment, threadIdFromEnvironment } from "./port-ownership";
 import { parseGhPullRequest, type ThreadPullRequest } from "./pull-requests";
+import { ATTENTION_RULES_FILENAME, attentionRulesHostSignals } from "./attention-rules-host-contract";
 
 const exec = promisify(execFile);
 
@@ -155,7 +157,59 @@ async function viewPullRequests(urls: string[], signal: AbortSignal) {
 
 export default experimental_defineHostEntry({
   contract: portScanContract,
+  experimental_signals: attentionRulesHostSignals,
   handlers: {
+    async readAttentionRules(_input, context) {
+      const path = join(context.experimental_paths.dataDir, ATTENTION_RULES_FILENAME);
+      try {
+        return { exists: true, content: await readFile(path, "utf8") };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return { exists: false, content: null };
+        throw error;
+      }
+    },
+    async writeAttentionRules({ content }, context) {
+      const path = join(context.experimental_paths.dataDir, ATTENTION_RULES_FILENAME);
+      await mkdir(context.experimental_paths.dataDir, { recursive: true });
+      await writeFile(path, content, "utf8");
+      return { exists: true, content };
+    },
+    async installAttentionRulesExample({ content }, context) {
+      const path = join(context.experimental_paths.dataDir, ATTENTION_RULES_FILENAME);
+      try {
+        return { exists: true, content: await readFile(path, "utf8") };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      await mkdir(context.experimental_paths.dataDir, { recursive: true });
+      await writeFile(path, content, "utf8");
+      return { exists: true, content };
+    },
+    async watchAttentionRules(_input, context) {
+      const rootPath = context.experimental_paths.dataDir;
+      try {
+        await context.experimental_watch({ rootPath, debounceMs: 75, maxWaitMs: 500 }, async (event) => {
+          if (event.kind === "watch-error") {
+            await context.experimental_emitSignal("attentionRulesWatchError", { message: event.message });
+            return;
+          }
+          if (event.kind === "changed" && !event.changes.some((change) => change.path === ATTENTION_RULES_FILENAME)) return;
+          const path = join(rootPath, ATTENTION_RULES_FILENAME);
+          try {
+            await context.experimental_emitSignal("attentionRulesChanged", { exists: true, content: await readFile(path, "utf8") });
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+              await context.experimental_emitSignal("attentionRulesChanged", { exists: false, content: null });
+              return;
+            }
+            await context.experimental_emitSignal("attentionRulesWatchError", { message: String(error) });
+          }
+        });
+        return { watching: true };
+      } catch (error) {
+        return { watching: false, error: String(error) };
+      }
+    },
     async resolveRoots({ roots }) {
       return { roots: await Promise.all(roots.map(async (root) => ({
         environmentId: root.environmentId,

@@ -4,6 +4,7 @@
 export * from "./types";
 export * from "./rules";
 export * from "./rules-assets";
+export * from "./migration";
 export * from "./presets";
 export * from "./state-line";
 export * from "./ticket";

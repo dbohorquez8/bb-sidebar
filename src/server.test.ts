@@ -1726,6 +1726,19 @@ describe("project management", () => {
     expect(harness.inspection.sdk.callsTo("projects.update")).toHaveLength(1);
   });
 
+  it("serves host-native state only when no host holds the rules file, and never writes one", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "bb-sidebar",
+      sdk: { hosts: { list: async () => [] } },
+    });
+    await plugin(bb);
+    disposers.push(() => harness.lifecycle.dispose());
+    await expect(harness.behavior.callRpc("getAttentionRules", {})).resolves.toMatchObject({
+      version: null, document: null, diagnostics: [], retained: false, problem: expect.stringContaining("No connected host"),
+    });
+    expect(harness.inspection.experimental_hostRpcCalls).toEqual([]);
+  });
+
   it("only offers connected machines without a source and rejects duplicate paths", async () => {
     const project = standardProject();
     const host = { id: "host_1", name: "Desktop", status: "connected" as const, type: "persistent" as const,

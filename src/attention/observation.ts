@@ -1,8 +1,10 @@
+import { evaluateRuleEvent, rulesDocumentVersion, type AttentionRulesDocument, type RuleOutcome } from "./rules";
 import { matchStateLine } from "./state-line";
 import { extractStepInvocation, mapStepToStage } from "./stage";
 import type {
   AttentionPreset,
   ObservationEvent,
+  ObservedRules,
   ObservedStep,
   StateLineMatch,
   ThreadEventRowLike,
@@ -110,7 +112,38 @@ export function finalReplyTurn(
   return result;
 }
 
+/** Rule outcome carried by an observation; the stamp is the active document's version. */
+function foldRules(
+  base: ThreadObservation,
+  document: AttentionRulesDocument | null | undefined,
+  event: ObservationEvent,
+): ObservedRules {
+  const version = rulesDocumentVersion(document);
+  const held = base.rules && base.rules.version === version ? base.rules : { version, status: null, label: null };
+  const previous: RuleOutcome = { status: held.status, label: held.label };
+  let outcome = previous;
+  if (event.kind === "turn-started") outcome = { ...previous, status: null };
+  else if (event.kind === "turn-failed") outcome = { ...previous, status: null };
+  else if (event.kind === "turn-ended") {
+    outcome = evaluateRuleEvent(document, { ...previous, status: null }, { kind: "reply", text: event.finalReply });
+  } else if (event.kind === "step-invoked") {
+    outcome = evaluateRuleEvent(document, previous, { kind: "skill", skill: event.step });
+  }
+  return { version, status: outcome.status, label: outcome.label };
+}
+
 export function applyObservationEvent(
+  previous: ThreadObservation | undefined,
+  threadId: string,
+  event: ObservationEvent,
+  presets: readonly AttentionPreset[],
+  rules?: AttentionRulesDocument | null,
+): ThreadObservation {
+  const next = applyLegacyEvent(previous, threadId, event, presets);
+  return { ...next, rules: foldRules(next, rules, event) };
+}
+
+function applyLegacyEvent(
   previous: ThreadObservation | undefined,
   threadId: string,
   event: ObservationEvent,

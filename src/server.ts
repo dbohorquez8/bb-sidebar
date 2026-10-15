@@ -59,11 +59,19 @@ import {
 } from "./context-usage";
 import { createAttentionObserver, THREAD_ATTENTION_TABLE } from "./attention/observer";
 import {
+  ATTENTION_CHANNEL,
+  migrateLegacyAttention,
   PROJECT_ATTENTION_CHANNEL,
   SILENCE_THRESHOLD_MAX_MINUTES,
   SILENCE_THRESHOLD_MIN_MINUTES,
   type RawProjectAttention,
 } from "./attention";
+import {
+  ATTENTION_RULES_STATE_TABLES,
+  attentionRulesStateSchema,
+  createAttentionRulesState,
+  migrateProjectAttention,
+} from "./attention-rules-state";
 import { SOUND_IDS } from "./sounds/catalog";
 import { normalizeSoundSettings, SOUND_SETTINGS_CHANNEL, type SoundSettings } from "./sounds/settings";
 import type { PutAwayRecord } from "./sounds/audible";
@@ -171,6 +179,7 @@ SELECT thread_id,
             THEN snoozed_until END
   FROM thread_lifecycle
  WHERE parked_at IS NOT NULL OR snoozed_until IS NOT NULL OR settled_at IS NOT NULL`,
+  ...ATTENTION_RULES_STATE_TABLES,
 ];
 
 export interface StoredLifecycleRow {
@@ -362,6 +371,11 @@ const threadObservationSchema = z.object({
       matches: z.record(z.string(), stateLineMatchSchema),
     })
     .nullable(),
+  rules: z.object({
+    version: z.string().nullable(),
+    status: z.enum(["needs-you", "working", "background", "done"]).nullable(),
+    label: z.object({ text: z.string(), tone: z.enum(["muted", "primary", "success", "warning", "danger"]).optional() }).nullable(),
+  }).optional(),
   steps: z.record(z.string(), z.object({ stageId: z.string(), at: z.number() })),
   slices: z.object({ feature: z.string(), total: z.number(), done: z.array(z.number()), at: z.number() }).optional(),
   lastActivityAt: z.number().nullable(),
@@ -457,6 +471,22 @@ export const bbSidebarRpcContract = defineRpcContract({
       threads: z.array(z.object({ id: z.string().min(1), parentId: z.string().min(1).nullable() }).strict()).max(1000),
     }).strict(),
     output: z.object({ observations: z.array(threadObservationSchema), unavailable: z.array(z.string()) }),
+  },
+  getAttentionRules: {
+    input: z.object({}).strict(),
+    output: attentionRulesStateSchema,
+  },
+  reloadAttentionRules: {
+    input: z.object({}).strict(),
+    output: attentionRulesStateSchema,
+  },
+  installAttentionRulesExample: {
+    input: z.object({}).strict(),
+    output: attentionRulesStateSchema,
+  },
+  saveAttentionRules: {
+    input: z.object({ content: z.string().min(1).max(1_000_000) }).strict(),
+    output: attentionRulesStateSchema,
   },
   getProjectAttention: {
     input: z.object({}).strict(),
@@ -766,7 +796,21 @@ export default async function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   bb.storage.migrate(db, migrations);
   createAutoTitleRecovery(bb, regenerateTitle);
-  const attentionObserver = createAttentionObserver(bb, { db });
+  // Legacy project attention rows become one global selection, once.
+  migrateProjectAttention(db, migrateLegacyAttention);
+  let rebuildStaleAttention: () => void = () => {};
+  const attentionRules = createAttentionRulesState(bb, { db, onActivated: () => rebuildStaleAttention() });
+  const attentionObserver = createAttentionObserver(bb, { db, rules: () => attentionRules.active() });
+  // New rules make every stored outcome stale: rebuild them and tell the sidebar.
+  rebuildStaleAttention = () => {
+    void attentionObserver.rebuildStale().then(
+      (threadIds) => {
+        if (threadIds.length > 0) bb.realtime.publish(ATTENTION_CHANNEL, { threadIds });
+      },
+      (error) => bb.log.error(`Attention rebuild failed: ${error instanceof Error ? error.message : String(error)}`),
+    );
+  };
+  void attentionRules.start().catch((error) => bb.log.error(`Attention rules watcher failed: ${error instanceof Error ? error.message : String(error)}`));
 
   const readSidebarSettings = (): SidebarSettingsValues => {
     const row = db
@@ -2101,6 +2145,10 @@ export default async function plugin(bb: BbPluginApi) {
       return readSidebarSettings();
     },
     listAttention: ({ threads }) => attentionObserver.list(threads),
+    getAttentionRules: () => attentionRules.open(),
+    reloadAttentionRules: () => attentionRules.reload(),
+    installAttentionRulesExample: () => attentionRules.install(),
+    saveAttentionRules: ({ content }) => attentionRules.save(content),
     async getProjectAttention() {
       const rows = db
         .prepare(`SELECT project_id, presets, ticket_prefixes FROM project_attention`)

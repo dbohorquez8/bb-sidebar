@@ -42,3 +42,10 @@ export const ATTENTION_RULES_EXAMPLE = {
 } as const;
 
 export const ATTENTION_RULES_EXAMPLE_JSON = `${JSON.stringify(ATTENTION_RULES_EXAMPLE, null, 2)}\n`;
+
+/** Legacy preset ids → the rule-set ids that carry the same data in the example. */
+export const LEGACY_PRESET_RULE_SET: Readonly<Record<string, string>> = {
+  "adhd-ish-state-markers": "adhd-ish",
+  "ddd-workflow": "ddd",
+  "coding-loop-workflow": "coding-loop",
+};
