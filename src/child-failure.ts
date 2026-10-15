@@ -7,8 +7,8 @@ import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 export const CHILD_FAILURE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface ChildFailureContext {
-  /** Whether the child's parent thread is archived (a settled branch). */
-  parentArchived: boolean;
+  /** Whether the child's parent exists and is still open. */
+  parentOpen: boolean;
   /** Whether the owner has opened the failing child (the acknowledged set). */
   acknowledged: boolean;
   now: number;
@@ -28,7 +28,7 @@ export function childFailureReported(
     thread.parentThreadId != null &&
     thread.status === "error" &&
     !thread.isArchived &&
-    !context.parentArchived &&
+    context.parentOpen &&
     !context.acknowledged &&
     context.now - thread.updatedAt <= CHILD_FAILURE_WINDOW_MS
   );

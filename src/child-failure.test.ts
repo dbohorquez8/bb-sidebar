@@ -3,6 +3,7 @@ import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { resolveAttentionStatus, attentionInputFromThread } from "./attention/status";
 import { reconcileFailedAck } from "./attention/since";
 import { childStatusKind, childStatusSummary } from "./child-status";
+import { collapsedChildThreads } from "./ChildThreadList";
 import {
   CHILD_FAILURE_WINDOW_MS,
   childFailureReported,
@@ -35,7 +36,7 @@ function child(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThrea
   } as PluginSidebarThread;
 }
 
-const open: ChildFailureContext = { parentArchived: false, acknowledged: false, now: NOW };
+const open: ChildFailureContext = { parentOpen: true, acknowledged: false, now: NOW };
 
 describe("childFailureReported (WS-51)", () => {
   it("shows a recent unread error under an open parent", () => {
@@ -47,8 +48,8 @@ describe("childFailureReported (WS-51)", () => {
   it("stays quiet for an archived child", () => {
     expect(childFailureReported(child({ isArchived: true }), open)).toBe(false);
   });
-  it("stays quiet when the parent is archived", () => {
-    expect(childFailureReported(child(), { ...open, parentArchived: true })).toBe(false);
+  it("stays quiet when the parent is archived or missing", () => {
+    expect(childFailureReported(child(), { ...open, parentOpen: false })).toBe(false);
   });
   it("stays quiet once acknowledged", () => {
     expect(childFailureReported(child(), { ...open, acknowledged: true })).toBe(false);
@@ -65,13 +66,18 @@ describe("childFailureReported (WS-51)", () => {
 describe("wiring", () => {
   const ctx = { verdict: null, silent: false, onInactiveShelf: false, failureAcknowledged: false };
   const status = (t: PluginSidebarThread, extra = {}) =>
-    resolveAttentionStatus(attentionInputFromThread(t, { ...ctx, now: NOW, ...extra })).kind;
+    resolveAttentionStatus(attentionInputFromThread(t, {
+      ...ctx,
+      parentOpen: true,
+      now: NOW,
+      ...extra,
+    })).kind;
 
   it("resolves Failed for a recent unread child error", () => {
     expect(status(child())).toBe("failed");
   });
-  it("stays quiet under an archived parent, when old, or without a clock", () => {
-    expect(status(child(), { parentArchived: true })).not.toBe("failed");
+  it("stays quiet under an archived or missing parent, when old, or without a clock", () => {
+    expect(status(child(), { parentOpen: false })).not.toBe("failed");
     expect(status(child({ updatedAt: NOW - 8 * DAY }))).not.toBe("failed");
     expect(
       resolveAttentionStatus(attentionInputFromThread(child(), ctx)).kind,
@@ -86,8 +92,19 @@ describe("wiring", () => {
   it("childStatusKind and the summary count it only when given the rule's context", () => {
     expect(childStatusKind(child())).toBeNull();
     expect(childStatusKind(child(), null, open)).toBe("failed");
-    expect(childStatusKind(child(), null, { ...open, parentArchived: true })).toBeNull();
+    expect(childStatusKind(child(), null, { ...open, parentOpen: false })).toBeNull();
     const summary = childStatusSummary([child()], () => ({ status: { kind: "failed" } }) as never);
     expect(summary.failed).toBe(1);
+  });
+  it("retains a WS-51 failure in a collapsed list through its attention view", () => {
+    const childThread = child();
+    const children = new Map<string, readonly PluginSidebarThread[]>([
+      ["thr_parent", [childThread]],
+    ]);
+    const failedView = { status: { kind: "failed" } } as never;
+    expect(collapsedChildThreads([childThread], children, null, true)).toEqual([]);
+    expect(
+      collapsedChildThreads([childThread], children, null, true, () => failedView),
+    ).toEqual([childThread]);
   });
 });

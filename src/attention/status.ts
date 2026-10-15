@@ -44,7 +44,7 @@ export function attentionInputFromThread(
     onInactiveShelf: boolean;
     failureAcknowledged: boolean;
     /** Child-failure inputs (WS-51); omitted means no status-derived failure. */
-    parentArchived?: boolean;
+    parentOpen?: boolean;
     now?: number;
   },
 ): AttentionInput {
@@ -60,7 +60,7 @@ export function attentionInputFromThread(
       !context.failureAcknowledged) ||
     (context.now !== undefined &&
       childFailureReported(thread, {
-        parentArchived: context.parentArchived ?? false,
+        parentOpen: context.parentOpen ?? false,
         acknowledged: context.failureAcknowledged,
         now: context.now,
       }));

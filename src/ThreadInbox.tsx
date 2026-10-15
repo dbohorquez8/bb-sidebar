@@ -824,6 +824,7 @@ export function ThreadInbox({
         childrenByParentId,
         null,
         true,
+        (threadId) => attention.viewFor(threadId),
       ).length > 0) {
         ids.add(thread.id);
       }

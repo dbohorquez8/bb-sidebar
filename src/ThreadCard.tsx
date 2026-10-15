@@ -583,6 +583,7 @@ export function ThreadCard({
               childrenByParent,
               activeThreadId,
               showChildrenWhenCollapsed,
+              (threadId) => attention?.viewFor(threadId) ?? null,
             ).length > 0) ? (
             <ChildThreadList
               id={childListId}

@@ -41,6 +41,7 @@ import { ProviderGlyph } from "./ProviderGlyph";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { PROJECT_ICONS_CHANNEL, projectIconUrl } from "./project-icons";
 import { AttentionContext } from "./useAttention";
+import type { AttentionView } from "./attention";
 
 const MAX_CHILD_DOTS = 3;
 
@@ -89,8 +90,11 @@ export function childNeedsYouCount(
  * ships later, until it is given a kind. This is the same set the collapsed
  * badge counts, so the rows and the badge never disagree.
  */
-export function childNeedsAttention(thread: PluginSidebarThread): boolean {
-  return childStatusKind(thread) !== null;
+export function childNeedsAttention(
+  thread: PluginSidebarThread,
+  view: AttentionView | null = null,
+): boolean {
+  return childStatusKind(thread, view) !== null;
 }
 
 /** Children retained while collapsed, including paths to visible descendants. */
@@ -99,13 +103,16 @@ export function collapsedChildThreads(
   childrenByParent: ReadonlyMap<string, readonly PluginSidebarThread[]>,
   activeThreadId: string | null | undefined,
   showAttentionChildren: boolean,
+  viewFor: (threadId: string) => AttentionView | null = () => null,
 ): PluginSidebarThread[] {
   return threads.filter((child) => {
     if (child.isArchived) return false;
     return childSubtree([child], childrenByParent).some(
       (descendant) =>
         descendant.id === activeThreadId ||
-        (showAttentionChildren && childNeedsAttention(descendant)),
+        // The attention view has already applied WS-51's parent lookup and
+        // wall clock, so collapsed rows agree with their parent badge.
+        (showAttentionChildren && childNeedsAttention(descendant, viewFor(descendant.id))),
     );
   });
 }
@@ -288,6 +295,7 @@ export function ChildThreadList({
         childrenByParent,
         activeThreadId,
         showRunningChildrenWhenCollapsed,
+        (threadId) => attention?.viewFor(threadId) ?? null,
       );
   const [expandedDescendantParentIds, setExpandedDescendantParentIds] =
     useState<ReadonlySet<string>>(() => new Set());
@@ -323,6 +331,7 @@ export function ChildThreadList({
             childrenByParent,
             activeThreadId,
             showRunningChildrenWhenCollapsed,
+            (threadId) => attention?.viewFor(threadId) ?? null,
           );
       const descendantsId = `${disclosureId}-${child.id}`;
       const relation = depth === 1 ? "child"

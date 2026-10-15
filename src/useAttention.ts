@@ -394,22 +394,24 @@ export function useAttention(
       const silent = isSilentPastThreshold(origin, now, silenceThresholdMinutes);
 
       const failureAcknowledged = failedAck.has(thread.id);
-      const parentArchived =
+      // A missing parent is no longer live work. It must not revive an old
+      // child's failure after its parent has gone away.
+      const parentOpen =
         thread.parentThreadId != null &&
-        (threadsById.get(thread.parentThreadId)?.isArchived ?? false);
+        threadsById.get(thread.parentThreadId)?.isArchived === false;
       const input = attentionInputFromThread(thread, {
         verdict,
         silent,
         onInactiveShelf,
         failureAcknowledged,
-        parentArchived,
+        parentOpen,
         now: wallNow,
       });
       const status = resolveAttentionStatus(input);
       // An acknowledged failure is still a reported one; reading the
       // post-acknowledgement flag would drop the acknowledgement next pass.
       const failing = failureAcknowledged
-        ? attentionInputFromThread(thread, { verdict, silent, onInactiveShelf, failureAcknowledged: false, parentArchived, now: wallNow })
+        ? attentionInputFromThread(thread, { verdict, silent, onInactiveShelf, failureAcknowledged: false, parentOpen, now: wallNow })
             .failureReported
         : input.failureReported;
 
