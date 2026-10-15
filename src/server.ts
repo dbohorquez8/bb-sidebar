@@ -61,10 +61,8 @@ import { createAttentionObserver, THREAD_ATTENTION_TABLE } from "./attention/obs
 import {
   ATTENTION_CHANNEL,
   migrateLegacyAttention,
-  PROJECT_ATTENTION_CHANNEL,
   SILENCE_THRESHOLD_MAX_MINUTES,
   SILENCE_THRESHOLD_MIN_MINUTES,
-  type RawProjectAttention,
 } from "./attention";
 import {
   ATTENTION_RULES_STATE_TABLES,
@@ -351,10 +349,6 @@ const putAwayRecordSchema = z.object({
   snoozedUntil: z.number().nullable(),
 });
 
-const rawProjectAttentionSchema = z.object({
-  presets: z.array(z.string()),
-  ticketPrefixes: z.array(z.string()),
-});
 const stateLineMatchSchema = z.object({
   kind: z.enum(["needs-you", "working", "background", "done"]),
   line: z.number().int().nonnegative(),
@@ -487,18 +481,6 @@ export const bbSidebarRpcContract = defineRpcContract({
   saveAttentionRules: {
     input: z.object({ content: z.string().min(1).max(1_000_000) }).strict(),
     output: attentionRulesStateSchema,
-  },
-  getProjectAttention: {
-    input: z.object({}).strict(),
-    output: z.object({ projects: z.record(z.string(), rawProjectAttentionSchema) }),
-  },
-  setProjectAttention: {
-    input: z.object({
-      projectId: z.string().trim().min(1),
-      presets: z.array(z.string().max(64)).max(32),
-      ticketPrefixes: z.array(z.string().max(64)).max(32),
-    }).strict(),
-    output: z.object({ ok: z.boolean() }),
   },
   updateSidebarSettings: {
     // Save only edited fields. Full payloads from older clients remain valid.
@@ -777,15 +759,6 @@ function iconMimeType(path: string, reported: string): string {
   if (lower.endsWith(".avif")) return "image/avif";
   if (lower.endsWith(".webp")) return "image/webp";
   return reported;
-}
-
-function storedStrings(json: string): string[] {
-  try {
-    const value: unknown = JSON.parse(json);
-    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-  } catch {
-    return [];
-  }
 }
 
 export default async function plugin(bb: BbPluginApi) {
@@ -2149,32 +2122,6 @@ export default async function plugin(bb: BbPluginApi) {
     reloadAttentionRules: () => attentionRules.reload(),
     installAttentionRulesExample: () => attentionRules.install(),
     saveAttentionRules: ({ content }) => attentionRules.save(content),
-    async getProjectAttention() {
-      const rows = db
-        .prepare(`SELECT project_id, presets, ticket_prefixes FROM project_attention`)
-        .all() as Array<{ project_id: string; presets: string; ticket_prefixes: string }>;
-      return {
-        projects: Object.fromEntries(
-          rows.map((row) => [
-            row.project_id,
-            { presets: storedStrings(row.presets), ticketPrefixes: storedStrings(row.ticket_prefixes) },
-          ]),
-        ),
-      };
-    },
-    async setProjectAttention({ projectId, presets, ticketPrefixes }) {
-      // Strings are stored as given: parseProjectAttention decides validity on
-      // read, so the settings warning can name every skipped item.
-      const row: RawProjectAttention = { presets, ticketPrefixes };
-      db.prepare(
-        `INSERT INTO project_attention (project_id, presets, ticket_prefixes) VALUES (?, ?, ?)
-         ON CONFLICT(project_id) DO UPDATE SET
-           presets = excluded.presets,
-           ticket_prefixes = excluded.ticket_prefixes`,
-      ).run(projectId, JSON.stringify(row.presets), JSON.stringify(row.ticketPrefixes));
-      bb.realtime.publish(PROJECT_ATTENTION_CHANNEL, { projectId });
-      return { ok: true };
-    },
     async updateSidebarSettings(values) {
       const stored = readSidebarSettings();
       const next = { ...stored, ...values };

@@ -1,30 +1,22 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { bbSidebarRpcContract } from "./server";
 import {
-  ATTENTION_PRESETS,
-  PROJECT_ATTENTION_CHANNEL,
-  parseProjectAttention,
+  ATTENTION_RULES_CHANNEL,
   splitPrefixInput,
   validateSilenceThreshold,
-  type RawProjectAttention,
-  type SkippedSettingItem,
+  type AttentionRulesDocument,
+  type AttentionRuleSet,
 } from "./attention";
-import { SettingRow, SettingsGroup, SettingsSelect, Switch } from "./settings-ui";
+import type { AttentionRulesState } from "./attention-rules-state";
+import { SettingRow, SettingsGroup, Switch } from "./settings-ui";
 
-export interface ProjectChoice {
-  id: string;
-  name: string;
-}
+const BUTTON =
+  "rounded-md border border-border bg-background px-2.5 py-1 text-xs text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50";
 
-const EMPTY_RAW: RawProjectAttention = { presets: [], ticketPrefixes: [] };
-
-const SKIP_REASON_LABEL: Record<SkippedSettingItem["reason"], string> = {
-  "unknown-preset": "unknown preset",
-  "empty-prefix": "empty prefix",
-  "invalid-prefix": "invalid prefix",
-};
+const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+const serialize = (document: AttentionRulesDocument): string => `${JSON.stringify(document, null, 2)}\n`;
 
 /**
  * "After [15] minutes of silence", refusing anything `validateSilenceThreshold`
@@ -71,89 +63,132 @@ export function SilenceThresholdField({
   );
 }
 
-/**
- * The project picker, per-preset switches, ticket-prefix field, and
- * unreadable-item warning for one project. No SDK hook: every value and
- * callback comes from props, so `AttentionSettings` owns all RPC wiring and
- * this piece is directly Component-testable.
- */
-export function ProjectAttentionFields({
-  projects,
-  selectedProjectId,
-  onSelectProject,
-  rawForSelected,
-  onTogglePreset,
-  prefixDraft,
-  onPrefixChange,
+/** One rule set: accessible on/off switch plus an inline editor that shows the edited JSON before save. */
+export function RuleSetRow({
+  set,
+  onToggle,
+  onSave,
 }: {
-  projects: readonly ProjectChoice[];
-  selectedProjectId: string;
-  onSelectProject: (projectId: string) => void;
-  rawForSelected: RawProjectAttention;
-  onTogglePreset: (presetId: string, enabled: boolean) => void;
-  prefixDraft: string;
-  onPrefixChange: (value: string) => void;
+  set: AttentionRuleSet;
+  onToggle: (enabled: boolean) => void;
+  onSave: (next: AttentionRuleSet) => Promise<string | null>;
 }) {
-  const { settings, skipped } = parseProjectAttention(rawForSelected, ATTENTION_PRESETS);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const open = () => {
+    setDraft(JSON.stringify(set, null, 2));
+    setError(null);
+    setEditing(true);
+  };
+  const save = async () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(draft);
+    } catch (cause) {
+      setError(`Invalid JSON: ${errorText(cause)}`);
+      return;
+    }
+    const failure = await onSave(parsed as AttentionRuleSet);
+    if (failure) setError(failure);
+    else setEditing(false);
+  };
+  const counts = [
+    [set.replyMarkers.length, "reply markers"],
+    [set.skillStatuses.length, "skill statuses"],
+    [set.skillLabels.length, "skill labels"],
+    [set.labelResets.length, "label resets"],
+  ] as const;
+
   return (
-    <>
+    <li>
       <SettingRow
-        title="Project"
-        description="The project the presets and prefixes below apply to."
+        title={set.label}
+        description={counts.filter(([count]) => count > 0).map(([count, name]) => `${count} ${name}`).join(", ") || "No rules"}
         control={
-          <SettingsSelect
-            aria-label="Attention project"
-            value={selectedProjectId}
-            onChange={(event) => onSelectProject(event.target.value)}
-            className="w-48"
-          >
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </SettingsSelect>
+          <div className="flex items-center gap-2">
+            <button type="button" className={BUTTON} aria-expanded={editing} onClick={editing ? () => setEditing(false) : open}>
+              {editing ? "Close" : `Edit ${set.label}`}
+            </button>
+            <Switch label={set.label} checked={set.enabled} onChange={onToggle} />
+          </div>
         }
       />
-      {ATTENTION_PRESETS.map((preset) => (
-        <SettingRow
-          key={preset.id}
-          title={preset.label}
-          control={
-            <Switch
-              label={preset.label}
-              checked={settings.enabledPresets.some((enabled) => enabled.id === preset.id)}
-              onChange={(checked) => onTogglePreset(preset.id, checked)}
-            />
-          }
-        />
-      ))}
-      <SettingRow title="Ticket prefixes" description="Comma-separated, for example WS-, AID-. Each is tried in its own letter case.">
-        <input
-          type="text"
-          aria-label="Ticket prefixes"
-          value={prefixDraft}
-          onChange={(event) => onPrefixChange(event.target.value)}
-          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring"
-        />
-      </SettingRow>
-      {skipped.length > 0 ? (
-        <div className="px-4 py-2.5">
-          <p className="text-2xs text-destructive">
-            Not applied: {skipped.map((item) => `"${item.value}" (${SKIP_REASON_LABEL[item.reason]})`).join(", ")}.
-          </p>
+      {editing ? (
+        <div className="px-4 pb-3">
+          <textarea
+            aria-label={`${set.label} rule set JSON`}
+            aria-invalid={error !== null}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            rows={12}
+            spellCheck={false}
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+          />
+          {error ? <p role="alert" className="mt-1 text-2xs text-destructive">{error}</p> : null}
+          <div className="mt-2 flex gap-2">
+            <button type="button" className={BUTTON} onClick={() => void save()}>
+              Save rule set
+            </button>
+            <button type="button" className={BUTTON} onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
         </div>
       ) : null}
-    </>
+    </li>
+  );
+}
+
+/** Global ticket prefixes, committed on blur or Enter as one whole-document save. */
+export function TicketPrefixField({
+  prefixes,
+  onCommit,
+}: {
+  prefixes: readonly string[];
+  onCommit: (prefixes: string[]) => Promise<string | null>;
+}) {
+  const stored = prefixes.join(", ");
+  const [draft, setDraft] = useState(stored);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setDraft(stored);
+  }, [stored]);
+
+  const commit = async () => {
+    const next = splitPrefixInput(draft);
+    if (next.join(", ") === stored) {
+      setError(null);
+      return;
+    }
+    setError(await onCommit(next));
+  };
+
+  return (
+    <SettingRow title="Ticket prefixes" description="Comma-separated, for example WS-, AID-. Applied to every project.">
+      <input
+        type="text"
+        aria-label="Ticket prefixes"
+        aria-invalid={error !== null}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") void commit();
+        }}
+        className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+      />
+      {error ? <p role="alert" className="mt-1 text-2xs text-destructive">{error}</p> : null}
+    </SettingRow>
   );
 }
 
 /**
- * The sidebar-wide silence threshold and the per-project preset/ticket-prefix
- * controls (plan step 12). Project settings round-trip through
- * `getProjectAttention` / `setProjectAttention`; the threshold is a prop
- * owned by `SidebarSettings`'s own draft/save cycle, same as any other
- * sidebar-wide number.
+ * The sidebar-wide silence threshold and the global attention rules. Rules live
+ * in one file owned by the host; every read, install, reload, and save goes
+ * through the server's rules RPCs, and the global channel refreshes this view
+ * after a hand edit. Opening or reloading never installs the example.
  */
 export function AttentionSettings({
   silenceThresholdMinutes,
@@ -163,99 +198,169 @@ export function AttentionSettings({
   onSilenceThresholdChange: (minutes: number) => void;
 }) {
   const rpc = useRpc<typeof bbSidebarRpcContract>();
-  const [projects, setProjects] = useState<ProjectChoice[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [rawByProject, setRawByProject] = useState<Record<string, RawProjectAttention>>({});
-  const [prefixDraft, setPrefixDraft] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<AttentionRulesState | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
-  const load = useCallback(async () => {
-    const [directory, attention] = await Promise.allSettled([
-      rpc.call("listProjects", {}),
-      rpc.call("getProjectAttention", {}),
-    ]);
-    if (directory.status === "fulfilled") {
-      setProjects(directory.value.projects);
-    } else {
-      toast.error("Could not load projects", {
-        description: directory.reason instanceof Error ? directory.reason.message : undefined,
-      });
-    }
-    if (attention.status === "fulfilled") {
-      setRawByProject(attention.value.projects as Record<string, RawProjectAttention>);
-    } else {
-      toast.error("Could not load attention settings", {
-        description: attention.reason instanceof Error ? attention.reason.message : undefined,
-      });
-    }
-    setLoading(false);
-  }, [rpc]);
+  const run = useCallback(
+    async (call: () => Promise<AttentionRulesState>): Promise<AttentionRulesState | null> => {
+      try {
+        const next = await call();
+        if (mounted.current) {
+          setState(next);
+          setLoadError(null);
+        }
+        return next;
+      } catch (error) {
+        if (mounted.current) setLoadError(errorText(error));
+        return null;
+      }
+    },
+    [],
+  );
 
+  const load = useCallback(() => run(() => rpc.call("getAttentionRules", {})), [rpc, run]);
   useEffect(() => {
     void load();
   }, [load]);
-  useRealtime(PROJECT_ATTENTION_CHANNEL, () => {
+  useRealtime(ATTENTION_RULES_CHANNEL, () => {
     void load();
   });
 
-  const selectedId = selectedProjectId || projects[0]?.id || "";
-  const rawForSelected = rawByProject[selectedId] ?? EMPTY_RAW;
+  const reload = async () => {
+    setBusy(true);
+    setNotice(null);
+    const next = await run(() => rpc.call("reloadAttentionRules", {}));
+    setBusy(false);
+    if (next) setNotice(next.file === "absent" ? "Reloaded: no rules file yet." : next.retained ? "Reloaded: the file is invalid; the last valid rules stay active." : "Rules reloaded.");
+  };
 
-  useEffect(() => {
-    setPrefixDraft(rawForSelected.ticketPrefixes.join(", "));
-    // Only re-sync the text field when the selected project or its stored
-    // row changes; typing itself must not be overwritten mid-edit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, rawByProject]);
+  const install = async () => {
+    setBusy(true);
+    setNotice(null);
+    const next = await run(() => rpc.call("installAttentionRulesExample", {}));
+    setBusy(false);
+    if (next) setNotice("Example rules installed.");
+  };
 
-  const saveProjectAttention = async (next: RawProjectAttention) => {
-    setRawByProject((current) => ({ ...current, [selectedId]: next }));
+  /** Saves the complete document; resolves to an error message, or null on success. */
+  const saveDocument = async (document: AttentionRulesDocument): Promise<string | null> => {
     try {
-      await rpc.call("setProjectAttention", {
-        projectId: selectedId,
-        presets: next.presets,
-        ticketPrefixes: next.ticketPrefixes,
-      });
+      const next = await rpc.call("saveAttentionRules", { content: serialize(document) });
+      if (mounted.current) {
+        setState(next);
+        setLoadError(null);
+        setNotice(null);
+      }
+      return null;
     } catch (error) {
-      toast.error("Could not save attention settings", {
-        description: error instanceof Error ? error.message : undefined,
-      });
+      return errorText(error);
     }
   };
 
-  const togglePreset = (presetId: string, enabled: boolean) => {
-    const nextPresets = enabled
-      ? [...rawForSelected.presets, presetId]
-      : rawForSelected.presets.filter((id) => id !== presetId);
-    void saveProjectAttention({ presets: nextPresets, ticketPrefixes: rawForSelected.ticketPrefixes });
+  const document = state?.document ?? null;
+  const reportSaveFailure = async (document_: AttentionRulesDocument) => {
+    const failure = await saveDocument(document_);
+    if (failure) setLoadError(failure);
   };
-
-  const commitPrefixes = (value: string) => {
-    setPrefixDraft(value);
-    void saveProjectAttention({ presets: rawForSelected.presets, ticketPrefixes: splitPrefixInput(value) });
-  };
+  const showWatcherFallback = state !== null && state.watcher.status === "unavailable";
 
   return (
     <>
       <SettingRow title="Silence threshold" description="Minutes of silent background work before a card turns Check?.">
         <SilenceThresholdField minutes={silenceThresholdMinutes} onChange={onSilenceThresholdChange} />
       </SettingRow>
-      <SettingsGroup title="Per-project presets">
-        {loading ? (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">Loading projects...</p>
-        ) : projects.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">No projects yet.</p>
-        ) : (
-          <ProjectAttentionFields
-            projects={projects}
-            selectedProjectId={selectedId}
-            onSelectProject={setSelectedProjectId}
-            rawForSelected={rawForSelected}
-            onTogglePreset={togglePreset}
-            prefixDraft={prefixDraft}
-            onPrefixChange={commitPrefixes}
-          />
-        )}
+      <SettingsGroup title="Attention rules">
+        {state === null && loadError === null ? (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">Loading rules...</p>
+        ) : null}
+        {loadError ? (
+          <p role="alert" className="px-4 py-2.5 text-xs text-destructive">
+            {loadError}
+          </p>
+        ) : null}
+        {state?.problem ? (
+          <p role="alert" className="px-4 py-2.5 text-xs text-destructive">
+            Could not reach the rules file: {state.problem}
+          </p>
+        ) : null}
+        {showWatcherFallback ? (
+          <p role="status" className="px-4 py-2.5 text-xs text-muted-foreground">
+            Automatic reload is off ({state.watcher.message ?? "the host watcher is unavailable"}). Use Reload rules after editing the file.
+          </p>
+        ) : null}
+        {state && state.diagnostics.length > 0 ? (
+          <div role="alert" className="px-4 py-2.5">
+            <p className="text-xs text-destructive">
+              {state.retained
+                ? "The rules file is invalid. The last valid rules stay active."
+                : document
+                  ? "Some rules in the file are not applied."
+                  : "The rules file is invalid. No custom rules are active."}
+            </p>
+            <ul className="mt-1 list-disc pl-4 text-2xs text-destructive">
+              {state.diagnostics.map((item, index) => (
+                <li key={`${item.path}-${index}`}>
+                  {item.path}: {item.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {state?.file === "absent" ? (
+          <div className="px-4 py-2.5">
+            <p className="text-sm text-foreground">No rules file yet.</p>
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+              Without one, cards use only BB's own status. Install the example rules, then edit them here or in the file.
+            </p>
+            <button type="button" className={`${BUTTON} mt-2`} disabled={busy} onClick={() => void install()}>
+              Install example rules
+            </button>
+          </div>
+        ) : null}
+        {document ? (
+          <>
+            <ul aria-label="Rule sets">
+              {document.ruleSets.map((set) => (
+                <RuleSetRow
+                  key={set.id}
+                  set={set}
+                  onToggle={(enabled) =>
+                    void reportSaveFailure({
+                      ...document,
+                      ruleSets: document.ruleSets.map((candidate) => (candidate.id === set.id ? { ...candidate, enabled } : candidate)),
+                    })
+                  }
+                  onSave={(next) =>
+                    saveDocument({
+                      ...document,
+                      ruleSets: document.ruleSets.map((candidate) => (candidate.id === set.id ? next : candidate)),
+                    })
+                  }
+                />
+              ))}
+            </ul>
+            <TicketPrefixField prefixes={document.ticketPrefixes} onCommit={(ticketPrefixes) => saveDocument({ ...document, ticketPrefixes })} />
+          </>
+        ) : null}
+        <div className="flex items-center gap-3 px-4 py-2.5">
+          <button type="button" className={BUTTON} disabled={busy} onClick={() => void reload()}>
+            Reload rules
+          </button>
+          {notice ? (
+            <span role="status" className="text-xs text-muted-foreground">
+              {notice}
+            </span>
+          ) : null}
+        </div>
       </SettingsGroup>
     </>
   );
