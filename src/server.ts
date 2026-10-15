@@ -24,6 +24,7 @@ import {
 } from "./reclaim";
 import { createTitleRegenerator } from "./regenerate-title";
 import { AUTO_TITLE_RECOVERY_MIGRATION, createAutoTitleRecovery } from "./auto-title";
+import { CLEAR_RETITLE_MIGRATION, createClearRetitle } from "./clear-title";
 import {
   PROJECT_ICON_CANDIDATES,
   PROJECT_ICONS_CHANNEL,
@@ -178,6 +179,7 @@ SELECT thread_id,
   FROM thread_lifecycle
  WHERE parked_at IS NOT NULL OR snoozed_until IS NOT NULL OR settled_at IS NOT NULL`,
   ...ATTENTION_RULES_STATE_TABLES,
+  CLEAR_RETITLE_MIGRATION,
 ];
 
 export interface StoredLifecycleRow {
@@ -761,6 +763,7 @@ export default async function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   bb.storage.migrate(db, migrations);
   createAutoTitleRecovery(bb, regenerateTitle);
+  createClearRetitle(bb, regenerateTitle);
   // Legacy project attention rows become one global selection, once.
   migrateProjectAttention(db, migrateLegacyAttention);
   let rebuildStaleAttention: () => void = () => {};

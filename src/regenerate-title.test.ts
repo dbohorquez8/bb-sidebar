@@ -4,7 +4,7 @@ import {
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import plugin from "./server";
-import { lastUserMessages, parseTitle } from "./regenerate-title";
+import { createTitleRegenerator, lastUserMessages, parseTitle } from "./regenerate-title";
 
 const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -267,6 +267,28 @@ describe("title regeneration", () => {
     await Promise.all([run(), run()]);
     expect(sdk.callsTo("threads.spawn")).toHaveLength(1);
     expect(sdk.callsTo("threads.update")).toHaveLength(1);
+  });
+
+  it("titles from explicit messages, after a different request already in flight", async () => {
+    const { bb, sdk, run } = await setup();
+    const regenerate = createTitleRegenerator(bb);
+    const plain = regenerate("target");
+    const explicit = regenerate("target", { messages: ["Fix the title after clear"] });
+    await Promise.all([plain, explicit, run()]);
+    const prompts = sdk.callsTo("threads.spawn").map(([args]) =>
+      JSON.parse((args as { prompt: string }).prompt.split("\n\n").at(-1)!));
+    expect(prompts).toContainEqual(["Fix the title after clear"]);
+    expect(prompts.filter((messages) => messages.length === 3)).toHaveLength(2);
+  });
+
+  it("does not rename from explicit messages once the thread is deleted", async () => {
+    const { bb, sdk } = await setup();
+    sdk.stub("threads.get", vi.fn()
+      .mockResolvedValueOnce(makeThreadResponse({ id: "target", providerId: "codex", environmentId: "workspace", title: "Old" }))
+      .mockResolvedValueOnce(makeThreadResponse({ id: "target", providerId: "codex", title: "Old", deletedAt: 1 })));
+    await expect(createTitleRegenerator(bb)("target", { messages: ["New task"] }))
+      .rejects.toThrow("no longer available");
+    expect(sdk.callsTo("threads.update")).toHaveLength(0);
   });
 
   it("rejects malformed or long titles", () => {

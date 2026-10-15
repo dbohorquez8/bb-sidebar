@@ -8,6 +8,8 @@ const MESSAGE_CHAR_LIMIT = 8_000;
 
 export interface TitleGenerationOptions {
   onlyIfUntitled?: boolean;
+  /** Title from these texts instead of the thread's last user messages. */
+  messages?: readonly string[];
 }
 
 function userRows(rows: readonly Row[]): Row[] {
@@ -175,13 +177,15 @@ export function createTitleRegenerator(bb: BbPluginApi) {
   }
 
   async function generate(threadId: string, options: TitleGenerationOptions) {
+    // Automatic naming never touches a thread the user hid, archived, or deleted.
+    const automatic = options.onlyIfUntitled || options.messages !== undefined;
     const original = await bb.sdk.threads.get({ threadId });
     if (options.onlyIfUntitled && original.title !== null)
       throw new Error("The thread already has a title");
-    if (options.onlyIfUntitled && (original.visibility !== "visible" ||
+    if (automatic && (original.visibility !== "visible" ||
         original.archivedAt !== null || original.deletedAt !== null))
       throw new Error("The thread is no longer available for automatic naming");
-    const messages = await lastUserMessages(bb, threadId);
+    const messages = options.messages ?? await lastUserMessages(bb, threadId);
     if (!messages.some(Boolean))
       throw new Error("This thread has no user-message text to generate a title from");
     const { selections, services } = await bb.sdk.system.aiServices({ signal: controller.signal });
@@ -228,7 +232,8 @@ export function createTitleRegenerator(bb: BbPluginApi) {
       throw new Error(
         "The title changed while generating. Your newer title was kept.",
       );
-    if (options.onlyIfUntitled && (current.archivedAt !== null || current.deletedAt !== null))
+    if (automatic && (current.visibility !== "visible" ||
+        current.archivedAt !== null || current.deletedAt !== null))
       throw new Error("The thread is no longer available for automatic naming");
     await bb.sdk.threads.update({ threadId, title });
     return { title };
@@ -236,8 +241,13 @@ export function createTitleRegenerator(bb: BbPluginApi) {
 
   return (threadId: string, options: TitleGenerationOptions = {}) => {
     const existing = pending.get(threadId);
-    if (existing) return existing;
-    const task = generate(threadId, options).finally(() => pending.delete(threadId));
+    // Same request: share it. Explicit messages must not be dropped for an
+    // unrelated request in flight, so they run after it instead.
+    if (existing && !options.messages) return existing;
+    const task = (existing
+      ? existing.catch(() => undefined).then(() => generate(threadId, options))
+      : generate(threadId, options)
+    ).finally(() => { if (pending.get(threadId) === task) pending.delete(threadId); });
     pending.set(threadId, task);
     return task;
   };
