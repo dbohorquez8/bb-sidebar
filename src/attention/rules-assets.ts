@@ -41,7 +41,7 @@ export const ATTENTION_RULES_EXAMPLE = {
         { skill: "ddd:dispatch", label: "Building", progress: "slices" },
         { skill: "ddd:verify", label: "Verifying" },
         { skill: "ddd:push", label: "Shipping" },
-        { skill: "finalize", label: "Finalizing", tone: "primary" },
+        { skill: "finalize", label: "Finalizing" },
       ],
       labelResets: [{ skill: "implement" }, { skill: "ddd:scaffold" }],
     },
