@@ -102,6 +102,7 @@ const workingView: AttentionView = {
   timeLabel: null,
   since: null,
   stage: null,
+  ruleLabel: null,
   ticket: null,
   background: { workers: 0, commands: 0, workflows: 0 },
   backgroundCount: 0,
@@ -203,6 +204,32 @@ describe("StatusOrTime", () => {
     });
     expect(await screen.findByText("Done")).toBeTruthy();
     expect(screen.queryByText(/Building/)).toBeNull();
+    cleanup();
+  });
+
+  // WS-67 (AC-27, AC-30, AC-32): a rule label renders through the view only.
+  it("shows a rule label with its palette tone while Working (AC-27)", async () => {
+    await renderView({ ...workingView, ruleLabel: { text: "Finalizing", tone: "success" } });
+    const label = await screen.findByText("Finalizing");
+    expect((label as HTMLElement).style.color).toBe("var(--ws-green-text)");
+    cleanup();
+  });
+
+  it("shows a toneless rule label in the normal status colour (AC-27)", async () => {
+    await renderView({ ...workingView, ruleLabel: { text: "Finalizing" } });
+    expect(((await screen.findByText("Finalizing")) as HTMLElement).style.color).toBe("");
+    cleanup();
+  });
+
+  it("never shows a rule label over Needs you (AC-32)", async () => {
+    await renderView({
+      ...workingView,
+      status: { kind: "needs-you" },
+      label: "Needs you",
+      ruleLabel: { text: "Finalizing", tone: "danger" },
+    });
+    expect(await screen.findByText("Needs you")).toBeTruthy();
+    expect(screen.queryByText("Finalizing")).toBeNull();
     cleanup();
   });
 });

@@ -11,7 +11,7 @@ import { relativeTimeLabel } from "./relative-time";
 import { useWorkingSinceContext } from "./useWorkingSince";
 import { statusWithDuration } from "./working-since";
 import { AttentionContext } from "./useAttention";
-import { stageText, type AttentionView, type ResolvedStatus } from "./attention";
+import { LABEL_TONE_COLOURS, stageText, type AttentionView, type ResolvedStatus } from "./attention";
 
 /**
  * The default trailing slot for cards and flat rows: fixed and right-aligned.
@@ -148,8 +148,13 @@ function AttentionStatusOrTime({
           aria-hidden="true"
           className={cn("size-3 shrink-0", kind === "working" ? "animate-spin" : "animate-[spin_4s_linear_infinite]")}
         />
-        {/* Outside a workflow the status word stands in for the stage. */}
-        <span className="truncate">{view.stage ? stageText(view.stage) : view.label}</span>
+        {/* A rule label, else the stage, else the status word. The label's tone is a design-system token. */}
+        <span
+          className="truncate"
+          style={view.ruleLabel?.tone ? { color: LABEL_TONE_COLOURS[view.ruleLabel.tone] } : undefined}
+        >
+          {view.ruleLabel?.text ?? (view.stage ? stageText(view.stage) : view.label)}
+        </span>
         {view.timeLabel !== null ? (
           <span className="font-normal tabular-nums text-muted-foreground">{view.timeLabel}</span>
         ) : null}

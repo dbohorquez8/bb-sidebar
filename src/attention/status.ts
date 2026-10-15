@@ -1,7 +1,4 @@
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { childFailureReported } from "../child-failure";
-import { isTurnInFlight } from "../lifecycle";
-import type { BackgroundWork, BbWord, ObservedReply, ResolvedStatus, StateRuleKind, AttentionPreset } from "./types";
+import type { BackgroundWork, BbWord, ObservedRules, ResolvedStatus, StateRuleKind } from "./types";
 
 export interface AttentionInput {
   hasPendingInteraction: boolean;
@@ -36,80 +33,16 @@ export function resolveAttentionStatus(input: AttentionInput): ResolvedStatus {
   return { kind: "idle" };
 }
 
-export function attentionInputFromThread(
-  thread: PluginSidebarThread,
-  context: {
-    verdict: StateRuleKind | null;
-    silent: boolean;
-    onInactiveShelf: boolean;
-    failureAcknowledged: boolean;
-    /** Child-failure inputs (WS-51); omitted means no status-derived failure. */
-    parentOpen?: boolean;
-    now?: number;
-  },
-): AttentionInput {
-  const turnRunning =
-    isTurnInFlight(thread.status) ||
-    thread.indicator === "runtime" ||
-    thread.indicator === "working-draft";
-
-  const failureReported =
-    ((thread.indicator === "unread-error" ||
-      thread.queuedWork === "failed" ||
-      thread.indicator === "queued-failed") &&
-      !context.failureAcknowledged) ||
-    (context.now !== undefined &&
-      childFailureReported(thread, {
-        parentOpen: context.parentOpen ?? false,
-        acknowledged: context.failureAcknowledged,
-        now: context.now,
-      }));
-
-  const unreadResult = thread.indicator === "unread-success";
-
-  const background: BackgroundWork = {
-    workers: thread.activity.backgroundAgents,
-    commands: thread.activity.backgroundCommands,
-    workflows: thread.activity.workflows,
-  };
-
-  let bbWord: BbWord | null = null;
-  if (thread.indicator === "draft") {
-    bbWord = "draft";
-  } else if (thread.queuedWork === "waiting" || thread.indicator === "queued-waiting") {
-    bbWord = "queued";
-  } else if (thread.indicator === "plan-mode") {
-    bbWord = "planning";
-  } else if (thread.indicator === "goal") {
-    bbWord = "goal";
-  }
-
-  return {
-    hasPendingInteraction: thread.hasPendingInteraction,
-    turnRunning,
-    failureReported,
-    unreadResult,
-    background,
-    verdict: context.verdict,
-    silent: context.silent,
-    onInactiveShelf: context.onInactiveShelf,
-    bbWord,
-  };
-}
-
+/**
+ * The rule-driven state of a thread, or null. Only an outcome stamped with the
+ * active document's version counts: a record made under other rules (or with no
+ * document active) is withheld until it is rebuilt, so the card falls back to
+ * BB's own state.
+ */
 export function verdictFor(
-  reply: ObservedReply | null,
-  enabledPresets: readonly AttentionPreset[],
+  rules: ObservedRules | undefined,
+  activeVersion: string | null,
 ): StateRuleKind | null {
-  if (!reply) return null;
-  let best: { line: number; kind: StateRuleKind } | null = null;
-  for (const preset of enabledPresets) {
-    if (preset.kind !== "state-markers") continue;
-    const match = reply.matches[preset.id];
-    if (!match) continue;
-    if (!best || match.line > best.line) {
-      best = { line: match.line, kind: match.kind };
-    }
-  }
-  return best ? best.kind : null;
+  if (!rules || activeVersion === null || rules.version !== activeVersion) return null;
+  return rules.status;
 }

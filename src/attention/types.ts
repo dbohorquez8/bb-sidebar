@@ -161,6 +161,8 @@ export interface AttentionView {
   /** Epoch ms the shown time counts from; null when no time is shown. */
   since: number | null;
   stage: StageView | null;
+  /** Sticky label from the active rules; shown in place of the status word on Working and Background. */
+  ruleLabel: ObservedRules["label"];
   ticket: TicketMatch | null;
   background: BackgroundWork;
   backgroundCount: number;

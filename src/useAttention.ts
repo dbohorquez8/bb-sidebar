@@ -7,37 +7,32 @@ import {
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { isWorkingIndicator } from "./child-status";
+import type { AttentionRulesState } from "./attention-rules-state";
 import type { bbSidebarRpcContract } from "./server";
 import {
   ATTENTION_CHANNEL,
-  ATTENTION_PRESETS,
-  PROJECT_ATTENTION_CHANNEL,
-  attentionInputFromThread,
+  ATTENTION_RULES_CHANNEL,
   backgroundSignature,
   buildAttentionView,
-  currentStage,
   historySince,
   isSilentPastThreshold,
-  parseProjectAttention,
   parseTicketId,
   reconcileFailedAck,
   reconcileStatusSince,
-  readFailedAck,
-  readStatusSince,
   resolveAttentionStatus,
+  selectedTicketPrefixes,
   silenceOrigin,
   statusKey,
   verdictFor,
-  writeFailedAck,
-  writeStatusSince,
   SILENCE_THRESHOLD_DEFAULT_MINUTES,
   type AttentionInput,
   type AttentionView,
-  type ProjectAttentionSettings,
   type ResolvedStatus,
   type StatusSinceEntry,
   type ThreadObservation,
 } from "./attention";
+import { attentionInputFromThread } from "./attention-thread-input";
+import { readFailedAck, readStatusSince, writeFailedAck, writeStatusSince } from "./attention-since-storage";
 import { isInactiveThread } from "./inactive";
 import { relativeTimeLabel } from "./relative-time";
 import { threadWorktreeName } from "./inbox";
@@ -51,14 +46,14 @@ export interface AttentionModel {
   /**
    * statusKey(status) per non-archived thread whose attention record has
    * loaded (present in observations or named in `unavailable`), and only after
-   * project attention settings have loaded once. A thread is omitted until then.
+   * the global attention rules state has loaded once. A thread is omitted until then.
    * While its record reloads after BB reports a status or indicator change for
    * it, a thread keeps the status it last had here.
    */
   chimeStatuses: ReadonlyMap<string, string>;
   /**
    * Increments each time a full load attempt (listAttention for every
-   * non-archived thread, plus getProjectAttention) has settled, success or
+   * non-archived thread, plus getAttentionRules) has settled, success or
    * failure: on mount and after each realtime reconnect.
    */
   loadGeneration: number;
@@ -66,7 +61,6 @@ export interface AttentionModel {
 
 export const AttentionContext = createContext<AttentionModel | null>(null);
 
-const EMPTY_PROJECT_SETTINGS: ProjectAttentionSettings = { enabledPresets: [], ticketPrefixes: [] };
 /** A full load in which a call failed is retried after this long, until one succeeds. */
 const FULL_LOAD_RETRY_MS = 5_000;
 
@@ -135,9 +129,11 @@ function withDraft(thread: PluginSidebarThread, hasDraft: boolean): PluginSideba
  * view, and Needs you placement every card reads from `AttentionContext`.
  *
  * Fetches `listAttention` for every non-archived thread on mount and again
- * for ids named by an `ATTENTION_CHANNEL` message, and `getProjectAttention`
- * on mount and on `PROJECT_ATTENTION_CHANNEL`. A thread with no record yet,
- * or named in `unavailable`, resolves from BB's live thread fields alone.
+ * for ids named by an `ATTENTION_CHANNEL` message, and `getAttentionRules`
+ * (one global state, every project) on mount and on `ATTENTION_RULES_CHANNEL`.
+ * A thread with no record yet, one named in `unavailable`, or one whose record
+ * was made under other rules than the active ones resolves from BB's live
+ * thread fields alone.
  */
 export function useAttention(
   threads: readonly PluginSidebarThread[],
@@ -158,9 +154,9 @@ export function useAttention(
     () => new Map(),
   );
   const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
-  const [projectSettings, setProjectSettings] = useState<
-    ReadonlyMap<string, ProjectAttentionSettings>
-  >(() => new Map());
+  // Null until the global rules state has loaded; then the active document (or
+  // none) and its version. Custom behaviour is absent while this is null.
+  const [rulesState, setRulesState] = useState<Pick<AttentionRulesState, "document" | "version"> | null>(null);
 
   const firstSeenRef = useRef<Map<string, number>>(new Map());
   const backgroundSignatureRef = useRef<Map<string, { signature: string; at: number }>>(new Map());
@@ -270,29 +266,24 @@ export function useAttention(
     );
   });
 
-  const [projectSettingsLoaded, setProjectSettingsLoaded] = useState(false);
-  const loadProjectAttention = async (): Promise<boolean> => {
+  const loadRules = async (): Promise<boolean> => {
     try {
-      const result = await call("getProjectAttention", {});
-      const next = new Map<string, ProjectAttentionSettings>();
-      for (const [projectId, raw] of Object.entries(result.projects)) {
-        next.set(projectId, parseProjectAttention(raw, ATTENTION_PRESETS).settings);
-      }
-      setProjectSettings(next);
-      setProjectSettingsLoaded(true);
+      const { document, version } = await call("getAttentionRules", {});
+      setRulesState((current) =>
+        current && current.version === version && current.document === document ? current : { document, version },
+      );
       return true;
     } catch {
-      // Keep whatever settings are already known; every project defaults to
-      // DEFAULT_PROJECT_ATTENTION until a row loads.
+      // Keep whatever state is already known; with none, cards use BB's own state.
       return false;
     }
   };
 
-  useRealtime(PROJECT_ATTENTION_CHANNEL, () => {
-    void loadProjectAttention();
+  useRealtime(ATTENTION_RULES_CHANNEL, () => {
+    void loadRules();
   });
 
-  // The full load: every live thread's record plus the project settings, on
+  // The full load: every live thread's record plus the global rules state, on
   // mount and after each realtime reconnect. Each settled attempt bumps
   // loadGeneration (useChime takes its baseline from it); a failed one is
   // retried every FULL_LOAD_RETRY_MS until one succeeds.
@@ -310,7 +301,7 @@ export function useAttention(
     const seq = ++fullLoadSeqRef.current;
     const [recordsLoaded, settingsLoaded] = await Promise.all([
       loadAttention(liveThreadIds()),
-      loadProjectAttention(),
+      loadRules(),
     ]);
     if (!mountedRef.current) return;
     setLoadGeneration((generation) => generation + 1);
@@ -360,14 +351,19 @@ export function useAttention(
     const now = options.now;
     const wallNow = Date.now();
     const threadsById = new Map(threads.map((t) => [t.id, t]));
+    // One global list for every project (title and branch matching alike).
+    const ticketPrefixes = selectedTicketPrefixes(rulesState?.document);
 
     for (const rawThread of threads) {
       if (rawThread.isArchived) continue;
       const thread = withDraft(rawThread, draftThreadIds.has(rawThread.id));
 
       const observation = unavailable.has(thread.id) ? null : (observations.get(thread.id) ?? null);
-      const settings = projectSettings.get(thread.projectId) ?? EMPTY_PROJECT_SETTINGS;
-      const verdict = verdictFor(observation?.reply ?? null, settings.enabledPresets);
+      // Only an outcome made under the active rules counts; a stale record is
+      // withheld until the server rebuilds it.
+      const activeVersion = rulesState?.version ?? null;
+      const verdict = verdictFor(observation?.rules, activeVersion);
+      const currentRules = activeVersion !== null && observation?.rules?.version === activeVersion ? observation.rules : null;
 
       const liveBackground = {
         workers: thread.activity.backgroundAgents,
@@ -425,15 +421,15 @@ export function useAttention(
           branchName: thread.environment?.branchName ?? null,
           worktreeName: threadWorktreeName(thread),
         },
-        settings.ticketPrefixes,
+        ticketPrefixes,
       );
-      const stage = currentStage(observation?.steps ?? {}, settings.enabledPresets, observation?.turnStartedAt ?? null, observation?.slices);
 
       const view = buildAttentionView({
         status,
         statusSince: statusSinceValue,
         silenceOrigin: origin,
-        stage,
+        stage: null,
+        ruleLabel: currentRules?.label ?? null,
         ticket,
         background: liveBackground,
         ageLabel: relativeTimeLabel(thread.updatedAt, now),
@@ -449,7 +445,7 @@ export function useAttention(
     draftThreadIds,
     observations,
     unavailable,
-    projectSettings,
+    rulesState,
     options.now,
     options.activeThreadId,
     options.openThreadIds,
@@ -505,7 +501,7 @@ export function useAttention(
   const chimeStatusesRef = useRef<ReadonlyMap<string, string>>(new Map());
   const chimeStatuses = useMemo(() => {
     const next = new Map<string, string>();
-    if (projectSettingsLoaded) {
+    if (rulesState !== null) {
       const seen = bbStatusRef.current;
       const reloading = new Set(reloadingRef.current.keys());
       for (const thread of threads) {
@@ -526,7 +522,7 @@ export function useAttention(
     if (sameStatuses(next, chimeStatusesRef.current)) return chimeStatusesRef.current;
     chimeStatusesRef.current = next;
     return next;
-  }, [threads, resolved, observations, unavailable, projectSettingsLoaded, reloadsSettled]);
+  }, [threads, resolved, observations, unavailable, rulesState, reloadsSettled]);
 
   return useMemo<AttentionModel>(
     () => ({

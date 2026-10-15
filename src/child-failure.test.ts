@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { resolveAttentionStatus, attentionInputFromThread } from "./attention/status";
+import { resolveAttentionStatus } from "./attention/status";
+import { attentionInputFromThread } from "./attention-thread-input";
 import { reconcileFailedAck } from "./attention/since";
 import { childStatusKind, childStatusSummary } from "./child-status";
 import { collapsedChildThreads } from "./ChildThreadList";
