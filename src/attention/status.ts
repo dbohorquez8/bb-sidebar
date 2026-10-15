@@ -1,4 +1,5 @@
 import type { BackgroundWork, BbWord, ObservedRules, ResolvedStatus, StateRuleKind } from "./types";
+import { statusKey } from "./since";
 
 export interface AttentionInput {
   hasPendingInteraction: boolean;
@@ -31,6 +32,24 @@ export function resolveAttentionStatus(input: AttentionInput): ResolvedStatus {
   if (input.unreadResult) return { kind: "done" };
   if (input.bbWord !== null) return { kind: "bb-word", word: input.bbWord };
   return { kind: "idle" };
+}
+
+/** The silent chime key for a Done card whose turn did not hand the next turn to the owner. */
+export const QUIET_DONE_KEY = "done-quiet";
+
+/**
+ * The status key the chime reads. A Done card chimes only when the final
+ * reply's state line said done and no child thread was running while it was
+ * Done: an unmarked or background reply, or a parent waiting on its children
+ * (which wake it with a new turn), shows Done but is not the owner's turn yet.
+ */
+export function chimeStatusKey(
+  status: ResolvedStatus,
+  verdict: StateRuleKind | null,
+  heldByChild: boolean,
+): string {
+  if (status.kind === "done" && (verdict !== "done" || heldByChild)) return QUIET_DONE_KEY;
+  return statusKey(status);
 }
 
 /**

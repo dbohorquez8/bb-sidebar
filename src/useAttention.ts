@@ -24,6 +24,7 @@ import {
   selectedTicketPrefixes,
   silenceOrigin,
   statusKey,
+  chimeStatusKey,
   verdictFor,
   SILENCE_THRESHOLD_DEFAULT_MINUTES,
   type AttentionInput,
@@ -45,7 +46,7 @@ export interface AttentionModel {
   needsYouSince(threadId: string): number | null;
   silenceThresholdMinutes: number;
   /**
-   * statusKey(status) per non-archived thread whose attention record has
+   * chimeStatusKey(status, verdict, heldByChild) per non-archived thread whose attention record has
    * loaded (present in observations or named in `unavailable`), and only after
    * the global attention rules state has loaded once. A thread is omitted until then.
    * While its record reloads after BB reports a status or indicator change for
@@ -499,6 +500,8 @@ export function useAttention(
   // effect, so a signature that differs from the last one seen also counts
   // as reloading.
   const chimeStatusesRef = useRef<ReadonlyMap<string, string>>(new Map());
+  /** Parents whose Done was silenced by a running child; they stay silent until they leave Done. */
+  const childHeldDoneRef = useRef<Set<string>>(new Set());
   const chimeStatuses = useMemo(() => {
     const next = new Map<string, string>();
     if (rulesState !== null) {
@@ -508,6 +511,21 @@ export function useAttention(
         const before = seen?.get(thread.id);
         if (before !== undefined && before !== bbStatusSignature(thread)) reloading.add(thread.id);
       }
+      // A parent still waiting on a running child is not the owner's turn yet.
+      const childRunning = new Set<string>();
+      for (const thread of threads) {
+        if (thread.isArchived || thread.parentThreadId == null) continue;
+        const kind = resolved.get(thread.id)?.status.kind;
+        if (kind === "working" || kind === "background" || kind === "check") childRunning.add(thread.parentThreadId);
+      }
+      // A child finishing wakes its parent with a new turn, so a parent that
+      // went Done while a child ran must not chime once the child settles.
+      const childHeld = childHeldDoneRef.current;
+      for (const threadId of childHeld) if (!resolved.has(threadId)) childHeld.delete(threadId);
+      for (const [threadId, entry] of resolved) {
+        if (entry.status.kind !== "done") childHeld.delete(threadId);
+        else if (childRunning.has(threadId)) childHeld.add(threadId);
+      }
       for (const [threadId, entry] of resolved) {
         if (reloading.has(threadId)) {
           const held = chimeStatusesRef.current.get(threadId);
@@ -515,7 +533,7 @@ export function useAttention(
           continue;
         }
         if (observations.has(threadId) || unavailable.has(threadId)) {
-          next.set(threadId, statusKey(entry.status));
+          next.set(threadId, chimeStatusKey(entry.status, entry.input.verdict, childHeld.has(threadId)));
         }
       }
     }
