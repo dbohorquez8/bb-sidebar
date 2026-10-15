@@ -21,6 +21,35 @@ const BUTTON =
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const serialize = (document: AttentionRulesDocument): string => `${JSON.stringify(document, null, 2)}\n`;
 
+const MAX_RULE_SETS = 100;
+const LAST_SET_NOTE = "A rules file needs at least one rule set.";
+
+/** "Open Spec" -> "open-spec": the id the rules schema accepts, or "" when the name has no usable letters. */
+export function deriveRuleSetId(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^[^a-z]+/, "")
+    .slice(0, 80)
+    .replace(/-+$/, "");
+}
+
+/** A new enabled rule set with empty lists, or the reason the name is refused. */
+export function addRuleSet(
+  document: AttentionRulesDocument,
+  name: string,
+): { ok: true; document: AttentionRulesDocument } | { ok: false; reason: string } {
+  const label = name.trim();
+  if (label === "") return { ok: false, reason: "Enter a name for the rule set." };
+  if (label.length > 120) return { ok: false, reason: "The name must be 120 characters or fewer." };
+  const id = deriveRuleSetId(label);
+  if (id === "") return { ok: false, reason: "The name needs at least one letter." };
+  if (document.ruleSets.some((set) => set.id === id)) return { ok: false, reason: `A rule set with the id "${id}" already exists.` };
+  if (document.ruleSets.length >= MAX_RULE_SETS) return { ok: false, reason: `A rules file holds at most ${MAX_RULE_SETS} rule sets.` };
+  const set: AttentionRuleSet = { id, label, enabled: true, replyMarkers: [], skillStatuses: [], skillLabels: [], labelResets: [] };
+  return { ok: true, document: { ...document, ruleSets: [...document.ruleSets, set] } };
+}
+
 /**
  * "After [15] minutes of silence", refusing anything `validateSilenceThreshold`
  * refuses. No SDK hook: a plain controlled field, directly Component-testable.
@@ -374,12 +403,17 @@ export function RuleSetRow({
   set,
   onToggle,
   onSave,
+  onRemove,
+  canRemove,
 }: {
   set: AttentionRuleSet;
   onToggle: (enabled: boolean) => void;
   onSave: (next: AttentionRuleSet) => Promise<string | null>;
+  onRemove: () => void;
+  canRemove: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const counts = [
     [set.replyMarkers.length, "reply markers"],
     [set.skillStatuses.length, "skill statuses"],
@@ -397,10 +431,30 @@ export function RuleSetRow({
             <button type="button" className={BUTTON} aria-expanded={editing} onClick={() => setEditing(!editing)}>
               {editing ? "Close" : `Edit ${set.label}`}
             </button>
+            <button type="button" className={BUTTON} disabled={!canRemove} aria-label={`Remove ${set.label}`} onClick={() => setConfirming(true)}>
+              Remove
+            </button>
             <Switch label={set.label} checked={set.enabled} onChange={onToggle} />
           </div>
         }
       />
+      {!canRemove ? <p className="px-4 pb-2 text-2xs text-muted-foreground">{LAST_SET_NOTE}</p> : null}
+      {confirming ? (
+        <div role="alertdialog" aria-label={`Remove ${set.label}?`} className="flex flex-wrap items-center gap-2 px-4 pb-2.5">
+          <p className="text-xs text-foreground">Remove {set.label} and all its rules? This cannot be undone.</p>
+          <button type="button" className={BUTTON} aria-label={`Confirm remove ${set.label}`}
+            onClick={() => {
+              setConfirming(false);
+              onRemove();
+            }}
+          >
+            Remove rule set
+          </button>
+          <button type="button" className={BUTTON} onClick={() => setConfirming(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
       {editing ? (
         <RuleSetForm
           set={set}
@@ -413,6 +467,68 @@ export function RuleSetRow({
         />
       ) : null}
     </li>
+  );
+}
+
+/** "Add rule set": a name becomes the label and the derived id; the new set starts enabled and empty. */
+export function AddRuleSetForm({ onAdd }: { onAdd: (name: string) => Promise<string | null> }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const uid = useId();
+
+  const close = () => {
+    setOpen(false);
+    setName("");
+    setError(null);
+  };
+  const submit = async () => {
+    const failure = await onAdd(name);
+    if (failure) setError(failure);
+    else close();
+  };
+
+  if (!open) {
+    return (
+      <div className="px-4 py-2.5">
+        <button type="button" className={BUTTON} onClick={() => setOpen(true)}>
+          Add rule set
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="px-4 py-2.5">
+      <label className="block text-xs font-medium text-foreground" htmlFor={`${uid}-new-name`}>
+        New rule set name
+      </label>
+      <div className="mt-1 flex items-center gap-2">
+        <input
+          id={`${uid}-new-name`}
+          type="text"
+          autoFocus
+          aria-invalid={error !== null}
+          aria-describedby={error ? `${uid}-new-problem` : undefined}
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+            setError(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void submit();
+            if (event.key === "Escape") close();
+          }}
+          className={`${FIELD} flex-1`}
+        />
+        <button type="button" className={BUTTON} onClick={() => void submit()}>
+          Create rule set
+        </button>
+        <button type="button" className={BUTTON} onClick={close}>
+          Cancel
+        </button>
+      </div>
+      <Problem id={`${uid}-new-problem`} message={error ?? undefined} />
+    </div>
   );
 }
 
@@ -620,9 +736,22 @@ export function AttentionSettings({
                       ruleSets: document.ruleSets.map((candidate) => (candidate.id === set.id ? next : candidate)),
                     })
                   }
+                  canRemove={document.ruleSets.length > 1}
+                  onRemove={() =>
+                    void reportSaveFailure({
+                      ...document,
+                      ruleSets: document.ruleSets.filter((candidate) => candidate.id !== set.id),
+                    })
+                  }
                 />
               ))}
             </ul>
+            <AddRuleSetForm
+              onAdd={async (name) => {
+                const added = addRuleSet(document, name);
+                return added.ok ? saveDocument(added.document) : added.reason;
+              }}
+            />
             <TicketPrefixField prefixes={document.ticketPrefixes} onCommit={(ticketPrefixes) => saveDocument({ ...document, ticketPrefixes })} />
           </>
         ) : null}
