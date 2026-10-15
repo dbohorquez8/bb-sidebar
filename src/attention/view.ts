@@ -6,7 +6,7 @@ import {
   STATUS_LABELS,
 } from "./format";
 import { LABEL_TONES } from "./rules";
-import type { AttentionView, BackgroundWork, ObservedRules, ResolvedStatus, StageView, TicketMatch } from "./types";
+import type { AttentionView, BackgroundWork, ResolvedStatus, RuleLabelView, StageView, TicketMatch } from "./types";
 
 /** Design-system token behind each label tone; `primary` reads the host token. */
 export const LABEL_TONE_COLOURS: Readonly<Record<(typeof LABEL_TONES)[number], string>> = {
@@ -17,12 +17,17 @@ export const LABEL_TONE_COLOURS: Readonly<Record<(typeof LABEL_TONES)[number], s
   danger: "var(--ws-red-text)",
 };
 
+/** The label as shown on the card: "Building", or "Building 2/5" with slice progress. */
+export function ruleLabelText(label: RuleLabelView): string {
+  return label.sliceProgress ? `${label.text} ${label.sliceProgress.done}/${label.sliceProgress.total}` : label.text;
+}
+
 export function buildAttentionView(args: {
   status: ResolvedStatus;
   statusSince: number; // from the stamps
   silenceOrigin: number; // the Check? time counts from here (AC-15)
   stage: StageView | null;
-  ruleLabel?: ObservedRules["label"];
+  ruleLabel?: RuleLabelView | null;
   ticket: TicketMatch | null;
   background: BackgroundWork;
   ageLabel: string; // today's relativeTimeLabel(thread.updatedAt, now), used for idle

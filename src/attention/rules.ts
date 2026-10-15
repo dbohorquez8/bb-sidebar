@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** The only document version understood by the portable v1 contract. */
 export const ATTENTION_RULES_VERSION = 1 as const;
-export const ATTENTION_RULES_SCHEMA_ID = "https://getbb.app/schemas/attention-rules.schema.json";
+export const ATTENTION_RULES_SCHEMA_ID = "./attention-rules.schema.json";
 
 export const LABEL_TONES = ["muted", "primary", "success", "warning", "danger"] as const;
 const statusSchema = z.enum(["needs-you", "working", "background", "done"]);
@@ -15,6 +15,8 @@ const skillLabelSchema = z.object({
   skill: exactText,
   label: z.string().trim().min(1).max(120),
   tone: z.enum(LABEL_TONES).optional(),
+  /** "slices": the label also shows finished/total build slices when the thread reports them. */
+  progress: z.literal("slices").optional(),
 }).strict();
 const labelResetSchema = z.object({ skill: exactText }).strict();
 
@@ -127,7 +129,11 @@ export type NeutralRuleEvent =
   | { kind: "reply"; text: string | null }
   | { kind: "skill"; skill: string };
 
-export type RuleLabel = { text: string; tone?: z.infer<typeof skillLabelSchema>["tone"] };
+export type RuleLabel = {
+  text: string;
+  tone?: z.infer<typeof skillLabelSchema>["tone"];
+  progress?: z.infer<typeof skillLabelSchema>["progress"];
+};
 export type RuleOutcome = { status: z.infer<typeof statusSchema> | null; label: RuleLabel | null };
 
 /**
@@ -157,7 +163,7 @@ export function evaluateRuleEvent(
   for (const set of sets) {
     if (set.labelResets.some((rule) => rule.skill === event.skill)) label = null;
     for (const rule of set.skillLabels) {
-      if (rule.skill === event.skill) label = { text: rule.label, ...(rule.tone ? { tone: rule.tone } : {}) };
+      if (rule.skill === event.skill) label = { text: rule.label, ...(rule.tone ? { tone: rule.tone } : {}), ...(rule.progress ? { progress: rule.progress } : {}) };
     }
     for (const rule of set.skillStatuses) if (rule.skill === event.skill) status = rule.status;
   }

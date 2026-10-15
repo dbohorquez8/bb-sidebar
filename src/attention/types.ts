@@ -85,8 +85,17 @@ export interface ObservedRules {
   /** Active document stamp (rulesDocumentVersion), or null when no document was active. */
   version: string | null;
   status: "needs-you" | "working" | "background" | "done" | null;
-  label: { text: string; tone?: "muted" | "primary" | "success" | "warning" | "danger" } | null;
+  label: {
+    text: string;
+    tone?: "muted" | "primary" | "success" | "warning" | "danger";
+    progress?: "slices";
+  } | null;
 }
+
+/** A rule label as the card shows it: finished/total slices appear when known. */
+export type RuleLabelView = NonNullable<ObservedRules["label"]> & {
+  sliceProgress?: { done: number; total: number };
+};
 
 export interface ThreadObservation {
   v: 2;
@@ -162,7 +171,7 @@ export interface AttentionView {
   since: number | null;
   stage: StageView | null;
   /** Sticky label from the active rules; shown in place of the status word on Working and Background. */
-  ruleLabel: ObservedRules["label"];
+  ruleLabel: RuleLabelView | null;
   ticket: TicketMatch | null;
   background: BackgroundWork;
   backgroundCount: number;
