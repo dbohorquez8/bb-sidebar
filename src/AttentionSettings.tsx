@@ -442,7 +442,7 @@ export function RuleSetRow({
       {confirming ? (
         <div role="alertdialog" aria-label={`Remove ${set.label}?`} className="flex flex-wrap items-center gap-2 px-4 pb-2.5">
           <p className="text-xs text-foreground">Remove {set.label} and all its rules? This cannot be undone.</p>
-          <button type="button" className={BUTTON} aria-label={`Confirm remove ${set.label}`}
+          <button type="button" className={BUTTON} aria-label={`Remove rule set ${set.label}`}
             onClick={() => {
               setConfirming(false);
               onRemove();
@@ -450,7 +450,7 @@ export function RuleSetRow({
           >
             Remove rule set
           </button>
-          <button type="button" className={BUTTON} onClick={() => setConfirming(false)}>
+          <button type="button" className={BUTTON} autoFocus onClick={() => setConfirming(false)}>
             Cancel
           </button>
         </div>
@@ -475,6 +475,8 @@ export function AddRuleSetForm({ onAdd }: { onAdd: (name: string) => Promise<str
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const inFlight = useRef(false);
   const uid = useId();
 
   const close = () => {
@@ -483,7 +485,12 @@ export function AddRuleSetForm({ onAdd }: { onAdd: (name: string) => Promise<str
     setError(null);
   };
   const submit = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setSaving(true);
     const failure = await onAdd(name);
+    inFlight.current = false;
+    setSaving(false);
     if (failure) setError(failure);
     else close();
   };
@@ -520,7 +527,7 @@ export function AddRuleSetForm({ onAdd }: { onAdd: (name: string) => Promise<str
           }}
           className={`${FIELD} flex-1`}
         />
-        <button type="button" className={BUTTON} onClick={() => void submit()}>
+        <button type="button" className={BUTTON} disabled={saving} onClick={() => void submit()}>
           Create rule set
         </button>
         <button type="button" className={BUTTON} onClick={close}>
@@ -651,7 +658,8 @@ export function AttentionSettings({
         setLoadError(null);
         setNotice(null);
       }
-      return null;
+      // A host write failure comes back as state.problem, not a thrown error; the file is unchanged.
+      return next.problem ? `Not saved: ${next.problem}` : null;
     } catch (error) {
       return errorText(error);
     }
