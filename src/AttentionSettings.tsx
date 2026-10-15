@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { bbSidebarRpcContract } from "./server";
 import {
   ATTENTION_RULES_CHANNEL,
+  LABEL_TONES,
+  LABEL_TONE_COLOURS,
+  attentionRuleSetSchema,
   splitPrefixInput,
   validateSilenceThreshold,
   type AttentionRulesDocument,
@@ -63,7 +66,310 @@ export function SilenceThresholdField({
   );
 }
 
-/** One rule set: accessible on/off switch plus an inline editor that shows the edited JSON before save. */
+type Status = AttentionRuleSet["replyMarkers"][number]["status"];
+const STATUS_OPTIONS: readonly { value: Status; label: string }[] = [
+  { value: "needs-you", label: "Needs you" },
+  { value: "working", label: "Working" },
+  { value: "background", label: "Background" },
+  { value: "done", label: "Done" },
+];
+const FIELD =
+  "h-7 min-w-0 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring aria-[invalid=true]:border-destructive";
+
+/** Zod's own wording for an empty required text is unfriendly; everything else passes through. */
+function friendly(message: string): string {
+  return /expected string to have >=1|at least 1|too small/i.test(message) ? "Required." : message;
+}
+
+/** Problems from the rules parser, keyed by their dotted path ("replyMarkers.0.marker"). */
+function problemsOf(set: AttentionRuleSet): Map<string, string> {
+  const result = attentionRuleSetSchema.safeParse(set);
+  const map = new Map<string, string>();
+  if (!result.success) {
+    for (const issue of result.error.issues) {
+      const key = issue.path.join(".") || "set";
+      if (!map.has(key)) map.set(key, friendly(issue.message));
+    }
+  }
+  return map;
+}
+
+function Problem({ id, message }: { id: string; message: string | undefined }) {
+  return message ? (
+    <p id={id} className="mt-0.5 text-2xs text-destructive">
+      {message}
+    </p>
+  ) : null;
+}
+
+function TextCell({
+  label,
+  value,
+  onChange,
+  problem,
+  problemId,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  problem: string | undefined;
+  problemId: string;
+  className?: string;
+}) {
+  return (
+    <div className={`min-w-0 flex-1 ${className ?? ""}`}>
+      <input
+        type="text"
+        aria-label={label}
+        aria-invalid={problem !== undefined}
+        aria-describedby={problem ? problemId : undefined}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={`${FIELD} w-full`}
+      />
+      <Problem id={problemId} message={problem} />
+    </div>
+  );
+}
+
+function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" aria-label={label} className={`${BUTTON} shrink-0`} onClick={onClick}>
+      Remove
+    </button>
+  );
+}
+
+function FormSection({ title, hint, onAdd, addLabel, children }: { title: string; hint: string; onAdd: () => void; addLabel: string; children: ReactNode }) {
+  return (
+    <fieldset className="mt-3 min-w-0 border-0 p-0">
+      <legend className="text-xs font-medium text-foreground">{title}</legend>
+      <p className="mb-1 text-2xs text-muted-foreground">{hint}</p>
+      <div className="flex flex-col gap-1.5">{children}</div>
+      <button type="button" className={`${BUTTON} mt-1.5`} onClick={onAdd}>
+        {addLabel}
+      </button>
+    </fieldset>
+  );
+}
+
+function StatusSelect({ label, value, onChange }: { label: string; value: Status; onChange: (value: Status) => void }) {
+  return (
+    <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value as Status)} className={FIELD}>
+      {STATUS_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+type ArrayKey = "replyMarkers" | "skillStatuses" | "skillLabels" | "labelResets";
+
+/**
+ * Form editor for one rule set: rows for reply markers, skill statuses, skill labels
+ * and label resets. Validation comes from the same schema the host parser uses, and
+ * shows only after the first save attempt so fresh empty rows are not flagged early.
+ */
+export function RuleSetForm({
+  set,
+  onSave,
+  onCancel,
+}: {
+  set: AttentionRuleSet;
+  onSave: (next: AttentionRuleSet) => Promise<string | null>;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<AttentionRuleSet>(set);
+  const [attempted, setAttempted] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [json, setJson] = useState(() => JSON.stringify(set, null, 2));
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const uid = useId();
+
+  const problems = problemsOf(draft);
+  const shown = (path: string): string | undefined => (attempted ? problems.get(path) : undefined);
+  const update = (next: AttentionRuleSet) => {
+    setDraft(next);
+    setJson(JSON.stringify(next, null, 2));
+    setJsonError(null);
+  };
+  const edit = <K extends ArrayKey>(key: K, index: number, patch: Partial<AttentionRuleSet[K][number]>) =>
+    update({ ...draft, [key]: draft[key].map((row, at) => (at === index ? { ...row, ...patch } : row)) });
+  const add = <K extends ArrayKey>(key: K, row: AttentionRuleSet[K][number]) => update({ ...draft, [key]: [...draft[key], row] });
+  const remove = (key: ArrayKey, index: number) => update({ ...draft, [key]: draft[key].filter((_, at) => at !== index) });
+
+  const save = async () => {
+    setAttempted(true);
+    if (problems.size > 0) return;
+    const failure = await onSave(draft);
+    if (failure) setSaveError(failure);
+  };
+  const applyJson = () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch (cause) {
+      setJsonError(`Invalid JSON: ${errorText(cause)}`);
+      return;
+    }
+    const result = attentionRuleSetSchema.safeParse(parsed);
+    if (!result.success) {
+      setJsonError(result.error.issues.map((issue) => `${issue.path.join(".") || "set"}: ${friendly(issue.message)}`).join("; "));
+      return;
+    }
+    setDraft(result.data);
+    setJson(JSON.stringify(result.data, null, 2));
+    setJsonError(null);
+  };
+
+  return (
+    <div className="px-4 pb-3">
+      <label className="block text-xs font-medium text-foreground" htmlFor={`${uid}-name`}>
+        Rule set name
+      </label>
+      <input
+        id={`${uid}-name`}
+        type="text"
+        aria-invalid={shown("label") !== undefined}
+        aria-describedby={shown("label") ? `${uid}-name-problem` : undefined}
+        value={draft.label}
+        onChange={(event) => update({ ...draft, label: event.target.value })}
+        className={`${FIELD} mt-1 w-full`}
+      />
+      <Problem id={`${uid}-name-problem`} message={shown("label")} />
+
+      <FormSection
+        title="Reply markers"
+        hint="When a thread's last reply starts with this text, the card takes that status."
+        addLabel="Add reply marker"
+        onAdd={() => add("replyMarkers", { marker: "", status: "working" })}
+      >
+        {draft.replyMarkers.map((row, index) => (
+          <div key={index} className="flex items-start gap-1.5">
+            <TextCell label={`Reply marker ${index + 1} text`} value={row.marker} onChange={(marker) => edit("replyMarkers", index, { marker })} problem={shown(`replyMarkers.${index}.marker`)} problemId={`${uid}-rm-${index}`} />
+            <StatusSelect label={`Reply marker ${index + 1} status`} value={row.status} onChange={(status) => edit("replyMarkers", index, { status })} />
+            <RemoveButton label={`Remove reply marker ${index + 1}`} onClick={() => remove("replyMarkers", index)} />
+          </div>
+        ))}
+      </FormSection>
+
+      <FormSection
+        title="Skill statuses"
+        hint="When this skill runs, the card takes that status."
+        addLabel="Add skill status"
+        onAdd={() => add("skillStatuses", { skill: "", status: "working" })}
+      >
+        {draft.skillStatuses.map((row, index) => (
+          <div key={index} className="flex items-start gap-1.5">
+            <TextCell label={`Skill status ${index + 1} skill`} value={row.skill} onChange={(skill) => edit("skillStatuses", index, { skill })} problem={shown(`skillStatuses.${index}.skill`)} problemId={`${uid}-ss-${index}`} />
+            <StatusSelect label={`Skill status ${index + 1} status`} value={row.status} onChange={(status) => edit("skillStatuses", index, { status })} />
+            <RemoveButton label={`Remove skill status ${index + 1}`} onClick={() => remove("skillStatuses", index)} />
+          </div>
+        ))}
+      </FormSection>
+
+      <FormSection
+        title="Skill labels"
+        hint="When this skill runs, the card shows the label until another label or a reset replaces it."
+        addLabel="Add skill label"
+        onAdd={() => add("skillLabels", { skill: "", label: "" })}
+      >
+        {draft.skillLabels.map((row, index) => (
+          <div key={index} className="flex flex-wrap items-start gap-1.5">
+            <TextCell label={`Skill label ${index + 1} skill`} value={row.skill} onChange={(skill) => edit("skillLabels", index, { skill })} problem={shown(`skillLabels.${index}.skill`)} problemId={`${uid}-sl-${index}-skill`} />
+            <TextCell label={`Skill label ${index + 1} text`} value={row.label} onChange={(label) => edit("skillLabels", index, { label })} problem={shown(`skillLabels.${index}.label`)} problemId={`${uid}-sl-${index}-label`} />
+            <span
+              aria-hidden
+              className="mt-2 size-2.5 shrink-0 rounded-full border border-border"
+              style={{ background: row.tone ? LABEL_TONE_COLOURS[row.tone] : "transparent" }}
+            />
+            <select
+              aria-label={`Skill label ${index + 1} tone`}
+              value={row.tone ?? ""}
+              onChange={(event) => edit("skillLabels", index, { tone: event.target.value === "" ? undefined : (event.target.value as (typeof LABEL_TONES)[number]) })}
+              className={FIELD}
+            >
+              <option value="">Default tone</option>
+              {LABEL_TONES.map((tone) => (
+                <option key={tone} value={tone}>
+                  {tone[0]!.toUpperCase() + tone.slice(1)}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Switch
+                label={`Skill label ${index + 1} show build progress`}
+                checked={row.progress === "slices"}
+                onChange={(on) => edit("skillLabels", index, { progress: on ? "slices" : undefined })}
+              />
+              Show build progress
+            </span>
+            <RemoveButton label={`Remove skill label ${index + 1}`} onClick={() => remove("skillLabels", index)} />
+          </div>
+        ))}
+      </FormSection>
+
+      <FormSection
+        title="Label resets"
+        hint="When this skill runs, the current label is cleared."
+        addLabel="Add label reset"
+        onAdd={() => add("labelResets", { skill: "" })}
+      >
+        {draft.labelResets.map((row, index) => (
+          <div key={index} className="flex items-start gap-1.5">
+            <TextCell label={`Label reset ${index + 1} skill`} value={row.skill} onChange={(skill) => edit("labelResets", index, { skill })} problem={shown(`labelResets.${index}.skill`)} problemId={`${uid}-lr-${index}`} />
+            <RemoveButton label={`Remove label reset ${index + 1}`} onClick={() => remove("labelResets", index)} />
+          </div>
+        ))}
+      </FormSection>
+
+      {attempted && problems.size > 0 ? (
+        <p role="alert" className="mt-2 text-2xs text-destructive">
+          Not saved: fix the highlighted fields.
+        </p>
+      ) : null}
+      {saveError ? (
+        <p role="alert" className="mt-2 text-2xs text-destructive">
+          {saveError}
+        </p>
+      ) : null}
+      <div className="mt-3 flex gap-2">
+        <button type="button" className={BUTTON} onClick={() => void save()}>
+          Save rule set
+        </button>
+        <button type="button" className={BUTTON} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs text-muted-foreground">Edit as JSON</summary>
+        <textarea
+          aria-label={`${set.label} rule set JSON`}
+          aria-invalid={jsonError !== null}
+          value={json}
+          onChange={(event) => setJson(event.target.value)}
+          rows={10}
+          spellCheck={false}
+          className="mt-1.5 w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
+        />
+        {jsonError ? (
+          <p role="alert" className="mt-1 text-2xs text-destructive">
+            {jsonError}
+          </p>
+        ) : null}
+        <button type="button" className={`${BUTTON} mt-1.5`} onClick={applyJson}>
+          Apply JSON to form
+        </button>
+      </details>
+    </div>
+  );
+}
+
+/** One rule set: accessible on/off switch plus an inline form editor. */
 export function RuleSetRow({
   set,
   onToggle,
@@ -74,26 +380,6 @@ export function RuleSetRow({
   onSave: (next: AttentionRuleSet) => Promise<string | null>;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const open = () => {
-    setDraft(JSON.stringify(set, null, 2));
-    setError(null);
-    setEditing(true);
-  };
-  const save = async () => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(draft);
-    } catch (cause) {
-      setError(`Invalid JSON: ${errorText(cause)}`);
-      return;
-    }
-    const failure = await onSave(parsed as AttentionRuleSet);
-    if (failure) setError(failure);
-    else setEditing(false);
-  };
   const counts = [
     [set.replyMarkers.length, "reply markers"],
     [set.skillStatuses.length, "skill statuses"],
@@ -108,7 +394,7 @@ export function RuleSetRow({
         description={counts.filter(([count]) => count > 0).map(([count, name]) => `${count} ${name}`).join(", ") || "No rules"}
         control={
           <div className="flex items-center gap-2">
-            <button type="button" className={BUTTON} aria-expanded={editing} onClick={editing ? () => setEditing(false) : open}>
+            <button type="button" className={BUTTON} aria-expanded={editing} onClick={() => setEditing(!editing)}>
               {editing ? "Close" : `Edit ${set.label}`}
             </button>
             <Switch label={set.label} checked={set.enabled} onChange={onToggle} />
@@ -116,26 +402,15 @@ export function RuleSetRow({
         }
       />
       {editing ? (
-        <div className="px-4 pb-3">
-          <textarea
-            aria-label={`${set.label} rule set JSON`}
-            aria-invalid={error !== null}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={12}
-            spellCheck={false}
-            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring aria-[invalid=true]:border-destructive"
-          />
-          {error ? <p role="alert" className="mt-1 text-2xs text-destructive">{error}</p> : null}
-          <div className="mt-2 flex gap-2">
-            <button type="button" className={BUTTON} onClick={() => void save()}>
-              Save rule set
-            </button>
-            <button type="button" className={BUTTON} onClick={() => setEditing(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
+        <RuleSetForm
+          set={set}
+          onSave={async (next) => {
+            const failure = await onSave(next);
+            if (!failure) setEditing(false);
+            return failure;
+          }}
+          onCancel={() => setEditing(false)}
+        />
       ) : null}
     </li>
   );
