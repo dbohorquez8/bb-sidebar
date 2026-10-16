@@ -399,7 +399,9 @@ export function ChildThreadList({
         "flex flex-col",
         variant === "header"
           ? "mb-1.5 ml-1.75 mr-1.5 mt-0.5"
-          : "ml-4 mt-1 border-l border-border",
+          // The bottom margin keeps the last child row from running into the
+          // next parent card.
+          : "mb-3 ml-4 mt-1 border-l border-border",
       )}
     >
       {renderRows(visibleThreads, 1, new Set(), parentProjectId)}
