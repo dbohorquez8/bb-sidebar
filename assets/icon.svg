@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+     fill="none" stroke="#000"
+     stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- BB Sidebar: a panel whose left pane holds the thread list.
+       Drawn on the Hugeicons stroke-rounded grid BB uses (24px, 1.5 stroke,
+       round ends). The opaque stroke is intentional: BB renders plugin
+       artwork as a CSS mask and replaces the color with the host's tint. -->
+  <path d="M2 10C2 6.7 2 5.05 3.025 4.025C4.05 3 5.7 3 9 3H15C18.3 3 19.95 3 20.975 4.025C22 5.05 22 6.7 22 10V14C22 17.3 22 18.95 20.975 19.975C19.95 21 18.3 21 15 21H9C5.7 21 4.05 21 3.025 19.975C2 18.95 2 17.3 2 14Z"/>
+  <path d="M9.5 3v18"/>
+  <path d="M5 8h1.5"/>
+  <path d="M5 11.5h1.5"/>
+  <path d="M5 15h1.5"/>
+</svg>

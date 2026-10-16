@@ -21,7 +21,7 @@
     "name": "BB Sidebar",
     "description": "Organizes bb threads with manual and automatic sorting, snooze, and settle actions.",
     "branding": {
-      "icon": "PanelLeft"
+      "icon": "./assets/icon.svg"
     },
     "app": "./app.tsx",
     "server": "./src/server.ts",
@@ -35,6 +35,7 @@
     "productivity"
   ],
   "files": [
+    "assets",
     "dist",
     "src",
     "app.tsx",
