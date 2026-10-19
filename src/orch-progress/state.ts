@@ -3,108 +3,120 @@ import type { OrchGroupEntry, OrchTicket } from "./contract";
 /** A readable group with at least one ticket is what the card renders. */
 export type OrchGroupModel = Extract<OrchGroupEntry, { readable: true }>;
 
-export type TicketKind = "needs-you" | "done" | "merging" | "working" | "stalled" | "failed" | "queued" | "unknown";
+/** The tracker statuses a ticket can show (ready, in progress, in review, done); a ticket is colored by one of these and nothing else. */
+export type TicketKind = "ready" | "in-progress" | "in-review" | "done";
 
 export const KIND_WORD: Record<TicketKind, string> = {
-  "needs-you": "Needs you",
+  ready: "Ready",
+  "in-progress": "In Progress",
+  "in-review": "In Review",
   done: "Done",
-  merging: "Merging",
-  working: "Working",
-  stalled: "Stalled",
-  failed: "Failed",
-  queued: "Queued",
-  unknown: "Unknown",
 };
 
 /** CSS custom property each chip is filled with; null means the neutral muted chip. */
 export const KIND_FILL: Record<TicketKind, string | null> = {
-  "needs-you": "--bb-sidebar-pill-needs-you",
+  ready: null,
+  "in-progress": "--bb-sidebar-pill-progress-working",
+  "in-review": "--bb-sidebar-pill-progress-merging",
   done: "--bb-sidebar-pill-background",
-  merging: "--bb-sidebar-pill-progress-merging",
-  working: "--bb-sidebar-pill-progress-working",
-  stalled: "--bb-sidebar-pill-check",
-  failed: "--bb-sidebar-pill-needs-you",
-  queued: null,
-  unknown: null,
 };
 
 /** Status text tone each chip uses on its pill tint; null means the muted foreground. */
 export const KIND_TEXT: Record<TicketKind, string | null> = {
-  "needs-you": "--bb-sidebar-status-needs-you",
+  ready: null,
+  "in-progress": "--ws-blue-text",
+  "in-review": "--ws-violet-text",
   done: "--bb-sidebar-status-background",
-  merging: "--ws-violet-text",
-  working: "--ws-blue-text",
-  stalled: "--bb-sidebar-status-check",
-  failed: "--bb-sidebar-status-failed",
-  queued: null,
-  unknown: null,
 };
 
 /** The pill tint mixed stronger, so a filled tick reads against the empty (muted) one. */
 export const KIND_TICK: Record<TicketKind, string | null> = {
-  "needs-you": "--bb-sidebar-tick-needs-you",
+  ready: null,
+  "in-progress": "--bb-sidebar-tick-working",
+  "in-review": "--bb-sidebar-tick-merging",
   done: "--bb-sidebar-tick-done",
-  merging: "--bb-sidebar-tick-merging",
-  working: "--bb-sidebar-tick-working",
-  stalled: "--bb-sidebar-tick-check",
-  failed: "--bb-sidebar-tick-needs-you",
-  queued: null,
-  unknown: null,
 };
 
-const WORKING_PHASES = new Set(["starting", "started", "running"]);
-const STALLED_STOPS = new Set(["usage", "go", "waiting-ci", "idle"]);
-const FAILED_STOPS = new Set(["contract", "denied", "hung", "error"]);
+/** Draw order for the summary; the same four statuses, never an attention color. */
+export const KIND_RUN_ORDER: readonly TicketKind[] = ["in-progress", "in-review", "ready", "done"];
 
-/** First matching row of the state table wins (plan 3.5). */
-export function ticketKind(t: OrchTicket): TicketKind {
-  if (t.hasQuestion) return "needs-you";
-  if (t.verification === "verified-done") return "done";
+const WORKING_PHASES = new Set(["starting", "started", "running"]);
+const STALL_NOTES: Record<string, string> = {
+  usage: "stalled: waiting on usage",
+  go: "stalled: waiting on go",
+  "waiting-ci": "stalled: waiting on CI",
+  idle: "stalled: idle",
+  contract: "failed: contract",
+  denied: "failed: denied",
+  hung: "failed: hung",
+  error: "failed: error",
+};
+
+export type TicketStatus = { kind: TicketKind; note: string | null; needsYou: boolean };
+
+/** Status is the tracker status alone; attention (questions, stalls, failures) is a note beside it (plan 3.5). */
+export function ticketStatus(t: OrchTicket): TicketStatus {
   const { phase, stopKind } = t;
-  if (phase === null) return "queued";
-  if (phase === "merging") return "merging";
-  if (WORKING_PHASES.has(phase)) return "working";
-  if (phase === "waiting-usage") return "stalled";
-  if (phase === "setup-failed" || phase === "start-failed") return "failed";
+  const needsYou = t.hasQuestion || (phase === "stopped" && stopKind === "decision");
+  const note = (kind: TicketKind, text: string | null): TicketStatus => ({
+    kind, needsYou, note: needsYou ? "needs you" : text,
+  });
+  if (t.hasQuestion) return note("in-progress", null);
+  if (t.verification === "verified-done") return note("done", null);
+  if (phase === null) return note("ready", null);
+  if (phase === "merging") return note("in-review", null);
+  if (WORKING_PHASES.has(phase)) return note("in-progress", null);
+  if (phase === "waiting-usage") return note("in-progress", STALL_NOTES.usage!);
+  if (phase === "setup-failed") return note("ready", "setup failed");
+  if (phase === "start-failed") return note("ready", "start failed");
   if (phase === "stopped" && stopKind !== null) {
-    if (STALLED_STOPS.has(stopKind)) return "stalled";
-    if (stopKind === "decision") return "needs-you";
-    if (FAILED_STOPS.has(stopKind)) return "failed";
+    if (stopKind === "decision") return note("in-progress", null);
+    const text = STALL_NOTES[stopKind];
+    if (text !== undefined) return note("in-progress", text);
   }
-  return "unknown";
+  return note("ready", null);
 }
 
-export type TicketView = { id: string; kind: TicketKind; word: string; threadId: string | null };
+export function ticketKind(t: OrchTicket): TicketKind {
+  return ticketStatus(t).kind;
+}
 
-/** One row per ticket in ledger order, for the hover list. */
+export type TicketView = { id: string; kind: TicketKind; word: string; note: string | null; needsYou: boolean; label: string; threadId: string | null };
+
+/** One row per ticket in ledger order, for the hover list. `label` is the status word plus its note. */
 export function ticketViews(group: Pick<OrchGroupModel, "tickets">): TicketView[] {
   return group.tickets.map((t) => {
-    const kind = ticketKind(t);
-    return { id: t.id, kind, word: KIND_WORD[kind], threadId: t.threadId };
+    const { kind, note, needsYou } = ticketStatus(t);
+    const word = KIND_WORD[kind];
+    return { id: t.id, kind, word, note, needsYou, label: note === null ? word : `${word} · ${note}`, threadId: t.threadId };
   });
 }
 
-export type ProgressCounts = { total: number; done: number; kinds: Record<TicketKind, number> };
+export type ProgressCounts = { total: number; done: number; needsYou: number; kinds: Record<TicketKind, number> };
 
 export function progressCounts(group: Pick<OrchGroupModel, "tickets">): ProgressCounts {
-  const kinds: Record<TicketKind, number> = {
-    "needs-you": 0, done: 0, merging: 0, working: 0, stalled: 0, failed: 0, queued: 0, unknown: 0,
-  };
-  for (const t of group.tickets) kinds[ticketKind(t)] += 1;
-  return { total: group.tickets.length, done: kinds.done, kinds };
+  const kinds: Record<TicketKind, number> = { ready: 0, "in-progress": 0, "in-review": 0, done: 0 };
+  let needsYou = 0;
+  for (const t of group.tickets) {
+    const s = ticketStatus(t);
+    kinds[s.kind] += 1;
+    if (s.needsYou) needsYou += 1;
+  }
+  return { total: group.tickets.length, done: kinds.done, needsYou, kinds };
 }
 
-const SUMMARY_ORDER: Array<[TicketKind, string]> = [
-  ["needs-you", "needs you"],
-  ["failed", "failed"],
-  ["stalled", "stalled"],
-  ["merging", "merging"],
-  ["working", "working"],
-];
+const SUMMARY_PHRASE: Record<Exclude<TicketKind, "done">, string> = {
+  "in-progress": "in progress",
+  "in-review": "in review",
+  ready: "ready",
+};
 
 export function tooltipSummary(counts: ProgressCounts): string {
   let text = `${counts.done} of ${counts.total} done`;
-  for (const [kind, phrase] of SUMMARY_ORDER) if (counts.kinds[kind] > 0) text += ` · ${counts.kinds[kind]} ${phrase}`;
+  for (const kind of KIND_RUN_ORDER) {
+    if (kind !== "done" && counts.kinds[kind] > 0) text += ` · ${counts.kinds[kind]} ${SUMMARY_PHRASE[kind]}`;
+  }
+  if (counts.needsYou > 0) text += ` · ${counts.needsYou} need you`;
   return text;
 }
 

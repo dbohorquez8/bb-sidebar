@@ -36,9 +36,9 @@ describe("orchestrator title row components", () => {
     render(<OrchTitleRow group={group} />);
     const chips = document.querySelectorAll("[data-orch-chip]");
     expect([...chips].map((chip) => chip.textContent)).toEqual(["WS-1", "WS-2", "WS-3", "WS-4"]);
-    expect([...chips].map((chip) => chip.getAttribute("data-orch-kind"))).toEqual(["done", "working", "failed", "queued"]);
-    expect(screen.getByLabelText("WS-3: Failed")).toBeTruthy();
-    expect(screen.getByTitle("1 of 4 done · 1 failed · 1 working")).toBeTruthy();
+    expect([...chips].map((chip) => chip.getAttribute("data-orch-kind"))).toEqual(["done", "in-progress", "in-progress", "ready"]);
+    expect(screen.getByLabelText("WS-3: In Progress · failed: error")).toBeTruthy();
+    expect(screen.getByTitle("1 of 4 done · 2 in progress · 1 ready")).toBeTruthy();
     expect(screen.getByTestId("orch-progress-count").textContent).toBe("1 / 4");
   });
 

@@ -21,28 +21,20 @@ import {
   type TicketView,
 } from "./state";
 
-/** Pill tint and its status text tone per kind; queued and unknown are the neutral muted chip. */
+/** Pill tint and its status text tone per helm status; ready is the neutral muted chip. */
 const CHIP_CLASS: Record<TicketKind, string> = {
   done: "bg-[color:var(--bb-sidebar-pill-background)] text-[color:var(--bb-sidebar-status-background)]",
-  merging: "bg-[color:var(--bb-sidebar-pill-progress-merging)] text-[color:var(--ws-violet-text)]",
-  working: "bg-[color:var(--bb-sidebar-pill-progress-working)] text-[color:var(--ws-blue-text)]",
-  stalled: "bg-[color:var(--bb-sidebar-pill-check)] text-[color:var(--bb-sidebar-status-check)]",
-  failed: "bg-[color:var(--bb-sidebar-pill-needs-you)] text-[color:var(--bb-sidebar-status-failed)]",
-  "needs-you": "bg-[color:var(--bb-sidebar-pill-needs-you)] text-[color:var(--bb-sidebar-status-needs-you)]",
-  queued: "bg-muted text-muted-foreground",
-  unknown: "bg-muted text-muted-foreground",
+  "in-review": "bg-[color:var(--bb-sidebar-pill-progress-merging)] text-[color:var(--ws-violet-text)]",
+  "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)] text-[color:var(--ws-blue-text)]",
+  ready: "bg-muted text-muted-foreground",
 };
 
-/** The same tints mixed stronger, so a done tick reads against a queued one. */
+/** The same tints mixed stronger, so a done tick reads against a ready one. */
 const TICK_CLASS: Record<TicketKind, string> = {
   done: "bg-[color:var(--bb-sidebar-tick-done)]",
-  merging: "bg-[color:var(--bb-sidebar-tick-merging)]",
-  working: "bg-[color:var(--bb-sidebar-tick-working)]",
-  stalled: "bg-[color:var(--bb-sidebar-tick-check)]",
-  failed: "bg-[color:var(--bb-sidebar-tick-needs-you)]",
-  "needs-you": "bg-[color:var(--bb-sidebar-tick-needs-you)]",
-  queued: "bg-muted",
-  unknown: "bg-muted",
+  "in-review": "bg-[color:var(--bb-sidebar-tick-merging)]",
+  "in-progress": "bg-[color:var(--bb-sidebar-tick-working)]",
+  ready: "bg-muted",
 };
 
 const CHIP_HEIGHT = { height: `${CHIP_HEIGHT_PX}px` };
@@ -55,7 +47,7 @@ export function OrchLabel({ group }: { group: OrchGroupModel }) {
     <span
       data-orch-label={label.kind}
       style={CHIP_HEIGHT}
-      className="flex shrink-0 items-center gap-1 bg-[color:var(--ws-violet-text)]/15 px-1.5 font-mono text-[10px] font-medium leading-none text-[color:var(--ws-violet-text)]"
+      className="flex shrink-0 items-center gap-1 bg-muted px-1.5 font-mono text-[10px] font-medium leading-none text-foreground"
     >
       <EpicGlyph />
       <span className="[text-box:trim-both_cap_alphabetic]">{label.text}</span>
@@ -79,7 +71,7 @@ function OrchHoverList({ group, onOpenThread }: { group: OrchGroupModel; onOpenT
         return (
           <li key={ticket.id} className="flex min-w-0 items-center gap-2 px-2 py-1 text-2xs">
             <span className="shrink-0 font-mono text-foreground">{ticket.id}</span>
-            <span className="shrink-0 text-muted-foreground">{ticket.word}</span>
+            <span className="shrink-0 text-muted-foreground">{ticket.label}</span>
             {thread && ticket.threadId ? (
               <button type="button" className="min-w-0 truncate text-left text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={() => onOpenThread(ticket.threadId!)}>
                 {thread.title}
@@ -106,7 +98,7 @@ function TicketItems({ views, mode }: { views: readonly TicketView[]; mode: "ful
           <span
             key={view.id}
             role="img"
-            aria-label={`${view.id}: ${view.word}`}
+            aria-label={`${view.id}: ${view.label}`}
             data-orch-tick=""
             data-orch-kind={view.kind}
             style={CHIP_HEIGHT}
@@ -116,7 +108,7 @@ function TicketItems({ views, mode }: { views: readonly TicketView[]; mode: "ful
           <span
             key={view.id}
             role="img"
-            aria-label={`${view.id}: ${view.word}`}
+            aria-label={`${view.id}: ${view.label}`}
             data-orch-chip=""
             data-orch-kind={view.kind}
             style={CHIP_HEIGHT}
