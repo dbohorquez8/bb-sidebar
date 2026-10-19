@@ -43,7 +43,7 @@ export function OrchLabel({ group }: { group: OrchGroupModel }) {
     <span
       data-orch-label={label.kind}
       className={cn(
-        "flex h-[18px] shrink-0 items-center gap-1 rounded-full px-1.5 font-mono text-2xs font-medium leading-none",
+        "flex h-[18px] shrink-0 items-center gap-1 px-1.5 font-mono text-2xs font-medium leading-none",
         label.kind === "epic" ? "bg-[color:var(--ws-violet)]/15 text-[color:var(--ws-violet)]" : "bg-muted text-foreground",
       )}
     >
@@ -101,7 +101,7 @@ export function OrchProgressRow({ group }: { group: OrchGroupModel }) {
           <button type="button" title={summary} aria-label={`Orchestrator progress: ${summary}`} className="relative z-10 flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
             <span
               data-testid="orch-progress-track"
-              className="flex h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+              className="flex h-1.5 min-w-0 flex-1 overflow-hidden bg-muted"
               style={ticked ? tickMask(counts.total) : undefined}
             >
               {barRuns(views).map((run) => {
