@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -8,46 +8,56 @@ import { Tooltip } from "../components/Tooltip";
 import { cn } from "../lib/utils";
 import { EpicGlyph } from "./epic-icon";
 import {
-  BAR_TICK_LIMIT,
-  KIND_FILL,
-  barRuns,
+  CHIP_HEIGHT_PX,
+  chipText,
+  chooseRowLayout,
+  numberChipsUnambiguous,
   orchLabel,
   progressCounts,
   ticketViews,
   tooltipSummary,
   type OrchGroupModel,
   type TicketKind,
+  type TicketView,
 } from "./state";
 
-const FILL_CLASS: Record<Exclude<TicketKind, "queued" | "unknown">, string> = {
-  done: "bg-[color:var(--bb-sidebar-pill-background)]",
-  merging: "bg-[color:var(--bb-sidebar-pill-progress-merging)]",
-  working: "bg-[color:var(--bb-sidebar-pill-progress-working)]",
-  stalled: "bg-[color:var(--bb-sidebar-pill-check)]",
-  failed: "bg-[color:var(--bb-sidebar-pill-needs-you)]",
-  "needs-you": "bg-[color:var(--bb-sidebar-pill-needs-you)]",
+/** Pill tint and its status text tone per kind; queued and unknown are the neutral muted chip. */
+const CHIP_CLASS: Record<TicketKind, string> = {
+  done: "bg-[color:var(--bb-sidebar-pill-background)] text-[color:var(--bb-sidebar-status-background)]",
+  merging: "bg-[color:var(--bb-sidebar-pill-progress-merging)] text-[color:var(--ws-violet-text)]",
+  working: "bg-[color:var(--bb-sidebar-pill-progress-working)] text-[color:var(--ws-blue-text)]",
+  stalled: "bg-[color:var(--bb-sidebar-pill-check)] text-[color:var(--bb-sidebar-status-check)]",
+  failed: "bg-[color:var(--bb-sidebar-pill-needs-you)] text-[color:var(--bb-sidebar-status-failed)]",
+  "needs-you": "bg-[color:var(--bb-sidebar-pill-needs-you)] text-[color:var(--bb-sidebar-status-needs-you)]",
+  queued: "bg-muted text-muted-foreground",
+  unknown: "bg-muted text-muted-foreground",
 };
 
-function tickMask(total: number): CSSProperties {
-  const segment = `${100 / total}%`;
-  const gap = `min(3px, max(1px, calc(${segment} * 0.28)))`;
-  const image = `repeating-linear-gradient(90deg, var(--foreground) 0 calc(${segment} - ${gap}), transparent calc(${segment} - ${gap}) ${segment})`;
-  const size = `calc(100% + ${gap}) 100%`;
-  return { maskImage: image, WebkitMaskImage: image, maskSize: size, WebkitMaskSize: size };
-}
+/** The same tints mixed stronger, so a done tick reads against a queued one. */
+const TICK_CLASS: Record<TicketKind, string> = {
+  done: "bg-[color:var(--bb-sidebar-tick-done)]",
+  merging: "bg-[color:var(--bb-sidebar-tick-merging)]",
+  working: "bg-[color:var(--bb-sidebar-tick-working)]",
+  stalled: "bg-[color:var(--bb-sidebar-tick-check)]",
+  failed: "bg-[color:var(--bb-sidebar-tick-needs-you)]",
+  "needs-you": "bg-[color:var(--bb-sidebar-tick-needs-you)]",
+  queued: "bg-muted",
+  unknown: "bg-muted",
+};
 
-/** Epic or plain-ticket chip that replaces a grouped card's title. */
+const CHIP_HEIGHT = { height: `${CHIP_HEIGHT_PX}px` };
+
+/** Epic chip that leads a grouped card's title row; a plain ticket group has no label. */
 export function OrchLabel({ group }: { group: OrchGroupModel }) {
   const label = orchLabel(group);
+  if (label === null) return null;
   return (
     <span
       data-orch-label={label.kind}
-      className={cn(
-        "flex h-[18px] shrink-0 items-center gap-1 px-1.5 font-mono text-2xs font-medium leading-none",
-        label.kind === "epic" ? "bg-[color:var(--ws-violet-text)]/15 text-[color:var(--ws-violet-text)]" : "bg-muted text-foreground",
-      )}
+      style={CHIP_HEIGHT}
+      className="flex shrink-0 items-center gap-1 bg-[color:var(--ws-violet-text)]/15 px-1.5 font-mono text-[10px] font-medium leading-none text-[color:var(--ws-violet-text)]"
     >
-      {label.kind === "epic" ? <EpicGlyph /> : null}
+      <EpicGlyph />
       <span className="[text-box:trim-both_cap_alphabetic]">{label.text}</span>
     </span>
   );
@@ -87,31 +97,91 @@ function ConnectedOrchHoverList({ group, close }: { group: OrchGroupModel; close
   return <OrchHoverList group={group} onOpenThread={(threadId) => { close(); actions.open(threadId, { split: false }); }} />;
 }
 
-/** Segmented ticket-state bar with a keyboard-reachable ledger-order detail list. */
-export function OrchProgressRow({ group }: { group: OrchGroupModel }) {
+function TicketItems({ views, mode }: { views: readonly TicketView[]; mode: "full" | "number" | "tick" }) {
+  const numeric = numberChipsUnambiguous(views.map((v) => v.id));
+  return (
+    <>
+      {views.map((view) =>
+        mode === "tick" ? (
+          <span
+            key={view.id}
+            role="img"
+            aria-label={`${view.id}: ${view.word}`}
+            data-orch-tick=""
+            data-orch-kind={view.kind}
+            style={CHIP_HEIGHT}
+            className={cn("min-w-[2px] max-w-2 flex-1 basis-0", TICK_CLASS[view.kind])}
+          />
+        ) : (
+          <span
+            key={view.id}
+            role="img"
+            aria-label={`${view.id}: ${view.word}`}
+            data-orch-chip=""
+            data-orch-kind={view.kind}
+            style={CHIP_HEIGHT}
+            className={cn("flex shrink-0 items-center px-1 font-mono text-[10px] font-medium leading-none tabular-nums", CHIP_CLASS[view.kind])}
+          >
+            {chipText(view.id, mode, numeric)}
+          </span>
+        ),
+      )}
+    </>
+  );
+}
+
+/** Row width the layout is chosen from; null until the first measurement, never derived from the row's own output. */
+function useRowRoom(rowRef: RefObject<HTMLElement | null>, epicRef: RefObject<HTMLElement | null>): number | null {
+  const [room, setRoom] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (row === null) return;
+    const measure = () => {
+      const width = row.getBoundingClientRect().width;
+      if (width <= 0) return;
+      const epic = epicRef.current?.getBoundingClientRect().width ?? 0;
+      const next = Math.floor(width - (epic > 0 ? epic + 6 : 0));
+      setRoom((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [rowRef, epicRef]);
+  return room;
+}
+
+/** The orchestrator card's title row: epic chip, per-ticket chips or ticks, and the count, with a keyboard-reachable detail list. */
+export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
   const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLButtonElement>(null);
+  const epicRef = useRef<HTMLSpanElement>(null);
   const views = ticketViews(group);
   const counts = progressCounts(group);
   const summary = tooltipSummary(counts);
-  const ticked = counts.total > 0 && counts.total <= BAR_TICK_LIMIT;
+  const room = useRowRoom(rowRef, epicRef);
+  const layout = chooseRowLayout(room, views.map((v) => v.id), counts);
+  const hasEpic = group.epic !== null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip label={summary} side="bottom">
         <PopoverTrigger asChild>
-          <button type="button" title={summary} aria-label={`Orchestrator progress: ${summary}`} className="relative z-10 flex w-full min-w-0 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-            <span
-              data-testid="orch-progress-track"
-              className="flex h-1.5 min-w-0 flex-1 overflow-hidden bg-muted"
-              style={ticked ? tickMask(counts.total) : undefined}
-            >
-              {barRuns(views).map((run) => {
-                const token = KIND_FILL[run.kind];
-                if (token === null) return null;
-                const fillClass = FILL_CLASS[run.kind as keyof typeof FILL_CLASS];
-                return <span key={run.kind} data-testid="orch-progress-run" data-orch-kind={run.kind} className={cn("min-w-1 shrink", fillClass)} style={{ flexBasis: `${run.share * 100}%` }} />;
-              })}
+          <button
+            ref={rowRef}
+            type="button"
+            title={summary}
+            aria-label={`Orchestrator progress: ${summary}`}
+            data-testid="orch-title-row"
+            data-orch-mode={layout.mode}
+            style={CHIP_HEIGHT}
+            className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {hasEpic ? <span ref={epicRef} className="flex shrink-0"><OrchLabel group={group} /></span> : null}
+            <span data-testid="orch-ticket-list" className="flex min-w-0 flex-1 items-center gap-[2px] overflow-hidden">
+              <TicketItems views={views} mode={layout.mode} />
             </span>
-            <OrchCount group={group} />
+            {layout.showCount ? <OrchCount group={group} /> : null}
           </button>
         </PopoverTrigger>
       </Tooltip>

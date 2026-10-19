@@ -45,7 +45,7 @@ import { backgroundWorkCount, shortModelName } from "./attention";
 import { TicketChip } from "./TicketChip";
 import { useThreadModel } from "./ThreadModel";
 import { ThreadContextPercent, useThreadContextUsage } from "./ThreadContext";
-import { OrchCount, OrchLabel, OrchProgressRow } from "./orch-progress/OrchProgress";
+import { OrchCount, OrchLabel, OrchTitleRow } from "./orch-progress/OrchProgress";
 import { useOrchGroup } from "./orch-progress/OrchProgressProvider";
 import "./settle-button.css";
 
@@ -289,7 +289,7 @@ export function ThreadCard({
       )}
     >
       {orchGroup && !isRenaming ? (
-        <OrchLabel group={orchGroup} />
+        <OrchTitleRow group={orchGroup} />
       ) : (
         <>
           {ticket ? <TicketChip ticket={ticket} projectId={thread.projectId} /> : null}
@@ -587,7 +587,6 @@ export function ThreadCard({
               {isVisible ? <ThreadPullRequest threadId={thread.id} /> : null}
               <ThreadContextPercent usage={contextUsage} />
             </div>
-            {orchGroup ? <OrchProgressRow group={orchGroup} /> : null}
             </>
             )}
             {view && view.timeLabel !== null ? (
