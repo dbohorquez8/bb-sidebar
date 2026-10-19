@@ -147,6 +147,9 @@
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-background: color-mix(in oklab, oklch(62% 0.2 155) 18%, var(--sidebar, #f1f2f8));
+  /* Orchestrator progress bar (WS-101): helm hues at the status-pill lightness. */
+  --bb-sidebar-pill-progress-working: color-mix(in oklab, oklch(62% 0.2 242) 18%, var(--sidebar, #f1f2f8));
+  --bb-sidebar-pill-progress-merging: color-mix(in oklab, oklch(62% 0.2 293) 18%, var(--sidebar, #f1f2f8));
 }
 
 .dark {
@@ -210,6 +213,8 @@
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-background: color-mix(in oklab, oklch(62% 0.2 155) 30%, var(--sidebar, #2f313d));
+  --bb-sidebar-pill-progress-working: color-mix(in oklab, oklch(62% 0.2 242) 30%, var(--sidebar, #2f313d));
+  --bb-sidebar-pill-progress-merging: color-mix(in oklab, oklch(62% 0.2 293) 30%, var(--sidebar, #2f313d));
 }
 
 /*

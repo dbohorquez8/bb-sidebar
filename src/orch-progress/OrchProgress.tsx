@@ -20,12 +20,12 @@ import {
 } from "./state";
 
 const FILL_CLASS: Record<Exclude<TicketKind, "queued" | "unknown">, string> = {
-  done: "bg-[color:var(--ws-green-text)]",
-  merging: "bg-[color:var(--ws-violet-text)]",
-  working: "bg-[color:var(--ws-blue-text)]",
-  stalled: "bg-[color:var(--bb-sidebar-status-check)]",
-  failed: "bg-[color:var(--bb-sidebar-status-failed)]",
-  "needs-you": "bg-[color:var(--bb-sidebar-status-needs-you)]",
+  done: "bg-[color:var(--bb-sidebar-pill-background)]",
+  merging: "bg-[color:var(--bb-sidebar-pill-progress-merging)]",
+  working: "bg-[color:var(--bb-sidebar-pill-progress-working)]",
+  stalled: "bg-[color:var(--bb-sidebar-pill-check)]",
+  failed: "bg-[color:var(--bb-sidebar-pill-needs-you)]",
+  "needs-you": "bg-[color:var(--bb-sidebar-pill-needs-you)]",
 };
 
 function tickMask(total: number): CSSProperties {
