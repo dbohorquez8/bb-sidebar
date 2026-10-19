@@ -46,6 +46,8 @@ import {
 import { canPark, configuredSnoozePresetError, hasLiveWork, isTurnInFlight, resolveShelf } from "./lifecycle";
 import { portSnapshotSchema } from "./open-ports";
 import { createPortDiscovery } from "./port-discovery";
+import { createOrchestratorGroups } from "./orch-progress/groups-rpc";
+import { orchGroupEntrySchema } from "./orch-progress/contract";
 import { createThreadPortActions } from "./thread-ports";
 import { createThreadPullRequests } from "./thread-pull-requests";
 import { threadPullRequestSchema } from "./pull-requests";
@@ -412,6 +414,12 @@ export const bbSidebarRpcContract = defineRpcContract({
     input: z.object({}).strict(),
     output: portSnapshotSchema,
   },
+  getOrchestratorGroups: {
+    input: z.object({}).strict(),
+    output: z.object({
+      hosts: z.array(z.object({ hostId: z.string(), groups: z.array(orchGroupEntrySchema) })),
+    }).strict(),
+  },
   getThreadPullRequests: {
     input: threadIdSchema.strict(),
     output: z.object({ pullRequests: z.array(threadPullRequestSchema) }).strict(),
@@ -757,6 +765,7 @@ function iconMimeType(path: string, reported: string): string {
 
 export default async function plugin(bb: BbPluginApi) {
   const getOpenPorts = createPortDiscovery(bb);
+  const { getOrchestratorGroups } = createOrchestratorGroups(bb);
   const threadPortActions = createThreadPortActions(bb);
   const threadPullRequests = createThreadPullRequests(bb);
   const regenerateTitle = createTitleRegenerator(bb);
@@ -1888,6 +1897,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   bb.rpc.register(bbSidebarRpcContract, {
     getOpenPorts,
+    getOrchestratorGroups,
     getThreadPorts: threadPortActions.getThreadPorts,
     getThreadPullRequests: threadPullRequests.getThreadPullRequests,
     async previewSettledCleanup({ threadIds }) {

@@ -51,6 +51,7 @@ import { WorkingSinceContext, useWorkingSince } from "./useWorkingSince";
 import { JumpHintsContext, useJumpHints } from "./JumpHints";
 import { useSidebarSettings } from "./useSidebarSettings";
 import { OpenPortsProvider } from "./OpenPorts";
+import { OrchProgressProvider } from "./orch-progress/OrchProgressProvider";
 import {
   ALL_PROJECTS,
   filterByProject,
@@ -1532,6 +1533,7 @@ export function ThreadInbox({
     <WorkingSinceContext.Provider value={workingSince}>
     <ChildThreadDisplayContext.Provider value={childDisplay}>
     <OpenPortsProvider>
+    <OrchProgressProvider>
     <JumpHintsContext.Provider value={jumpHints}>
       <div ref={jumpHintsRootRef} data-bb-sidebar-root="" className="flex min-h-0 flex-1 flex-col">
         {/* The one control the host has no equivalent for. Everything else in
@@ -1812,6 +1814,7 @@ export function ThreadInbox({
         </div>
       </div>
     </JumpHintsContext.Provider>
+    </OrchProgressProvider>
     </OpenPortsProvider>
     </ChildThreadDisplayContext.Provider>
     </WorkingSinceContext.Provider>
