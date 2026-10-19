@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readlink, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { platform } from "node:os";
+import { homedir, platform } from "node:os";
 import { promisify } from "node:util";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { closeOwnedPortProcesses } from "./close-owned-ports";
+import { readOrchestratorGroups } from "./orch-progress/host-read";
 import { portScanContract, type PortRoot } from "./port-scan-contract";
 import { attribute, parseCwds, parseDockerRows, parseListeners } from "./port-scan";
 import type { OpenPort } from "./open-ports";
@@ -219,6 +220,9 @@ export default experimental_defineHostEntry({
       } catch (error) {
         return { watching: false, error: String(error) };
       }
+    },
+    async readOrchestratorGroups() {
+      return readOrchestratorGroups(process.env, homedir());
     },
     async resolveRoots({ roots }) {
       return { roots: await Promise.all(roots.map(async (root) => ({

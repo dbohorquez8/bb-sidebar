@@ -4,11 +4,13 @@ import { openPortSchema } from "./open-ports";
 import { ownedPortTargetSchema, closePortsResultSchema, portCloseScopeSchema } from "./close-owned-ports";
 import { threadPullRequestSchema } from "./pull-requests";
 import { attentionRulesHostMethods } from "./attention-rules-host-contract";
+import { orchProgressHostMethods } from "./orch-progress/contract";
 
 const rootSchema = z.object({ environmentId: z.string(), path: z.string().min(1) });
 export type PortRoot = z.infer<typeof rootSchema>;
 export const portScanContract = defineRpcContract({
   ...attentionRulesHostMethods,
+  ...orchProgressHostMethods,
   resolveRoots: {
     input: z.object({ roots: z.array(rootSchema).max(10000) }),
     output: z.object({ roots: z.array(z.object({ environmentId: z.string(), path: z.string().min(1).nullable() })) }),
