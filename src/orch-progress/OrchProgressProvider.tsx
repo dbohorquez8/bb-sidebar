@@ -40,6 +40,9 @@ export function OrchProgressProvider({ children }: { children: ReactNode }) {
         const next = mergeReadings(held.current, result);
         held.current = next;
         publish(next);
+      } catch {
+        // A rejected sidebar rpc is not a host reading. Keep the last good
+        // state; only a successful result that omits a host drops its rows.
       } finally {
         inFlight = false;
         if (!disposed && !isHidden()) timer = setTimeout(refresh, 10_000);
