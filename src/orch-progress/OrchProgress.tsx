@@ -98,7 +98,7 @@ export function OrchProgressRow({ group }: { group: OrchGroupModel }) {
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip label={summary} side="bottom">
         <PopoverTrigger asChild>
-          <button type="button" title={summary} aria-label={`Orchestrator progress: ${summary}`} className="relative z-10 flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+          <button type="button" title={summary} aria-label={`Orchestrator progress: ${summary}`} className="relative z-10 flex w-full min-w-0 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
             <span
               data-testid="orch-progress-track"
               className="flex h-1.5 min-w-0 flex-1 overflow-hidden bg-muted"
