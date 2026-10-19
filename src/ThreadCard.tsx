@@ -45,6 +45,8 @@ import { backgroundWorkCount, shortModelName } from "./attention";
 import { TicketChip } from "./TicketChip";
 import { useThreadModel } from "./ThreadModel";
 import { ThreadContextPercent, useThreadContextUsage } from "./ThreadContext";
+import { OrchCount, OrchLabel, OrchProgressRow } from "./orch-progress/OrchProgress";
+import { useOrchGroup } from "./orch-progress/OrchProgressProvider";
 import "./settle-button.css";
 
 /** How long the settle sweep plays before the thread actually moves. */
@@ -211,6 +213,7 @@ export function ThreadCard({
   const model = useThreadModel(thread.id, isVisible, modelRevision);
   const contextUsage = useThreadContextUsage(thread.id, isVisible);
   const shortModel = shortModelName(model);
+  const orchGroup = useOrchGroup(thread);
   // A thread stays folded until everything under it is done; it unfolds at
   // once when it needs you, fails, or just woke.
   const naturalCompact =
@@ -285,14 +288,20 @@ export function ThreadCard({
         isActive && "font-semibold text-foreground",
       )}
     >
-      {ticket ? <TicketChip ticket={ticket} projectId={thread.projectId} /> : null}
-      <InlineThreadTitle
-        thread={thread}
-        editing={isRenaming}
-        onEditingChange={changeRenaming}
-        displayTitle={ticket?.titleRest ?? undefined}
-        className="min-w-0 flex-1 truncate"
-      />
+      {orchGroup && !isRenaming ? (
+        <OrchLabel group={orchGroup} />
+      ) : (
+        <>
+          {ticket ? <TicketChip ticket={ticket} projectId={thread.projectId} /> : null}
+          <InlineThreadTitle
+            thread={thread}
+            editing={isRenaming}
+            onEditingChange={changeRenaming}
+            displayTitle={ticket?.titleRest ?? undefined}
+            className="min-w-0 flex-1 truncate"
+          />
+        </>
+      )}
     </div>
   );
 
@@ -405,16 +414,23 @@ export function ThreadCard({
                       </span>
                     </>
                   ) : null}
-                  <InlineThreadTitle
-                    thread={thread}
-                    editing={isRenaming}
-                    onEditingChange={changeRenaming}
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-foreground",
-                      thread.isUnread && "font-medium",
-                      isActive && "font-semibold",
-                    )}
-                  />
+                  {orchGroup && !isRenaming ? (
+                    <>
+                      <OrchLabel group={orchGroup} />
+                      <OrchCount group={orchGroup} />
+                    </>
+                  ) : (
+                    <InlineThreadTitle
+                      thread={thread}
+                      editing={isRenaming}
+                      onEditingChange={changeRenaming}
+                      className={cn(
+                        "min-w-0 flex-1 truncate text-foreground",
+                        thread.isUnread && "font-medium",
+                        isActive && "font-semibold",
+                      )}
+                    />
+                  )}
                 </span>
                 <span className="pointer-events-none relative flex shrink-0 items-center gap-1.5">
                   <OpenPortsIndicator thread={thread} />
@@ -571,6 +587,7 @@ export function ThreadCard({
               {isVisible ? <ThreadPullRequest threadId={thread.id} /> : null}
               <ThreadContextPercent usage={contextUsage} />
             </div>
+            {orchGroup ? <OrchProgressRow group={orchGroup} /> : null}
             </>
             )}
             {view && view.timeLabel !== null ? (
