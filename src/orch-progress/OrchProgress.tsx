@@ -47,7 +47,7 @@ export function OrchLabel({ group }: { group: OrchGroupModel }) {
     <span
       data-orch-label={label.kind}
       style={CHIP_HEIGHT}
-      className="flex shrink-0 items-center gap-1 bg-muted px-1.5 font-mono text-[10px] font-medium leading-none text-foreground"
+      className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 font-mono text-[10px] font-medium leading-none text-foreground"
     >
       <EpicGlyph />
       <span className="[text-box:trim-both_cap_alphabetic]">{label.text}</span>
@@ -183,7 +183,7 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
             className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             {hasEpic ? <span className="flex shrink-0"><OrchLabel group={group} /></span> : null}
-            <span ref={listRef} data-testid="orch-ticket-list" className="flex min-w-0 flex-1 items-center gap-[2px] overflow-hidden">
+            <span ref={listRef} data-testid="orch-ticket-list" className="flex min-w-0 flex-1 items-center gap-[2px] overflow-hidden rounded-full">
               <TicketItems views={views} forms={layout.forms} />
             </span>
             {layout.showCount ? <OrchCount group={group} /> : null}
