@@ -34,9 +34,9 @@ export const KIND_RUN_ORDER: Record<TicketKind, number> = {
 /** CSS custom property each run is filled with; null means the bare track. */
 export const KIND_FILL: Record<TicketKind, string | null> = {
   "needs-you": "--bb-sidebar-status-needs-you",
-  done: "--ws-green",
-  merging: "--ws-violet",
-  working: "--ws-blue",
+  done: "--ws-green-text",
+  merging: "--ws-violet-text",
+  working: "--ws-blue-text",
   stalled: "--bb-sidebar-status-check",
   failed: "--bb-sidebar-status-failed",
   queued: null,

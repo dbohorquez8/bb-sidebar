@@ -20,9 +20,9 @@ import {
 } from "./state";
 
 const FILL_CLASS: Record<Exclude<TicketKind, "queued" | "unknown">, string> = {
-  done: "bg-[color:var(--ws-green)]",
-  merging: "bg-[color:var(--ws-violet)]",
-  working: "bg-[color:var(--ws-blue)]",
+  done: "bg-[color:var(--ws-green-text)]",
+  merging: "bg-[color:var(--ws-violet-text)]",
+  working: "bg-[color:var(--ws-blue-text)]",
   stalled: "bg-[color:var(--bb-sidebar-status-check)]",
   failed: "bg-[color:var(--bb-sidebar-status-failed)]",
   "needs-you": "bg-[color:var(--bb-sidebar-status-needs-you)]",
@@ -44,7 +44,7 @@ export function OrchLabel({ group }: { group: OrchGroupModel }) {
       data-orch-label={label.kind}
       className={cn(
         "flex h-[18px] shrink-0 items-center gap-1 px-1.5 font-mono text-2xs font-medium leading-none",
-        label.kind === "epic" ? "bg-[color:var(--ws-violet)]/15 text-[color:var(--ws-violet)]" : "bg-muted text-foreground",
+        label.kind === "epic" ? "bg-[color:var(--ws-violet-text)]/15 text-[color:var(--ws-violet-text)]" : "bg-muted text-foreground",
       )}
     >
       {label.kind === "epic" ? <EpicGlyph /> : null}
