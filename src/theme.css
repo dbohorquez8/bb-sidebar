@@ -150,10 +150,6 @@
   /* Orchestrator progress bar (WS-101): helm hues at the status-pill lightness. */
   --bb-sidebar-pill-progress-working: color-mix(in oklab, oklch(62% 0.2 242) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-progress-merging: color-mix(in oklab, oklch(62% 0.2 293) 18%, var(--sidebar, #f1f2f8));
-  /* Orchestrator ticket ticks (WS-101): the pill hues mixed stronger than the chip tint. */
-  --bb-sidebar-tick-done: color-mix(in oklab, oklch(62% 0.2 155) 55%, var(--sidebar, #f1f2f8));
-  --bb-sidebar-tick-merging: color-mix(in oklab, oklch(62% 0.2 293) 55%, var(--sidebar, #f1f2f8));
-  --bb-sidebar-tick-working: color-mix(in oklab, oklch(62% 0.2 242) 55%, var(--sidebar, #f1f2f8));
   --bb-sidebar-tick-check: color-mix(in oklab, oklch(62% 0.2 55) 55%, var(--sidebar, #f1f2f8));
   --bb-sidebar-tick-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 55%, var(--sidebar, #f1f2f8));
 }
@@ -221,10 +217,6 @@
   --bb-sidebar-pill-background: color-mix(in oklab, oklch(62% 0.2 155) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-progress-working: color-mix(in oklab, oklch(62% 0.2 242) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-progress-merging: color-mix(in oklab, oklch(62% 0.2 293) 30%, var(--sidebar, #2f313d));
-  /* Orchestrator ticket ticks (WS-101): the pill hues mixed stronger than the chip tint. */
-  --bb-sidebar-tick-done: color-mix(in oklab, oklch(62% 0.2 155) 60%, var(--sidebar, #2f313d));
-  --bb-sidebar-tick-merging: color-mix(in oklab, oklch(62% 0.2 293) 60%, var(--sidebar, #2f313d));
-  --bb-sidebar-tick-working: color-mix(in oklab, oklch(62% 0.2 242) 60%, var(--sidebar, #2f313d));
   --bb-sidebar-tick-check: color-mix(in oklab, oklch(62% 0.2 55) 60%, var(--sidebar, #2f313d));
   --bb-sidebar-tick-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 60%, var(--sidebar, #2f313d));
 }

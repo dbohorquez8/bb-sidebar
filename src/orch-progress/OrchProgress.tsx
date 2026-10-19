@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -10,7 +10,6 @@ import { EpicGlyph } from "./epic-icon";
 import {
   CHIP_HEIGHT_PX,
   chipText,
-  chooseRowLayout,
   numberChipsUnambiguous,
   orchLabel,
   progressCounts,
@@ -20,21 +19,22 @@ import {
   type TicketKind,
   type TicketView,
 } from "./state";
+import { COUNT_GAP_PX, chooseTicketForms, rowMode, type TicketForm } from "./layout";
 
-/** Pill tint and its status text tone per helm status; ready is the neutral muted chip. */
+/** Pill tint and its status text tone per helm status; ready is the neutral muted chip. Every form (full chip, number chip, tick) fills with this same class. */
 const CHIP_CLASS: Record<TicketKind, string> = {
-  done: "bg-[color:var(--bb-sidebar-pill-background)] text-[color:var(--bb-sidebar-status-background)]",
+  done: "bg-[color:var(--bb-sidebar-pill-background)] text-[color:var(--ws-green-text)]",
   "in-review": "bg-[color:var(--bb-sidebar-pill-progress-merging)] text-[color:var(--ws-violet-text)]",
   "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)] text-[color:var(--ws-blue-text)]",
   ready: "bg-muted text-muted-foreground",
 };
 
-/** The same tints mixed stronger, so a done tick reads against a ready one. */
-const TICK_CLASS: Record<TicketKind, string> = {
-  done: "bg-[color:var(--bb-sidebar-tick-done)]",
-  "in-review": "bg-[color:var(--bb-sidebar-tick-merging)]",
-  "in-progress": "bg-[color:var(--bb-sidebar-tick-working)]",
-  ready: "bg-muted",
+/** A tick keeps the pastel fill and stays readable through a 1px inset edge in the status tone, which never changes the fill. */
+const TICK_EDGE: Record<TicketKind, string> = {
+  done: "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--ws-green-text)_30%,transparent)]",
+  "in-review": "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--ws-violet-text)_30%,transparent)]",
+  "in-progress": "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--ws-blue-text)_30%,transparent)]",
+  ready: "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_25%,transparent)]",
 };
 
 const CHIP_HEIGHT = { height: `${CHIP_HEIGHT_PX}px` };
@@ -89,20 +89,22 @@ function ConnectedOrchHoverList({ group, close }: { group: OrchGroupModel; close
   return <OrchHoverList group={group} onOpenThread={(threadId) => { close(); actions.open(threadId, { split: false }); }} />;
 }
 
-function TicketItems({ views, mode }: { views: readonly TicketView[]; mode: "full" | "number" | "tick" }) {
+function TicketItems({ views, forms }: { views: readonly TicketView[]; forms: readonly TicketForm[] }) {
   const numeric = numberChipsUnambiguous(views.map((v) => v.id));
   return (
     <>
-      {views.map((view) =>
-        mode === "tick" ? (
+      {views.map((view, index) => {
+        const form = forms[index] ?? "tick";
+        return form === "tick" ? (
           <span
             key={view.id}
             role="img"
             aria-label={`${view.id}: ${view.label}`}
             data-orch-tick=""
+            data-orch-form="tick"
             data-orch-kind={view.kind}
             style={CHIP_HEIGHT}
-            className={cn("min-w-[2px] max-w-2 flex-1 basis-0", TICK_CLASS[view.kind])}
+            className={cn("w-1 min-w-[2px] shrink", CHIP_CLASS[view.kind], TICK_EDGE[view.kind])}
           />
         ) : (
           <span
@@ -110,37 +112,43 @@ function TicketItems({ views, mode }: { views: readonly TicketView[]; mode: "ful
             role="img"
             aria-label={`${view.id}: ${view.label}`}
             data-orch-chip=""
+            data-orch-form={form}
             data-orch-kind={view.kind}
             style={CHIP_HEIGHT}
             className={cn("flex shrink-0 items-center px-1 font-mono text-[10px] font-medium leading-none tabular-nums", CHIP_CLASS[view.kind])}
           >
-            {chipText(view.id, mode, numeric)}
+            {chipText(view.id, form, numeric)}
           </span>
-        ),
-      )}
+        );
+      })}
     </>
   );
 }
 
-/** Row width the layout is chosen from; null until the first measurement, never derived from the row's own output. */
-function useRowRoom(rowRef: RefObject<HTMLElement | null>, epicRef: RefObject<HTMLElement | null>): number | null {
+/**
+ * Width the ticket list may use, count included: the list's own width (flex-1, so it never depends on what
+ * the tickets render as) plus the count and its gap when the count is showing. Null until the first measurement.
+ */
+function useListRoom(rowRef: RefObject<HTMLElement | null>, listRef: RefObject<HTMLElement | null>): number | null {
   const [room, setRoom] = useState<number | null>(null);
   useLayoutEffect(() => {
     const row = rowRef.current;
-    if (row === null) return;
+    const list = listRef.current;
+    if (row === null || list === null) return;
     const measure = () => {
-      const width = row.getBoundingClientRect().width;
-      if (width <= 0) return;
-      const epic = epicRef.current?.getBoundingClientRect().width ?? 0;
-      const next = Math.floor(width - (epic > 0 ? epic + 6 : 0));
+      const width = list.getBoundingClientRect().width;
+      if (row.getBoundingClientRect().width <= 0) return;
+      const count = row.querySelector<HTMLElement>("[data-testid=orch-progress-count]");
+      const next = Math.floor(width + (count !== null ? count.getBoundingClientRect().width + COUNT_GAP_PX : 0));
       setRoom((prev) => (prev === next ? prev : next));
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(row);
+    observer.observe(list);
     return () => observer.disconnect();
-  }, [rowRef, epicRef]);
+  }, [rowRef, listRef]);
   return room;
 }
 
@@ -148,12 +156,17 @@ function useRowRoom(rowRef: RefObject<HTMLElement | null>, epicRef: RefObject<HT
 export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
   const [open, setOpen] = useState(false);
   const rowRef = useRef<HTMLButtonElement>(null);
-  const epicRef = useRef<HTMLSpanElement>(null);
+  const listRef = useRef<HTMLSpanElement>(null);
   const views = ticketViews(group);
   const counts = progressCounts(group);
   const summary = tooltipSummary(counts);
-  const room = useRowRoom(rowRef, epicRef);
-  const layout = chooseRowLayout(room, views.map((v) => v.id), counts);
+  const room = useListRoom(rowRef, listRef);
+  const layout = useMemo(
+    () => chooseTicketForms(views.map((v) => ({ id: v.id, kind: v.kind, attention: v.note !== null })), room, counts),
+    // Forms depend on width and on each ticket's id, status and note alone, so a refresh with equal data keeps them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [room, counts.done, counts.total, views.map((v) => `${v.id}|${v.kind}|${v.note ?? ""}`).join(",")],
+  );
   const hasEpic = group.epic !== null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -165,13 +178,13 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
             title={summary}
             aria-label={`Orchestrator progress: ${summary}`}
             data-testid="orch-title-row"
-            data-orch-mode={layout.mode}
+            data-orch-mode={rowMode(layout.forms)}
             style={CHIP_HEIGHT}
             className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            {hasEpic ? <span ref={epicRef} className="flex shrink-0"><OrchLabel group={group} /></span> : null}
-            <span data-testid="orch-ticket-list" className="flex min-w-0 flex-1 items-center gap-[2px] overflow-hidden">
-              <TicketItems views={views} mode={layout.mode} />
+            {hasEpic ? <span className="flex shrink-0"><OrchLabel group={group} /></span> : null}
+            <span ref={listRef} data-testid="orch-ticket-list" className="flex min-w-0 flex-1 items-center gap-[2px] overflow-hidden">
+              <TicketItems views={views} forms={layout.forms} />
             </span>
             {layout.showCount ? <OrchCount group={group} /> : null}
           </button>

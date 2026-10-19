@@ -26,15 +26,7 @@ export const KIND_TEXT: Record<TicketKind, string | null> = {
   ready: null,
   "in-progress": "--ws-blue-text",
   "in-review": "--ws-violet-text",
-  done: "--bb-sidebar-status-background",
-};
-
-/** The pill tint mixed stronger, so a filled tick reads against the empty (muted) one. */
-export const KIND_TICK: Record<TicketKind, string | null> = {
-  ready: null,
-  "in-progress": "--bb-sidebar-tick-working",
-  "in-review": "--bb-sidebar-tick-merging",
-  done: "--bb-sidebar-tick-done",
+  done: "--ws-green-text",
 };
 
 /** Draw order for the summary; the same four statuses, never an attention color. */
@@ -130,12 +122,6 @@ export type TicketMode = "full" | "number" | "tick";
 /** One height for the epic chip, every ticket chip and every tick, so a mode change never moves the row. */
 export const CHIP_HEIGHT_PX = 16;
 
-const CHAR_PX = 6.4;
-const CHIP_PAD_PX = 8;
-const ITEM_GAP_PX = 2;
-const TICK_MIN_PX = 2;
-const COUNT_CHAR_PX = 5.8;
-const COUNT_GAP_PX = 6;
 const ID_SHAPE = /^([A-Za-z]+)-(\d+)$/;
 
 /** Number-only chips need one shared prefix; otherwise a bare number would be ambiguous. */
@@ -154,30 +140,4 @@ export function chipText(id: string, mode: TicketMode, numeric: boolean): string
   if (mode === "tick") return "";
   if (mode === "number" && numeric) return ID_SHAPE.exec(id)![2]!;
   return id;
-}
-
-export function countWidth(counts: Pick<ProgressCounts, "done" | "total">): number {
-  return `${counts.done} / ${counts.total}`.length * COUNT_CHAR_PX + COUNT_GAP_PX;
-}
-
-function listWidth(ids: readonly string[], mode: TicketMode): number {
-  const n = ids.length;
-  if (mode === "tick") return n * TICK_MIN_PX + (n - 1) * ITEM_GAP_PX;
-  const numeric = numberChipsUnambiguous(ids);
-  return ids.reduce((sum, id) => sum + chipText(id, mode, numeric).length * CHAR_PX + CHIP_PAD_PX, 0) + (n - 1) * ITEM_GAP_PX;
-}
-
-/** Without a measurement (first paint, no layout engine) the mode follows list length alone. */
-export function fallbackMode(total: number): TicketMode {
-  return total <= 4 ? "full" : total <= 12 ? "number" : "tick";
-}
-
-export type RowLayout = { mode: TicketMode; showCount: boolean };
-
-/** Widest mode whose list fits the room left of the count; the count shows only if it fits too. */
-export function chooseRowLayout(available: number | null, ids: readonly string[], counts: Pick<ProgressCounts, "done" | "total">): RowLayout {
-  if (available === null || ids.length === 0) return { mode: fallbackMode(ids.length), showCount: true };
-  const modes: TicketMode[] = numberChipsUnambiguous(ids) ? ["full", "number", "tick"] : ["full", "tick"];
-  const mode = modes.find((m) => listWidth(ids, m) <= available) ?? "tick";
-  return { mode, showCount: listWidth(ids, mode) + countWidth(counts) <= available };
 }
