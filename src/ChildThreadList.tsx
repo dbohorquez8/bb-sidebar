@@ -185,7 +185,7 @@ function childStatusBadgeClass(kind: ChildStatusKind | null): string {
     case "working":
       return "bg-[color:var(--bb-sidebar-badge-working-bg)] text-[color:var(--bb-sidebar-badge-working-fg)]";
     case "background":
-      return "bg-[color:var(--bb-sidebar-pill-background)] text-[color:var(--ws-green-text)]";
+      return "bg-[color:var(--bb-sidebar-pill-background)] text-[color:color-mix(in_oklab,var(--ws-green-text)_40%,var(--foreground))]";
     default:
       return "bg-muted text-foreground";
   }
