@@ -19,7 +19,7 @@ import {
   type TicketKind,
   type TicketView,
 } from "./state";
-import { chooseChain, type RowLayout } from "./layout";
+import { TICK_GAP_PX, chooseChain, type RowLayout } from "./layout";
 
 /**
  * Height, radius, padding and type of the ticket chip on an ordinary card (TicketChip.tsx), which the first
@@ -119,7 +119,7 @@ function TicketItems({ views, layout, hasFirstTick }: { views: readonly TicketVi
 }
 
 /**
- * Width the ticket ticks may use, count included: the row minus the first tick, which abuts them. The strip shrink-wraps
+ * Width the ticket ticks may use, count included: the row minus the first tick and the 1px gap after it. The strip shrink-wraps
  * its ticks, so its own width cannot be the budget. Null until the first measurement.
  */
 function useListRoom(rowRef: RefObject<HTMLElement | null>, firstTick: boolean): number | null {
@@ -131,7 +131,7 @@ function useListRoom(rowRef: RefObject<HTMLElement | null>, firstTick: boolean):
       const width = row.getBoundingClientRect().width;
       if (width <= 0) return;
       const epic = row.querySelector<HTMLElement>("[data-orch-label]");
-      const next = Math.floor(width - SUBPIXEL_SLACK_PX - (epic !== null && firstTick ? epic.getBoundingClientRect().width : 0));
+      const next = Math.floor(width - SUBPIXEL_SLACK_PX - (epic !== null && firstTick ? epic.getBoundingClientRect().width + TICK_GAP_PX : 0));
       setRoom((prev) => (prev === next ? prev : next));
     };
     measure();
@@ -173,7 +173,7 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
             style={CHIP_HEIGHT}
             className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            <span data-testid="orch-bar" className="flex min-w-0 items-center">
+            <span data-testid="orch-bar" style={{ columnGap: `${layout.gap}px` }} className="flex min-w-0 items-center">
               {hasFirstTick ? <span className="flex shrink-0"><OrchLabel group={group} joined={views.length > 0} /></span> : null}
               <span data-testid="orch-ticket-list" style={{ ...CHIP_HEIGHT, columnGap: `${layout.gap}px` }} className="flex min-w-0 items-center overflow-hidden">
                 <TicketItems views={views} layout={layout} hasFirstTick={hasFirstTick} />
