@@ -21,11 +21,11 @@ import { BAR_HEIGHT_PX, GROUP_MAX_SHARE, barGapCss, barNaturalPx } from "./layou
 /** Height, radius, padding and type of the ticket chip on an ordinary card (TicketChip.tsx), which the epic or project-code chip copies. A rendered test compares the computed values, so a drift fails. */
 const CHIP_CLASS = "flex h-[18px] shrink-0 whitespace-nowrap items-center gap-1 rounded-full bg-muted px-1.5 font-mono text-2xs font-medium leading-none text-foreground";
 
-/** Segment fill per status: helm's status colors, muted (50% of the color, the rest is the card showing through, so the hue stays and the intensity drops), no text; ready is a quiet track tone like helm's empty segments. */
+/** Segment fill per status: the status colors as the solid `-text` tokens, no transparency, no text; ready is a quiet track tone like helm's empty segments. */
 const SEGMENT_CLASS: Record<TicketKind, string> = {
-  done: "bg-[color:color-mix(in_oklab,var(--ws-green)_50%,transparent)]",
-  "in-review": "bg-[color:color-mix(in_oklab,var(--bb-sidebar-pill-progress-merging)_50%,transparent)]",
-  "in-progress": "bg-[color:color-mix(in_oklab,var(--bb-sidebar-pill-progress-working)_50%,transparent)]",
+  done: "bg-[color:var(--ws-green-text)]",
+  "in-review": "bg-[color:var(--bb-sidebar-pill-progress-merging)]",
+  "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)]",
   ready: "bg-[color:color-mix(in_oklab,var(--foreground)_18%,transparent)]",
 };
 

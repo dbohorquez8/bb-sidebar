@@ -13,12 +13,12 @@ export const KIND_WORD: Record<TicketKind, string> = {
   done: "Done",
 };
 
-/** CSS custom property each bar segment is filled with; null means the quiet track tone. Done reads the bright green directly because the tinted pill token is shared with the Background pill. */
+/** CSS custom property each bar segment is filled with; null means the quiet track tone. Done reads the green text token directly because the tinted pill token is shared with the Background pill. */
 export const KIND_FILL: Record<TicketKind, string | null> = {
   ready: null,
   "in-progress": "--bb-sidebar-pill-progress-working",
   "in-review": "--bb-sidebar-pill-progress-merging",
-  done: "--ws-green",
+  done: "--ws-green-text",
 };
 
 /** Draw order for the summary; the same four statuses, never an attention color. */
