@@ -61,12 +61,6 @@ export function OrchLabel({ group, joined = false }: { group: OrchGroupModel; jo
   );
 }
 
-/** Compact-card count; the full card renders the same count beside its bar. */
-export function OrchCount({ group }: { group: OrchGroupModel }) {
-  const { done, total } = progressCounts(group);
-  return <span data-testid="orch-progress-count" style={CHIP_HEIGHT} className="flex shrink-0 items-center tabular-nums text-xs leading-none text-muted-foreground"><b>{done}</b> / {total}</span>;
-}
-
 function OrchHoverList({ group, onOpenThread }: { group: OrchGroupModel; onOpenThread: (threadId: string) => void }) {
   const { threads } = useSidebarThreads();
   const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
@@ -119,7 +113,7 @@ function TicketItems({ views, layout, hasFirstTick }: { views: readonly TicketVi
 }
 
 /**
- * Width the ticket ticks may use, count included: the row minus the first tick and the 1px gap after it. The strip shrink-wraps
+ * Width the ticket ticks may use: the row minus the first tick and the 1px gap after it. The strip shrink-wraps
  * its ticks, so its own width cannot be the budget. Null until the first measurement.
  */
 function useListRoom(rowRef: RefObject<HTMLElement | null>, firstTick: boolean): number | null {
@@ -143,7 +137,7 @@ function useListRoom(rowRef: RefObject<HTMLElement | null>, firstTick: boolean):
   return room;
 }
 
-/** The orchestrator card's title row: first tick (epic id or project code), chained ticket ticks, and the count, with a keyboard-reachable detail list. */
+/** The orchestrator card's title row: first tick (epic id or project code) and chained ticket ticks, with a keyboard-reachable detail list. */
 export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
   const [open, setOpen] = useState(false);
   const rowRef = useRef<HTMLButtonElement>(null);
@@ -154,10 +148,10 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
   const room = useListRoom(rowRef, hasFirstTick);
   const numeric = numberChipsUnambiguous(views.map((v) => v.id));
   const layout = useMemo(
-    () => chooseChain(views.map((v) => tickText(v.id, numeric)), room, counts),
+    () => chooseChain(views.map((v) => tickText(v.id, numeric)), room),
     // The layout depends on width and on each ticket's id alone, so a refresh with equal data keeps it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [room, counts.done, counts.total, views.map((v) => v.id).join(",")],
+    [room, views.map((v) => v.id).join(",")],
   );
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -171,7 +165,7 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
             data-testid="orch-title-row"
             data-orch-mode={layout.mode}
             style={CHIP_HEIGHT}
-            className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <span data-testid="orch-bar" style={{ columnGap: `${layout.gap}px` }} className="flex min-w-0 items-center">
               {hasFirstTick ? <span className="flex shrink-0"><OrchLabel group={group} joined={views.length > 0} /></span> : null}
@@ -179,7 +173,6 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
                 <TicketItems views={views} layout={layout} hasFirstTick={hasFirstTick} />
               </span>
             </span>
-            {layout.showCount ? <OrchCount group={group} /> : null}
           </button>
         </PopoverTrigger>
       </Tooltip>

@@ -125,7 +125,7 @@ export function orchLabel(group: Pick<OrchGroupModel, "epic" | "tickets">): Orch
   return { kind: "code", text: ID_SHAPE.exec(ids[0]!)![1]! };
 }
 
-/** Same height as the ticket chip on an ordinary card (TicketChip is h-[18px]), for the first tick, every ticket tick and the count. */
+/** Same height as the ticket chip on an ordinary card (TicketChip is h-[18px]), for the first tick and every ticket tick. */
 export const CHIP_HEIGHT_PX = 18;
 
 const ID_SHAPE = /^([A-Za-z]+)-(\d+)$/;
