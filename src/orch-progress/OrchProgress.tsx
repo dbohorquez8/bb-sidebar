@@ -21,11 +21,11 @@ import { BAR_HEIGHT_PX, GROUP_MAX_SHARE, barGapCss, barNaturalPx } from "./layou
 /** Height, radius, padding and type of the ticket chip on an ordinary card (TicketChip.tsx), which the epic or project-code chip copies. A rendered test compares the computed values, so a drift fails. */
 const CHIP_CLASS = "flex h-[18px] shrink-0 whitespace-nowrap items-center gap-1 rounded-full bg-muted px-1.5 font-mono text-2xs font-medium leading-none text-foreground";
 
-/** Segment fill per status: helm's bright status colors, solid, no text; ready is a quiet track tone like helm's empty segments. */
+/** Segment fill per status: helm's status colors, slightly muted (82% of the color, the rest is the card showing through, so the hue stays and the intensity drops), no text; ready is a quiet track tone like helm's empty segments. */
 const SEGMENT_CLASS: Record<TicketKind, string> = {
-  done: "bg-[color:var(--ws-green)]",
-  "in-review": "bg-[color:var(--bb-sidebar-pill-progress-merging)]",
-  "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)]",
+  done: "bg-[color:color-mix(in_oklab,var(--ws-green)_82%,transparent)]",
+  "in-review": "bg-[color:color-mix(in_oklab,var(--bb-sidebar-pill-progress-merging)_82%,transparent)]",
+  "in-progress": "bg-[color:color-mix(in_oklab,var(--bb-sidebar-pill-progress-working)_82%,transparent)]",
   ready: "bg-[color:color-mix(in_oklab,var(--foreground)_18%,transparent)]",
 };
 
@@ -129,7 +129,7 @@ export function OrchTitleRow({ group, children }: { group: OrchGroupModel; child
               className="pointer-events-auto relative z-10 ml-auto grid shrink items-center gap-x-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <OrchBar views={views} />
-              <span data-testid="orch-progress-count" className="shrink-0 whitespace-nowrap text-[11px] leading-none tabular-nums text-muted-foreground">
+              <span data-testid="orch-progress-count" className="shrink-0 whitespace-nowrap text-2xs leading-none tabular-nums text-muted-foreground">
                 <span className="font-semibold text-foreground">{counts.done}</span>
                 {" / "}
                 {counts.total}
