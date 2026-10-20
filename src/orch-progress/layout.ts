@@ -20,18 +20,20 @@ export function barNaturalPx(n: number): number {
 }
 
 /**
- * Whole-pixel layout of `n` segments in a bar `widthPx` wide. The gap is a whole number of pixels, the same for every
- * joint: 2px while every segment keeps its `SEGMENT_MIN_PX` floor, then 1px, then 0px, and it closes for all joints at
- * once. The segment widths are whole pixels too: the room left after the gaps is shared evenly and the remainder is
- * spread one pixel at a time over the leftmost segments, so no two widths differ by more than 1px and the gaps never
- * absorb the rounding. The bar is measured in script (a ResizeObserver) because CSS cannot hand out a remainder.
+ * Whole-pixel layout of `n` equal segments in a bar of at most `widthPx`. Every segment has the same integer width `segment`
+ * and every joint has the same integer `gap`, so nothing can look uneven. The gap is the largest of 2, 1, 0 px that still
+ * lets every segment keep its `SEGMENT_MIN_PX` floor (it closes for all joints at once); the segment is then as wide as the
+ * room allows, up to `SEGMENT_MAX_PX`. The bar's `total` is n * segment + (n - 1) * gap, which may be a few pixels short of
+ * `widthPx`: a slightly shorter bar is preferred to unequal segments. The bar is measured in script (a ResizeObserver)
+ * because CSS cannot hand out whole-pixel widths. Only when the room is under 1px per ticket (a huge list) do the segments
+ * share it as equal fractions of a pixel, so every ticket still keeps a sliver.
  */
-export function segmentLayout(widthPx: number, n: number): { gap: number; widths: number[] } {
-  if (n <= 0) return { gap: 0, widths: [] };
+export function segmentLayout(widthPx: number, n: number): { gap: number; segment: number; total: number } {
+  if (n <= 0) return { gap: 0, segment: 0, total: 0 };
   const width = Math.max(0, Math.floor(widthPx));
-  const gap = n <= 1 ? 0 : Math.min(SEGMENT_GAP_PX, Math.max(0, Math.floor((width - n * SEGMENT_MIN_PX) / (n - 1))));
-  const room = Math.max(0, width - (n - 1) * gap);
-  const base = Math.floor(room / n);
-  const extra = room - base * n;
-  return { gap, widths: Array.from({ length: n }, (_, index) => Math.min(SEGMENT_MAX_PX, base + (index < extra ? 1 : 0))) };
+  if (width < n) return { gap: 0, segment: width / n, total: width };
+  const fit = (gap: number) => Math.min(SEGMENT_MAX_PX, Math.floor((width - (n - 1) * gap) / n));
+  const gap = n <= 1 ? 0 : [SEGMENT_GAP_PX, 1, 0].find((candidate) => candidate === 0 || fit(candidate) >= SEGMENT_MIN_PX) ?? 0;
+  const segment = Math.max(0, fit(gap));
+  return { gap, segment, total: n * segment + (n - 1) * gap };
 }

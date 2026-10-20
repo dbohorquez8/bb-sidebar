@@ -79,8 +79,9 @@ function endRounding(isFirst: boolean, isLast: boolean): string {
 /**
  * The slim bar: one text-free segment per ticket. Its width follows the ticket count, is capped by its group's
  * share of the card, and shrinks when the card is narrow (the thread title shrinks first). The wrapper is measured,
- * and `segmentLayout` gives every segment a whole-pixel width and every joint the same whole-pixel gap, so no gap
- * looks wider than another. Until the first measurement the segments share the room evenly with a 2px gap.
+ * and `segmentLayout` gives every segment the same whole-pixel width and every joint the same whole-pixel gap, so
+ * nothing looks uneven; the bar may end a few pixels short of its room and sits against the count. Until the first
+ * measurement the segments share the room evenly with a 2px gap.
  */
 function OrchBar({ views }: { views: ReturnType<typeof ticketViews> }) {
   const wrapper = useRef<HTMLSpanElement>(null);
@@ -100,15 +101,15 @@ function OrchBar({ views }: { views: ReturnType<typeof ticketViews> }) {
     <span ref={wrapper} aria-hidden="true" style={{ height: `${BAR_HEIGHT_PX}px` }} className="block min-w-0">
       <span
         data-testid="orch-bar"
-        style={{ height: `${BAR_HEIGHT_PX}px`, columnGap: `${layout ? layout.gap : SEGMENT_GAP_PX}px` }}
-        className="flex items-center"
+        style={{ height: `${BAR_HEIGHT_PX}px`, columnGap: `${layout ? layout.gap : SEGMENT_GAP_PX}px`, width: layout ? `${layout.total}px` : undefined }}
+        className={cn("flex items-center", layout && "ml-auto")}
       >
         {views.map((view, index) => (
           <span
             key={view.id}
             data-orch-tick=""
             data-orch-kind={view.kind}
-            style={layout ? { width: `${layout.widths[index]}px` } : undefined}
+            style={layout ? { width: `${layout.segment}px` } : undefined}
             className={cn("h-full min-w-0", layout ? "shrink-0" : "flex-1", SEGMENT_CLASS[view.kind], endRounding(index === 0, index === views.length - 1))}
           />
         ))}
