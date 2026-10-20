@@ -29,6 +29,14 @@ const SEGMENT_CLASS: Record<TicketKind, string> = {
   ready: "bg-[color:color-mix(in_oklab,var(--foreground)_18%,transparent)]",
 };
 
+/** Status text color in the hover tooltip: the same token as the status's segment fill; ready is plain muted text. */
+const STATUS_TEXT_CLASS: Record<TicketKind, string> = {
+  done: "text-[color:var(--bb-sidebar-pill-progress-done)]",
+  "in-review": "text-[color:var(--bb-sidebar-pill-progress-merging)]",
+  "in-progress": "text-[color:var(--bb-sidebar-pill-progress-working)]",
+  ready: "text-muted-foreground",
+};
+
 const CHIP_HEIGHT = { height: `${CHIP_HEIGHT_PX}px` };
 
 /** The epic id (with its glyph), else the project code. */
@@ -63,6 +71,35 @@ function OrchHoverList({ group, onOpenThread }: { group: OrchGroupModel; onOpenT
         );
       })}
     </ul>
+  );
+}
+
+/** A thread title without its leading ticket id ("WS-12: Fix x" becomes "Fix x"), since the row already starts with the id. */
+export function titleWithoutId(title: string, id: string): string {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return title.replace(new RegExp(`^\\s*\\[?${escaped}(?![\\w-])\\]?\\s*[:\\-–—·]?\\s*`, "i"), "").trim();
+}
+
+/** The strip's hover tooltip: the one-line summary, then one row per ticket, `id: thread title`, colored by status (the color is the status; there is no status word). A ticket with no thread shows its id alone. */
+function OrchTooltipContent({ group, summary }: { group: OrchGroupModel; summary: string }) {
+  const { threads } = useSidebarThreads();
+  const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
+  return (
+    <div className="flex max-h-56 flex-col gap-1 overflow-y-auto">
+      <span>{summary}</span>
+      <ul aria-label="Ticket statuses" className="flex flex-col gap-0.5">
+        {ticketViews(group).map((ticket) => {
+          const raw = ticket.threadId ? threadsById.get(ticket.threadId)?.title : undefined;
+          const title = raw ? titleWithoutId(raw, ticket.id) : "";
+          return (
+            <li key={ticket.id} data-orch-tooltip-ticket={ticket.id} data-kind={ticket.kind} className={cn("truncate whitespace-nowrap text-2xs", STATUS_TEXT_CLASS[ticket.kind])}>
+              <span className="font-mono font-medium">{ticket.id}:</span>
+              {title ? ` ${title}` : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -135,7 +172,7 @@ export function OrchTitleRow({ group, children }: { group: OrchGroupModel; child
       <OrchLabel group={group} />
       {children}
       <Popover open={open} onOpenChange={setOpen}>
-        <Tooltip label={summary} side="bottom">
+        <Tooltip label={<OrchTooltipContent group={group} summary={summary} />} side="bottom" className="max-w-80">
           <PopoverTrigger asChild>
             <button
               type="button"

@@ -76,3 +76,15 @@ describe("orchestrator title row components", () => {
     expect(document.querySelectorAll("[data-orch-tick]")).toHaveLength(49);
   });
 });
+
+describe("titleWithoutId", () => {
+  it("drops a leading ticket id and separator, leaves other titles alone", async () => {
+    const { titleWithoutId } = await import("./OrchProgress");
+    expect(titleWithoutId("WS-12: Fix the bar", "WS-12")).toBe("Fix the bar");
+    expect(titleWithoutId("ws-12 - Fix the bar", "WS-12")).toBe("Fix the bar");
+    expect(titleWithoutId("[WS-12] Fix the bar", "WS-12")).toBe("Fix the bar");
+    expect(titleWithoutId("WS-12", "WS-12")).toBe("");
+    expect(titleWithoutId("Fix WS-12 bar", "WS-12")).toBe("Fix WS-12 bar");
+    expect(titleWithoutId("WS-123: other", "WS-12")).toBe("WS-123: other");
+  });
+});
