@@ -9,7 +9,12 @@ const statusSchema = z.enum(["needs-you", "working", "background", "done"]);
 const exactText = z.string().trim().min(1).max(200);
 const identifier = z.string().trim().min(1).max(80).regex(/^[a-z][a-z0-9-]*$/);
 
-const replyMarkerSchema = z.object({ marker: exactText, status: statusSchema }).strict();
+const replyMarkerSchema = z.object({
+  marker: exactText,
+  status: statusSchema,
+  /** "reply-start": matches only at the start of the reply's first line. Absent: "line-start". */
+  position: z.enum(["line-start", "reply-start"]).optional(),
+}).strict();
 const skillStatusSchema = z.object({ skill: exactText, status: statusSchema }).strict();
 const skillLabelSchema = z.object({
   skill: exactText,
@@ -153,11 +158,13 @@ export function evaluateRuleEvent(
     // the longest marker wins within a line and the last matching line wins.
     const normalize = (value: string) => value.replace(/\uFE0F/g, "");
     let status = previous.status;
-    for (const line of event.text.split(/\r?\n/)) {
+    const lines = event.text.split(/\r?\n/);
+    for (const [index, line] of lines.entries()) {
       const text = normalize(line.trimStart());
       let longest = -1;
       for (const set of sets) {
         for (const rule of set.replyMarkers) {
+          if (rule.position === "reply-start" && index !== 0) continue;
           const marker = normalize(rule.marker);
           if (text.startsWith(marker) && marker.length >= longest) {
             longest = marker.length;
