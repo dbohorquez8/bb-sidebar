@@ -59,12 +59,12 @@ describe("orchestrator title row components", () => {
     expect(document.querySelectorAll("[data-orch-tick]")).toHaveLength(4);
   });
 
-  it("puts the chip before the bar, and the bar before the thread title", () => {
+  it("puts the chip first, then the thread title, then the bar and the count at the right edge", () => {
     render(<OrchTitleRow group={group}><span data-testid="title">Orch: epic</span></OrchTitleRow>);
     const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(follows(document.querySelector("[data-orch-label]")!, screen.getByTestId("orch-bar"))).toBe(true);
+    expect(follows(document.querySelector("[data-orch-label]")!, screen.getByTestId("title"))).toBe(true);
+    expect(follows(screen.getByTestId("title"), screen.getByTestId("orch-bar"))).toBe(true);
     expect(follows(screen.getByTestId("orch-bar"), screen.getByTestId("orch-progress-count"))).toBe(true);
-    expect(follows(screen.getByTestId("orch-progress-count"), screen.getByTestId("title"))).toBe(true);
   });
 
   it("keeps one segment per ticket for a very long list", () => {
