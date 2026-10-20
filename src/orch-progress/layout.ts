@@ -3,15 +3,17 @@ import { chipText, numberChipsUnambiguous, type TicketKind } from "./state";
 /** How one ticket is drawn: its full id, its number, or a bare tick. All three share one height. */
 export type TicketForm = "full" | "number" | "tick";
 
-const CHAR_PX = 6.4;
-const CHIP_PAD_PX = 8;
+/** Advance of one 12px monospace character and a segment's horizontal padding (px-1.5 each side). */
+const CHAR_PX = 7.4;
+const CHIP_PAD_PX = 12;
 /** Gap between neighbouring items; the same in every form, so it never changes the budget. */
 export const ITEM_GAP_PX = 2;
 /** Narrowest a tick can render; the budget starts every ticket at this width. */
 export const TICK_MIN_PX = 2;
-const COUNT_CHAR_PX = 5.8;
-/** Space between the ticket list and the count. */
-export const COUNT_GAP_PX = 6;
+const COUNT_CHAR_PX = 6.6;
+/** Space between the epic chip, the strip and the count: the pills' gap-1.5. */
+export const ROW_GAP_PX = 6;
+export const COUNT_GAP_PX = ROW_GAP_PX;
 
 export type LayoutTicket = { id: string; kind: TicketKind; attention: boolean };
 

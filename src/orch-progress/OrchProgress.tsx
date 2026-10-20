@@ -19,7 +19,7 @@ import {
   type TicketKind,
   type TicketView,
 } from "./state";
-import { COUNT_GAP_PX, chooseTicketForms, rowMode, type TicketForm } from "./layout";
+import { ROW_GAP_PX, chooseTicketForms, rowMode, type TicketForm } from "./layout";
 
 /** Pill tint and its status text tone per helm status; ready is the neutral muted chip. Every form (full chip, number chip, tick) fills with this same class. */
 const CHIP_CLASS: Record<TicketKind, string> = {
@@ -37,6 +37,9 @@ const TICK_EDGE: Record<TicketKind, string> = {
   ready: "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_25%,transparent)]",
 };
 
+/** Fractional chip widths can add up to a pixel more than the estimate; the budget leaves this much spare. */
+const SUBPIXEL_SLACK_PX = 2;
+
 const CHIP_HEIGHT = { height: `${CHIP_HEIGHT_PX}px` };
 
 /** Epic chip that leads a grouped card's title row; a plain ticket group has no label. */
@@ -47,7 +50,7 @@ export function OrchLabel({ group }: { group: OrchGroupModel }) {
     <span
       data-orch-label={label.kind}
       style={CHIP_HEIGHT}
-      className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 font-mono text-[10px] font-medium leading-none text-foreground"
+      className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 font-mono text-xs font-medium leading-none text-foreground"
     >
       <EpicGlyph />
       <span className="[text-box:trim-both_cap_alphabetic]">{label.text}</span>
@@ -58,7 +61,7 @@ export function OrchLabel({ group }: { group: OrchGroupModel }) {
 /** Compact-card count; the full card renders the same count beside its bar. */
 export function OrchCount({ group }: { group: OrchGroupModel }) {
   const { done, total } = progressCounts(group);
-  return <span data-testid="orch-progress-count" className="shrink-0 tabular-nums text-2xs text-muted-foreground"><b>{done}</b> / {total}</span>;
+  return <span data-testid="orch-progress-count" style={CHIP_HEIGHT} className="flex shrink-0 items-center tabular-nums text-xs leading-none text-muted-foreground"><b>{done}</b> / {total}</span>;
 }
 
 function OrchHoverList({ group, onOpenThread }: { group: OrchGroupModel; onOpenThread: (threadId: string) => void }) {
@@ -104,7 +107,7 @@ function TicketItems({ views, forms }: { views: readonly TicketView[]; forms: re
             data-orch-form="tick"
             data-orch-kind={view.kind}
             style={CHIP_HEIGHT}
-            className={cn("w-1 min-w-[2px] shrink", CHIP_CLASS[view.kind], TICK_EDGE[view.kind])}
+            className={cn("w-1 min-w-px shrink", CHIP_CLASS[view.kind], TICK_EDGE[view.kind])}
           />
         ) : (
           <span
@@ -115,7 +118,7 @@ function TicketItems({ views, forms }: { views: readonly TicketView[]; forms: re
             data-orch-form={form}
             data-orch-kind={view.kind}
             style={CHIP_HEIGHT}
-            className={cn("flex shrink-0 items-center px-1 font-mono text-[10px] font-medium leading-none tabular-nums", CHIP_CLASS[view.kind])}
+            className={cn("flex shrink-0 items-center px-1.5 font-mono text-xs font-medium leading-none tabular-nums", CHIP_CLASS[view.kind])}
           >
             {chipText(view.id, form, numeric)}
           </span>
@@ -126,29 +129,27 @@ function TicketItems({ views, forms }: { views: readonly TicketView[]; forms: re
 }
 
 /**
- * Width the ticket list may use, count included: the list's own width (flex-1, so it never depends on what
- * the tickets render as) plus the count and its gap when the count is showing. Null until the first measurement.
+ * Width the strip may use, count included: the row minus the epic chip and its gap. The strip shrink-wraps
+ * its tickets, so its own width cannot be the budget. Null until the first measurement.
  */
-function useListRoom(rowRef: RefObject<HTMLElement | null>, listRef: RefObject<HTMLElement | null>): number | null {
+function useListRoom(rowRef: RefObject<HTMLElement | null>, epicGap: boolean): number | null {
   const [room, setRoom] = useState<number | null>(null);
   useLayoutEffect(() => {
     const row = rowRef.current;
-    const list = listRef.current;
-    if (row === null || list === null) return;
+    if (row === null) return;
     const measure = () => {
-      const width = list.getBoundingClientRect().width;
-      if (row.getBoundingClientRect().width <= 0) return;
-      const count = row.querySelector<HTMLElement>("[data-testid=orch-progress-count]");
-      const next = Math.floor(width + (count !== null ? count.getBoundingClientRect().width + COUNT_GAP_PX : 0));
+      const width = row.getBoundingClientRect().width;
+      if (width <= 0) return;
+      const epic = row.querySelector<HTMLElement>("[data-orch-label]");
+      const next = Math.floor(width - SUBPIXEL_SLACK_PX - (epic !== null && epicGap ? epic.getBoundingClientRect().width + ROW_GAP_PX : 0));
       setRoom((prev) => (prev === next ? prev : next));
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     observer.observe(row);
-    observer.observe(list);
     return () => observer.disconnect();
-  }, [rowRef, listRef]);
+  }, [rowRef, epicGap]);
   return room;
 }
 
@@ -156,18 +157,17 @@ function useListRoom(rowRef: RefObject<HTMLElement | null>, listRef: RefObject<H
 export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
   const [open, setOpen] = useState(false);
   const rowRef = useRef<HTMLButtonElement>(null);
-  const listRef = useRef<HTMLSpanElement>(null);
   const views = ticketViews(group);
   const counts = progressCounts(group);
   const summary = tooltipSummary(counts);
-  const room = useListRoom(rowRef, listRef);
+  const hasEpic = group.epic !== null;
+  const room = useListRoom(rowRef, hasEpic);
   const layout = useMemo(
     () => chooseTicketForms(views.map((v) => ({ id: v.id, kind: v.kind, attention: v.note !== null })), room, counts),
     // Forms depend on width and on each ticket's id, status and note alone, so a refresh with equal data keeps them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [room, counts.done, counts.total, views.map((v) => `${v.id}|${v.kind}|${v.note ?? ""}`).join(",")],
   );
-  const hasEpic = group.epic !== null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip label={summary} side="bottom">
@@ -183,7 +183,7 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
             className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             {hasEpic ? <span className="flex shrink-0"><OrchLabel group={group} /></span> : null}
-            <span ref={listRef} data-testid="orch-ticket-list" className="flex min-w-0 flex-1 items-center gap-[2px] overflow-hidden rounded-full">
+            <span data-testid="orch-ticket-list" style={CHIP_HEIGHT} className="flex min-w-0 items-center gap-[2px] overflow-hidden rounded-full">
               <TicketItems views={views} forms={layout.forms} />
             </span>
             {layout.showCount ? <OrchCount group={group} /> : null}

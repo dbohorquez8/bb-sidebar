@@ -120,7 +120,7 @@ export function orchLabel(group: Pick<OrchGroupModel, "epic">): { kind: "epic"; 
 export type TicketMode = "full" | "number" | "tick";
 
 /** One height for the epic chip, every ticket chip and every tick, so a mode change never moves the row. */
-export const CHIP_HEIGHT_PX = 16;
+export const CHIP_HEIGHT_PX = 18;
 
 const ID_SHAPE = /^([A-Za-z]+)-(\d+)$/;
 
