@@ -45,9 +45,14 @@ describe("orchestrator title row components", () => {
     expect([...ticks].map((tick) => tick.textContent)).toEqual(["1", "2", "3", "4"]);
     expect([...ticks].map((tick) => tick.getAttribute("data-orch-kind"))).toEqual(["done", "in-progress", "in-progress", "ready"]);
     expect(screen.getByLabelText("WS-3: In Progress · failed: error")).toBeTruthy();
-    expect(screen.getByTitle("1 of 4 done · 2 in progress · 1 ready")).toBeTruthy();
+    expect(screen.getByLabelText("Orchestrator progress: 1 of 4 done · 2 in progress · 1 ready")).toBeTruthy();
     expect(screen.queryByTestId("orch-progress-count")).toBeNull();
     expect(screen.getByTestId("orch-title-row").textContent).not.toMatch(/\d+ \/ \d+/);
+  });
+
+  it("carries no native title anywhere in the strip, so only the one summary tooltip can show", () => {
+    const { container } = render(<OrchTitleRow group={group} />);
+    expect(container.querySelectorAll("[title]")).toHaveLength(0);
   });
 
   it("leads with the project code when there is no epic, and never a 'first id +' label", () => {

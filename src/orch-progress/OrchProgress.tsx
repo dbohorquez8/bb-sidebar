@@ -160,7 +160,6 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
           <button
             ref={rowRef}
             type="button"
-            title={summary}
             aria-label={`Orchestrator progress: ${summary}`}
             data-testid="orch-title-row"
             data-orch-mode={layout.mode}
