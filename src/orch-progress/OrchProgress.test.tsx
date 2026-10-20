@@ -39,15 +39,13 @@ describe("orchestrator title row components", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("chains one status-coloured tick per ticket showing only its number, with a worded label and no count chip per tick", () => {
+  it("draws one text-free segment per ticket, with the done / total count beside the bar and the summary as the only label", () => {
     render(<OrchTitleRow group={group} />);
     const ticks = document.querySelectorAll("[data-orch-tick]");
-    expect([...ticks].map((tick) => tick.textContent)).toEqual(["1", "2", "3", "4"]);
+    expect([...ticks].map((tick) => tick.textContent)).toEqual(["", "", "", ""]);
     expect([...ticks].map((tick) => tick.getAttribute("data-orch-kind"))).toEqual(["done", "in-progress", "in-progress", "ready"]);
-    expect(screen.getByLabelText("WS-3: In Progress · failed: error")).toBeTruthy();
     expect(screen.getByLabelText("Orchestrator progress: 1 of 4 done · 2 in progress · 1 ready")).toBeTruthy();
-    expect(screen.queryByTestId("orch-progress-count")).toBeNull();
-    expect(screen.getByTestId("orch-title-row").textContent).not.toMatch(/\d+ \/ \d+/);
+    expect(screen.getByTestId("orch-progress-count").textContent).toBe("1 / 4");
   });
 
   it("carries no native title anywhere in the strip, so only the one summary tooltip can show", () => {
@@ -55,28 +53,26 @@ describe("orchestrator title row components", () => {
     expect(container.querySelectorAll("[title]")).toHaveLength(0);
   });
 
-  it("leads with the project code when there is no epic, and never a 'first id +' label", () => {
+  it("leads with the project code when there is no epic", () => {
     render(<OrchTitleRow group={{ ...group, epic: null }} />);
     expect(document.querySelector("[data-orch-label]")?.textContent).toBe("WS");
-    expect(screen.queryByText("WS-1+")).toBeNull();
     expect(document.querySelectorAll("[data-orch-tick]")).toHaveLength(4);
   });
 
-  it("puts the first tick before the ticket ticks", () => {
-    render(<OrchTitleRow group={group} />);
-    const first = document.querySelector("[data-orch-label]")!;
-    const next = document.querySelector("[data-orch-tick]")!;
-    expect(first.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  it("puts the chip before the bar, and the bar before the thread title", () => {
+    render(<OrchTitleRow group={group}><span data-testid="title">Orch: epic</span></OrchTitleRow>);
+    const follows = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(document.querySelector("[data-orch-label]")!, screen.getByTestId("orch-bar"))).toBe(true);
+    expect(follows(screen.getByTestId("orch-bar"), screen.getByTestId("orch-progress-count"))).toBe(true);
+    expect(follows(screen.getByTestId("orch-progress-count"), screen.getByTestId("title"))).toBe(true);
   });
 
-  it("narrows a long unmeasured list, one empty tick per ticket", () => {
+  it("keeps one segment per ticket for a very long list", () => {
     const large = { ...group, tickets: Array.from({ length: 49 }, (_, index) => ({
       id: `WS-${index}`, phase: "running", stopKind: null, hasQuestion: false,
       verification: null, threadId: null,
     })) };
     render(<OrchTitleRow group={large} />);
-    const ticks = [...document.querySelectorAll("[data-orch-tick]")];
-    expect(ticks).toHaveLength(49);
-    expect(ticks.every((tick) => tick.getAttribute("data-orch-form") === "narrow" && tick.textContent === "")).toBe(true);
+    expect(document.querySelectorAll("[data-orch-tick]")).toHaveLength(49);
   });
 });

@@ -45,7 +45,7 @@ import { backgroundWorkCount, shortModelName } from "./attention";
 import { TicketChip } from "./TicketChip";
 import { useThreadModel } from "./ThreadModel";
 import { ThreadContextPercent, useThreadContextUsage } from "./ThreadContext";
-import { OrchLabel, OrchTitleRow } from "./orch-progress/OrchProgress";
+import { OrchTitleRow } from "./orch-progress/OrchProgress";
 import { useOrchGroup } from "./orch-progress/OrchProgressProvider";
 import "./settle-button.css";
 
@@ -289,7 +289,14 @@ export function ThreadCard({
       )}
     >
       {orchGroup && !isRenaming ? (
-        <OrchTitleRow group={orchGroup} />
+        <OrchTitleRow group={orchGroup}>
+          <InlineThreadTitle
+            thread={thread}
+            editing={isRenaming}
+            onEditingChange={changeRenaming}
+            className="min-w-12 flex-1 truncate"
+          />
+        </OrchTitleRow>
       ) : (
         <>
           {ticket ? <TicketChip ticket={ticket} projectId={thread.projectId} /> : null}
@@ -415,7 +422,18 @@ export function ThreadCard({
                     </>
                   ) : null}
                   {orchGroup && !isRenaming ? (
-                    <OrchLabel group={orchGroup} />
+                    <OrchTitleRow group={orchGroup}>
+                      <InlineThreadTitle
+                        thread={thread}
+                        editing={isRenaming}
+                        onEditingChange={changeRenaming}
+                        className={cn(
+                          "min-w-12 flex-1 truncate text-foreground",
+                          thread.isUnread && "font-medium",
+                          isActive && "font-semibold",
+                        )}
+                      />
+                    </OrchTitleRow>
                   ) : (
                     <InlineThreadTitle
                       thread={thread}

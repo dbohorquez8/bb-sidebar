@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useState, type ReactNode } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -9,52 +9,34 @@ import { cn } from "../lib/utils";
 import { EpicGlyph } from "./epic-icon";
 import {
   CHIP_HEIGHT_PX,
-  numberChipsUnambiguous,
   orchLabel,
   progressCounts,
   ticketViews,
-  tickText,
   tooltipSummary,
   type OrchGroupModel,
   type TicketKind,
-  type TicketView,
 } from "./state";
-import { TICK_GAP_PX, chooseChain, type RowLayout } from "./layout";
+import { BAR_HEIGHT_PX, barLayout } from "./layout";
 
-/**
- * Height, radius, padding and type of the ticket chip on an ordinary card (TicketChip.tsx), which the first
- * tick and every ticket tick copy. A rendered test (AC-35) compares the computed values, so a drift fails.
- * The end rounding is applied per position (see `endRounding`), so the ticks read as one progress bar.
- */
-const TICKET_PILL_CLASS = "flex h-[18px] shrink-0 items-center px-1.5 font-mono text-2xs font-medium leading-none";
+/** Height, radius, padding and type of the ticket chip on an ordinary card (TicketChip.tsx), which the epic or project-code chip copies. A rendered test compares the computed values, so a drift fails. */
+const CHIP_CLASS = "flex h-[18px] shrink-0 whitespace-nowrap items-center gap-1 rounded-full bg-muted px-1.5 font-mono text-2xs font-medium leading-none text-foreground";
 
-/** Pill tint and its status text tone per helm status; ready is the neutral muted chip. The same fill in every layout, chained or narrowed. */
-const CHIP_CLASS: Record<TicketKind, string> = {
-  done: "bg-[color:var(--bb-sidebar-pill-background)] text-[color:color-mix(in_oklab,var(--ws-green-text)_40%,var(--foreground))]",
-  "in-review": "bg-[color:var(--bb-sidebar-pill-progress-merging)] text-[color:var(--ws-violet-text)]",
-  "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)] text-[color:color-mix(in_oklab,var(--ws-blue-text)_40%,var(--foreground))]",
-  ready: "bg-muted text-muted-foreground",
+/** Segment fill per status: helm's bright status colors, solid, no text; ready is a quiet track tone like helm's empty segments. */
+const SEGMENT_CLASS: Record<TicketKind, string> = {
+  done: "bg-[color:var(--ws-green)]",
+  "in-review": "bg-[color:var(--bb-sidebar-pill-progress-merging)]",
+  "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)]",
+  ready: "bg-[color:color-mix(in_oklab,var(--foreground)_18%,transparent)]",
 };
-
-/** Only the bar's two outer ends are rounded, fully like the ticket chip; every inner joint is square. */
-function endRounding(isFirst: boolean, isLast: boolean): string {
-  return cn(isFirst ? "rounded-l-full" : "rounded-l-none", isLast ? "rounded-r-full" : "rounded-r-none");
-}
-
-/** Fractional chip widths can add up to a pixel more than the estimate; the budget leaves this much spare. */
-const SUBPIXEL_SLACK_PX = 2;
 
 const CHIP_HEIGHT = { height: `${CHIP_HEIGHT_PX}px` };
 
-/** First tick of a grouped card's title row: the epic id (with its glyph), else the project code. `joined` makes it the left end of the bar (square right end). */
-export function OrchLabel({ group, joined = false }: { group: OrchGroupModel; joined?: boolean }) {
+/** The epic id (with its glyph), else the project code. */
+export function OrchLabel({ group }: { group: OrchGroupModel }) {
   const label = orchLabel(group);
   if (label === null) return null;
   return (
-    <span
-      data-orch-label={label.kind}
-      className={cn(TICKET_PILL_CLASS, endRounding(true, !joined), "gap-1 bg-muted text-foreground")}
-    >
+    <span data-orch-label={label.kind} className={CHIP_CLASS}>
       {label.kind === "epic" ? <EpicGlyph /> : null}
       <span className="[text-box:trim-both_cap_alphabetic]">{label.text}</span>
     </span>
@@ -89,95 +71,74 @@ function ConnectedOrchHoverList({ group, close }: { group: OrchGroupModel; close
   return <OrchHoverList group={group} onOpenThread={(threadId) => { close(); actions.open(threadId, { split: false }); }} />;
 }
 
-function TicketItems({ views, layout, hasFirstTick }: { views: readonly TicketView[]; layout: RowLayout; hasFirstTick: boolean }) {
-  const numeric = numberChipsUnambiguous(views.map((v) => v.id));
-  const narrow = layout.mode === "narrow";
+/** Only the bar's two outer ends are rounded, fully; every inner joint is square. */
+function endRounding(isFirst: boolean, isLast: boolean): string {
+  return cn(isFirst ? "rounded-l-full" : "rounded-l-none", isLast ? "rounded-r-full" : "rounded-r-none");
+}
+
+/**
+ * The slim bar: one text-free segment per ticket. The bar's width follows the ticket count up to `BAR_MAX_PX`
+ * and shrinks (segments share it down to a floor) when the card is narrow; the thread title shrinks first.
+ */
+function OrchBar({ views, gap }: { views: ReturnType<typeof ticketViews>; gap: number }) {
   return (
-    <>
+    <span
+      data-testid="orch-bar"
+      aria-hidden="true"
+      style={{ height: `${BAR_HEIGHT_PX}px`, columnGap: `${gap}px` }}
+      className="flex min-w-0 items-center"
+    >
       {views.map((view, index) => (
         <span
           key={view.id}
-          role="img"
-          aria-label={`${view.id}: ${view.label}`}
           data-orch-tick=""
-          data-orch-form={layout.mode}
           data-orch-kind={view.kind}
-          style={narrow ? { width: `${layout.tickPx}px`, paddingInline: 0 } : undefined}
-          className={cn(TICKET_PILL_CLASS, CHIP_CLASS[view.kind], endRounding(index === 0 && !hasFirstTick, index === views.length - 1))}
-        >
-          {narrow ? null : <span className="[text-box:trim-both_cap_alphabetic]">{tickText(view.id, numeric)}</span>}
-        </span>
+          className={cn("h-full min-w-0 flex-1", SEGMENT_CLASS[view.kind], endRounding(index === 0, index === views.length - 1))}
+        />
       ))}
-    </>
+    </span>
   );
 }
 
 /**
- * Width the ticket ticks may use: the row minus the first tick and the 1px gap after it. The strip shrink-wraps
- * its ticks, so its own width cannot be the budget. Null until the first measurement.
+ * The orchestrator card's title line: the chip, slim bar and done / total count as one group, then the thread
+ * title (`children`), which truncates first. The group opens a keyboard-reachable ticket detail list.
  */
-function useListRoom(rowRef: RefObject<HTMLElement | null>, firstTick: boolean): number | null {
-  const [room, setRoom] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const row = rowRef.current;
-    if (row === null) return;
-    const measure = () => {
-      const width = row.getBoundingClientRect().width;
-      if (width <= 0) return;
-      const epic = row.querySelector<HTMLElement>("[data-orch-label]");
-      const next = Math.floor(width - SUBPIXEL_SLACK_PX - (epic !== null && firstTick ? epic.getBoundingClientRect().width + TICK_GAP_PX : 0));
-      setRoom((prev) => (prev === next ? prev : next));
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(row);
-    return () => observer.disconnect();
-  }, [rowRef, firstTick]);
-  return room;
-}
-
-/** The orchestrator card's title row: first tick (epic id or project code) and chained ticket ticks, with a keyboard-reachable detail list. */
-export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
+export function OrchTitleRow({ group, children }: { group: OrchGroupModel; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const rowRef = useRef<HTMLButtonElement>(null);
   const views = ticketViews(group);
   const counts = progressCounts(group);
   const summary = tooltipSummary(counts);
-  const hasFirstTick = orchLabel(group) !== null;
-  const room = useListRoom(rowRef, hasFirstTick);
-  const numeric = numberChipsUnambiguous(views.map((v) => v.id));
-  const layout = useMemo(
-    () => chooseChain(views.map((v) => tickText(v.id, numeric)), room),
-    // The layout depends on width and on each ticket's id alone, so a refresh with equal data keeps it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [room, views.map((v) => v.id).join(",")],
-  );
+  const { gap, naturalPx, minPx } = barLayout(views.length);
+  // A grid, so the group's intrinsic width runs from the bar's floor to its natural width and the title line can shrink it.
+  const columns = `${orchLabel(group) === null ? "" : "auto "}minmax(${minPx}px, ${naturalPx}px) auto`;
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip label={summary} side="bottom">
-        <PopoverTrigger asChild>
-          <button
-            ref={rowRef}
-            type="button"
-            aria-label={`Orchestrator progress: ${summary}`}
-            data-testid="orch-title-row"
-            data-orch-mode={layout.mode}
-            style={CHIP_HEIGHT}
-            className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <span data-testid="orch-bar" style={{ columnGap: `${layout.gap}px` }} className="flex min-w-0 items-center">
-              {hasFirstTick ? <span className="flex shrink-0"><OrchLabel group={group} joined={views.length > 0} /></span> : null}
-              <span data-testid="orch-ticket-list" style={{ ...CHIP_HEIGHT, columnGap: `${layout.gap}px` }} className="flex min-w-0 items-center overflow-hidden">
-                <TicketItems views={views} layout={layout} hasFirstTick={hasFirstTick} />
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <Tooltip label={summary} side="bottom">
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              aria-label={`Orchestrator progress: ${summary}`}
+              data-testid="orch-title-row"
+              style={{ ...CHIP_HEIGHT, gridTemplateColumns: columns }}
+              className="pointer-events-auto relative z-10 grid shrink items-center gap-x-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <OrchLabel group={group} />
+              <OrchBar views={views} gap={gap} />
+              <span data-testid="orch-progress-count" className="shrink-0 whitespace-nowrap text-[11px] leading-none tabular-nums text-muted-foreground">
+                <span className="font-semibold text-foreground">{counts.done}</span>
+                {" / "}
+                {counts.total}
               </span>
-            </span>
-          </button>
-        </PopoverTrigger>
-      </Tooltip>
-      <PopoverContent role="region" aria-label="Orchestrator ticket details" align="start" side="bottom" sideOffset={6} className="w-auto p-0">
-        <ConnectedOrchHoverList group={group} close={() => setOpen(false)} />
-      </PopoverContent>
-    </Popover>
+            </button>
+          </PopoverTrigger>
+        </Tooltip>
+        <PopoverContent role="region" aria-label="Orchestrator ticket details" align="start" side="bottom" sideOffset={6} className="w-auto p-0">
+          <ConnectedOrchHoverList group={group} close={() => setOpen(false)} />
+        </PopoverContent>
+      </Popover>
+      {children}
+    </>
   );
 }

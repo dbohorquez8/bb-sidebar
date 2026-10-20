@@ -147,9 +147,9 @@
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-background: color-mix(in oklab, oklch(85% 0.1 155) 30%, var(--sidebar, #f1f2f8));
-  /* Orchestrator progress bar (WS-101): helm hues at the status-pill lightness. */
-  --bb-sidebar-pill-progress-working: color-mix(in oklab, oklch(85% 0.1 242) 30%, var(--sidebar, #f1f2f8));
-  --bb-sidebar-pill-progress-merging: color-mix(in oklab, oklch(62% 0.2 293) 18%, var(--sidebar, #f1f2f8));
+  /* Orchestrator progress bar (WS-101): helm's bright status colors, solid segment fills (Done uses --ws-green, the shared pill token stays tinted). */
+  --bb-sidebar-pill-progress-working: var(--ws-blue);
+  --bb-sidebar-pill-progress-merging: var(--ws-violet);
   --bb-sidebar-tick-check: color-mix(in oklab, oklch(62% 0.2 55) 55%, var(--sidebar, #f1f2f8));
   --bb-sidebar-tick-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 55%, var(--sidebar, #f1f2f8));
 }
@@ -215,8 +215,8 @@
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-background: color-mix(in oklab, oklch(68% 0.12 155) 50%, var(--sidebar, #2f313d));
-  --bb-sidebar-pill-progress-working: color-mix(in oklab, oklch(68% 0.12 242) 50%, var(--sidebar, #2f313d));
-  --bb-sidebar-pill-progress-merging: color-mix(in oklab, oklch(62% 0.2 293) 30%, var(--sidebar, #2f313d));
+  --bb-sidebar-pill-progress-working: var(--ws-blue);
+  --bb-sidebar-pill-progress-merging: var(--ws-violet);
   --bb-sidebar-tick-check: color-mix(in oklab, oklch(62% 0.2 55) 60%, var(--sidebar, #2f313d));
   --bb-sidebar-tick-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 60%, var(--sidebar, #2f313d));
 }

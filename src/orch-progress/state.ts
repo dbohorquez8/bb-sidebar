@@ -13,20 +13,12 @@ export const KIND_WORD: Record<TicketKind, string> = {
   done: "Done",
 };
 
-/** CSS custom property each chip is filled with; null means the neutral muted chip. */
+/** CSS custom property each bar segment is filled with; null means the quiet track tone. Done reads the bright green directly because the tinted pill token is shared with the Background pill. */
 export const KIND_FILL: Record<TicketKind, string | null> = {
   ready: null,
   "in-progress": "--bb-sidebar-pill-progress-working",
   "in-review": "--bb-sidebar-pill-progress-merging",
-  done: "--bb-sidebar-pill-background",
-};
-
-/** Status text tone each chip uses on its pill tint; null means the muted foreground. */
-export const KIND_TEXT: Record<TicketKind, string | null> = {
-  ready: null,
-  "in-progress": "--ws-blue-text",
-  "in-review": "--ws-violet-text",
-  done: "--ws-green-text",
+  done: "--ws-green",
 };
 
 /** Draw order for the summary; the same four statuses, never an attention color. */
@@ -115,7 +107,7 @@ export function tooltipSummary(counts: ProgressCounts): string {
 export type OrchLabelModel = { kind: "epic" | "code"; text: string };
 
 /**
- * Text of the strip's first tick: the epic id as recorded, else the project code (the ticket-id prefix
+ * Text of the strip's chip: the epic id as recorded, else the project code (the ticket-id prefix
  * the tickets share), else nothing when the tickets mix prefixes and no single code names them.
  */
 export function orchLabel(group: Pick<OrchGroupModel, "epic" | "tickets">): OrchLabelModel | null {
@@ -125,12 +117,12 @@ export function orchLabel(group: Pick<OrchGroupModel, "epic" | "tickets">): Orch
   return { kind: "code", text: ID_SHAPE.exec(ids[0]!)![1]! };
 }
 
-/** Same height as the ticket chip on an ordinary card (TicketChip is h-[18px]), for the first tick and every ticket tick. */
+/** Same height as the ticket chip on an ordinary card (TicketChip is h-[18px]), for the epic or project-code chip. */
 export const CHIP_HEIGHT_PX = 18;
 
 const ID_SHAPE = /^([A-Za-z]+)-(\d+)$/;
 
-/** Number-only ticks need one shared prefix; otherwise a bare number would be ambiguous. */
+/** True when every id has the same prefix, so one project code can name the group. */
 export function numberChipsUnambiguous(ids: readonly string[]): boolean {
   const prefixes = new Set<string>();
   for (const id of ids) {
@@ -139,9 +131,4 @@ export function numberChipsUnambiguous(ids: readonly string[]): boolean {
     prefixes.add(m[1]!);
   }
   return prefixes.size <= 1;
-}
-
-/** Text a ticket tick shows: its number alone when the prefix is shared, else the full id. */
-export function tickText(id: string, numeric: boolean): string {
-  return numeric ? ID_SHAPE.exec(id)![2]! : id;
 }

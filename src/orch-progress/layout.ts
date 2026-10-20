@@ -1,41 +1,32 @@
-/** Advance of one 10px monospace character (text-2xs) and a tick's horizontal padding (px-1.5 each side). */
-export const CHAR_PX = 6;
-export const TICK_PAD_PX = 12;
-/** Gap between chained ticks: 1px of background, no border, so neighbours of one status stay distinct. */
-export const TICK_GAP_PX = 1;
-/** Gap (the same 1px) and floor width once the ticks must narrow; height never changes. */
-export const NARROW_GAP_PX = 1;
-export const TICK_MIN_PX = 4;
-/** Without a measurement (first paint, no layout engine) a list longer than this narrows. */
-export const UNMEASURED_CHAIN_MAX = 8;
-export const UNMEASURED_NARROW_PX = 6;
+/** Height of the bar, the same as helm's epic bar (0.375rem). */
+export const BAR_HEIGHT_PX = 6;
+/** Space between segments, one segment per ticket. */
+export const SEGMENT_GAP_PX = 2;
+/** A segment is at most this wide, so a 3-ticket group stays a small bar. */
+export const SEGMENT_MAX_PX = 20;
+/** A segment narrows to this floor before the bar stops following the ticket count. */
+export const SEGMENT_MIN_PX = 3;
+/** The bar never grows past this, however many tickets there are. */
+export const BAR_MAX_PX = 140;
+/** The thread title keeps at least this much room; the bar narrows only after the title has shrunk to it. */
+export const TITLE_MIN_PX = 48;
 
 /**
- * `chain`: every ticket tick at its natural width, number inside. `narrow`: the last resort for a very
- * long list; ticks share `tickPx` and drop their text, at the same height. `gap` is the space between ticks.
+ * Width budget of the bar for `n` tickets. `naturalPx` is the width it takes when the card has room;
+ * `minPx` is the least it narrows to (the segments sharing the width down to the floor). Past the point where
+ * the floor no longer fits under `BAR_MAX_PX`, the gap closes (`gap` 0) so every ticket still gets a sliver.
+ * A pure function of the ticket count, so a refresh with unchanged data keeps the layout.
  */
-export type RowLayout = { mode: "chain" | "narrow"; tickPx: number | null; gap: number };
+export type BarLayout = { gap: number; naturalPx: number; minPx: number };
 
-/** Natural width of a tick that shows `text`. */
-export function tickWidth(text: string): number {
-  return text.length * CHAR_PX + TICK_PAD_PX;
-}
-
-/**
- * Chained-tick width choice. `texts` is what each ticket tick shows; `available` is the row width left after
- * the first tick. Natural widths win; only when they do not fit do the ticks narrow. A pure function of its
- * inputs, so a refresh with unchanged data returns the same layout.
- */
-export function chooseChain(texts: readonly string[], available: number | null): RowLayout {
-  const n = texts.length;
-  if (available === null || n === 0) {
-    return n <= UNMEASURED_CHAIN_MAX
-      ? { mode: "chain", tickPx: null, gap: TICK_GAP_PX }
-      : { mode: "narrow", tickPx: UNMEASURED_NARROW_PX, gap: NARROW_GAP_PX };
-  }
-  const natural = texts.reduce((sum, text) => sum + tickWidth(text), 0) + (n - 1) * TICK_GAP_PX;
-  if (natural <= available) return { mode: "chain", tickPx: null, gap: TICK_GAP_PX };
-  const room = available - (n - 1) * NARROW_GAP_PX;
-  const widest = Math.max(...texts.map(tickWidth));
-  return { mode: "narrow", tickPx: Math.min(widest, Math.max(TICK_MIN_PX, Math.floor(room / n))), gap: NARROW_GAP_PX };
+export function barLayout(n: number): BarLayout {
+  if (n <= 0) return { gap: SEGMENT_GAP_PX, naturalPx: 0, minPx: 0 };
+  const dense = n * SEGMENT_MIN_PX + (n - 1) * SEGMENT_GAP_PX > BAR_MAX_PX;
+  const gap = dense ? 0 : SEGMENT_GAP_PX;
+  const width = (segment: number) => n * segment + (n - 1) * gap;
+  return {
+    gap,
+    naturalPx: Math.min(width(SEGMENT_MAX_PX), BAR_MAX_PX),
+    minPx: Math.min(width(SEGMENT_MIN_PX), BAR_MAX_PX),
+  };
 }
