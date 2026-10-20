@@ -112,19 +112,25 @@ export function tooltipSummary(counts: ProgressCounts): string {
   return text;
 }
 
-/** The epic id as recorded, else no label at all: a plain group shows its tickets only. */
-export function orchLabel(group: Pick<OrchGroupModel, "epic">): { kind: "epic"; text: string } | null {
-  return group.epic !== null ? { kind: "epic", text: group.epic } : null;
+export type OrchLabelModel = { kind: "epic" | "code"; text: string };
+
+/**
+ * Text of the strip's first tick: the epic id as recorded, else the project code (the ticket-id prefix
+ * the tickets share), else nothing when the tickets mix prefixes and no single code names them.
+ */
+export function orchLabel(group: Pick<OrchGroupModel, "epic" | "tickets">): OrchLabelModel | null {
+  if (group.epic !== null) return { kind: "epic", text: group.epic };
+  const ids = group.tickets.map((t) => t.id);
+  if (ids.length === 0 || !numberChipsUnambiguous(ids)) return null;
+  return { kind: "code", text: ID_SHAPE.exec(ids[0]!)![1]! };
 }
 
-export type TicketMode = "full" | "number" | "tick";
-
-/** One height for the epic chip, every ticket chip and every tick, so a mode change never moves the row. */
+/** Same height as the ticket chip on an ordinary card (TicketChip is h-[18px]), for the first tick, every ticket tick and the count. */
 export const CHIP_HEIGHT_PX = 18;
 
 const ID_SHAPE = /^([A-Za-z]+)-(\d+)$/;
 
-/** Number-only chips need one shared prefix; otherwise a bare number would be ambiguous. */
+/** Number-only ticks need one shared prefix; otherwise a bare number would be ambiguous. */
 export function numberChipsUnambiguous(ids: readonly string[]): boolean {
   const prefixes = new Set<string>();
   for (const id of ids) {
@@ -135,9 +141,7 @@ export function numberChipsUnambiguous(ids: readonly string[]): boolean {
   return prefixes.size <= 1;
 }
 
-/** Text a chip shows in a mode: the full id, or its numeric part when the prefix is shared. */
-export function chipText(id: string, mode: TicketMode, numeric: boolean): string {
-  if (mode === "tick") return "";
-  if (mode === "number" && numeric) return ID_SHAPE.exec(id)![2]!;
-  return id;
+/** Text a ticket tick shows: its number alone when the prefix is shared, else the full id. */
+export function tickText(id: string, numeric: boolean): string {
+  return numeric ? ID_SHAPE.exec(id)![2]! : id;
 }

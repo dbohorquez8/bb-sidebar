@@ -27,43 +27,51 @@ describe("orchestrator title row components", () => {
     expect(screen.getByText("WS-59")).toBeTruthy();
   });
 
-  it("renders no label for a group without an epic", () => {
-    const { container } = render(<OrchLabel group={{ ...group, epic: null }} />);
+  it("renders the project code, no glyph, as the first tick of a group without an epic", () => {
+    render(<OrchLabel group={{ ...group, epic: null }} />);
+    expect(screen.getByText("WS")).toBeTruthy();
+    expect(screen.queryByTestId("orch-epic-icon")).toBeNull();
+  });
+
+  it("renders no label when the tickets mix prefixes and there is no epic", () => {
+    const mixed = { ...group, epic: null, tickets: [group.tickets[0]!, { ...group.tickets[1]!, id: "AID-2" }] };
+    const { container } = render(<OrchLabel group={mixed} />);
     expect(container.innerHTML).toBe("");
   });
 
-  it("renders one coloured chip per ticket in full mode with the count, and a worded label per chip", () => {
+  it("chains one status-coloured tick per ticket showing only its number, with the count and a worded label per tick", () => {
     render(<OrchTitleRow group={group} />);
-    const chips = document.querySelectorAll("[data-orch-chip]");
-    expect([...chips].map((chip) => chip.textContent)).toEqual(["WS-1", "WS-2", "WS-3", "WS-4"]);
-    expect([...chips].map((chip) => chip.getAttribute("data-orch-kind"))).toEqual(["done", "in-progress", "in-progress", "ready"]);
+    const ticks = document.querySelectorAll("[data-orch-tick]");
+    expect([...ticks].map((tick) => tick.textContent)).toEqual(["1", "2", "3", "4"]);
+    expect([...ticks].map((tick) => tick.getAttribute("data-orch-kind"))).toEqual(["done", "in-progress", "in-progress", "ready"]);
     expect(screen.getByLabelText("WS-3: In Progress · failed: error")).toBeTruthy();
     expect(screen.getByTitle("1 of 4 done · 2 in progress · 1 ready")).toBeTruthy();
     expect(screen.getByTestId("orch-progress-count").textContent).toBe("1 / 4");
   });
 
-  it("shows no epic chip and no 'first id +' for a plain ticket group", () => {
+  it("leads with the project code when there is no epic, and never a 'first id +' label", () => {
     render(<OrchTitleRow group={{ ...group, epic: null }} />);
-    expect(document.querySelector("[data-orch-label]")).toBeNull();
+    expect(document.querySelector("[data-orch-label]")?.textContent).toBe("WS");
     expect(screen.queryByText("WS-1+")).toBeNull();
-    expect(document.querySelectorAll("[data-orch-chip]")).toHaveLength(4);
+    expect(document.querySelectorAll("[data-orch-tick]")).toHaveLength(4);
   });
 
-  it("puts the epic chip before the first ticket", () => {
+  it("puts the first tick before the ticket ticks", () => {
     render(<OrchTitleRow group={group} />);
-    const epic = document.querySelector("[data-orch-label]")!;
-    const first = document.querySelector("[data-orch-chip]")!;
-    expect(epic.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const first = document.querySelector("[data-orch-label]")!;
+    const next = document.querySelector("[data-orch-tick]")!;
+    expect(first.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("falls back to ticks for a long list when nothing is measured, one tick per ticket", () => {
+  it("narrows a long unmeasured list, one empty tick per ticket", () => {
     const large = { ...group, tickets: Array.from({ length: 49 }, (_, index) => ({
       id: `WS-${index}`, phase: "running", stopKind: null, hasQuestion: false,
       verification: null, threadId: null,
     })) };
     render(<OrchTitleRow group={large} />);
-    expect(document.querySelectorAll("[data-orch-tick]")).toHaveLength(49);
-    expect(document.querySelectorAll("[data-orch-chip]")).toHaveLength(0);
+    const ticks = [...document.querySelectorAll("[data-orch-tick]")];
+    expect(ticks).toHaveLength(49);
+    expect(ticks.every((tick) => tick.getAttribute("data-orch-form") === "narrow" && tick.textContent === "")).toBe(true);
   });
 
   it("renders the compact count alone", () => {
