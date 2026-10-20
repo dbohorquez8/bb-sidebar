@@ -30,9 +30,9 @@ const TICKET_PILL_CLASS = "flex h-[18px] shrink-0 items-center px-1.5 font-mono 
 
 /** Pill tint and its status text tone per helm status; ready is the neutral muted chip. The same fill in every layout, chained or narrowed. */
 const CHIP_CLASS: Record<TicketKind, string> = {
-  done: "bg-[color:var(--bb-sidebar-pill-background)] text-[color:var(--ws-green-text)]",
+  done: "bg-[color:var(--bb-sidebar-pill-background)] text-[color:color-mix(in_oklab,var(--ws-green-text)_40%,var(--foreground))]",
   "in-review": "bg-[color:var(--bb-sidebar-pill-progress-merging)] text-[color:var(--ws-violet-text)]",
-  "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)] text-[color:var(--ws-blue-text)]",
+  "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)] text-[color:color-mix(in_oklab,var(--ws-blue-text)_40%,var(--foreground))]",
   ready: "bg-muted text-muted-foreground",
 };
 

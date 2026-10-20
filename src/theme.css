@@ -214,8 +214,8 @@
   --bb-sidebar-pill-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 30%, var(--sidebar, #2f313d));
-  --bb-sidebar-pill-background: color-mix(in oklab, oklch(66% 0.08 155) 20%, var(--sidebar, #2f313d));
-  --bb-sidebar-pill-progress-working: color-mix(in oklab, oklch(66% 0.08 242) 20%, var(--sidebar, #2f313d));
+  --bb-sidebar-pill-background: color-mix(in oklab, oklch(68% 0.12 155) 50%, var(--sidebar, #2f313d));
+  --bb-sidebar-pill-progress-working: color-mix(in oklab, oklch(68% 0.12 242) 50%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-progress-merging: color-mix(in oklab, oklch(62% 0.2 293) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-tick-check: color-mix(in oklab, oklch(62% 0.2 55) 60%, var(--sidebar, #2f313d));
   --bb-sidebar-tick-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 60%, var(--sidebar, #2f313d));
