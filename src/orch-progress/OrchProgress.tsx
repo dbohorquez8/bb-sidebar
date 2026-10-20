@@ -19,13 +19,14 @@ import {
   type TicketKind,
   type TicketView,
 } from "./state";
-import { ROW_GAP_PX, chooseChain, type RowLayout } from "./layout";
+import { chooseChain, type RowLayout } from "./layout";
 
 /**
  * Height, radius, padding and type of the ticket chip on an ordinary card (TicketChip.tsx), which the first
  * tick and every ticket tick copy. A rendered test (AC-35) compares the computed values, so a drift fails.
+ * The end rounding is applied per position (see `endRounding`), so the ticks read as one progress bar.
  */
-const TICKET_PILL_CLASS = "flex h-[18px] shrink-0 items-center rounded-full px-1.5 font-mono text-2xs font-medium leading-none";
+const TICKET_PILL_CLASS = "flex h-[18px] shrink-0 items-center px-1.5 font-mono text-2xs font-medium leading-none";
 
 /** Pill tint and its status text tone per helm status; ready is the neutral muted chip. The same fill in every layout, chained or narrowed. */
 const CHIP_CLASS: Record<TicketKind, string> = {
@@ -35,27 +36,24 @@ const CHIP_CLASS: Record<TicketKind, string> = {
   ready: "bg-muted text-muted-foreground",
 };
 
-/** A narrowed tick (no text) keeps the pastel fill and stays readable through a 1px inset edge in the status tone, which never changes the fill. */
-const TICK_EDGE: Record<TicketKind, string> = {
-  done: "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--ws-green-text)_30%,transparent)]",
-  "in-review": "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--ws-violet-text)_30%,transparent)]",
-  "in-progress": "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--ws-blue-text)_30%,transparent)]",
-  ready: "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--muted-foreground)_25%,transparent)]",
-};
+/** Only the bar's two outer ends are rounded, fully like the ticket chip; every inner joint is square. */
+function endRounding(isFirst: boolean, isLast: boolean): string {
+  return cn(isFirst ? "rounded-l-full" : "rounded-l-none", isLast ? "rounded-r-full" : "rounded-r-none");
+}
 
 /** Fractional chip widths can add up to a pixel more than the estimate; the budget leaves this much spare. */
 const SUBPIXEL_SLACK_PX = 2;
 
 const CHIP_HEIGHT = { height: `${CHIP_HEIGHT_PX}px` };
 
-/** First tick of a grouped card's title row: the epic id (with its glyph), else the project code. */
-export function OrchLabel({ group }: { group: OrchGroupModel }) {
+/** First tick of a grouped card's title row: the epic id (with its glyph), else the project code. `joined` makes it the left end of the bar (square right end). */
+export function OrchLabel({ group, joined = false }: { group: OrchGroupModel; joined?: boolean }) {
   const label = orchLabel(group);
   if (label === null) return null;
   return (
     <span
       data-orch-label={label.kind}
-      className={cn(TICKET_PILL_CLASS, "gap-1 bg-muted text-foreground")}
+      className={cn(TICKET_PILL_CLASS, endRounding(true, !joined), "gap-1 bg-muted text-foreground")}
     >
       {label.kind === "epic" ? <EpicGlyph /> : null}
       <span className="[text-box:trim-both_cap_alphabetic]">{label.text}</span>
@@ -97,12 +95,12 @@ function ConnectedOrchHoverList({ group, close }: { group: OrchGroupModel; close
   return <OrchHoverList group={group} onOpenThread={(threadId) => { close(); actions.open(threadId, { split: false }); }} />;
 }
 
-function TicketItems({ views, layout }: { views: readonly TicketView[]; layout: RowLayout }) {
+function TicketItems({ views, layout, hasFirstTick }: { views: readonly TicketView[]; layout: RowLayout; hasFirstTick: boolean }) {
   const numeric = numberChipsUnambiguous(views.map((v) => v.id));
   const narrow = layout.mode === "narrow";
   return (
     <>
-      {views.map((view) => (
+      {views.map((view, index) => (
         <span
           key={view.id}
           role="img"
@@ -111,7 +109,7 @@ function TicketItems({ views, layout }: { views: readonly TicketView[]; layout: 
           data-orch-form={layout.mode}
           data-orch-kind={view.kind}
           style={narrow ? { width: `${layout.tickPx}px`, paddingInline: 0 } : undefined}
-          className={cn(TICKET_PILL_CLASS, CHIP_CLASS[view.kind], narrow && TICK_EDGE[view.kind])}
+          className={cn(TICKET_PILL_CLASS, CHIP_CLASS[view.kind], endRounding(index === 0 && !hasFirstTick, index === views.length - 1))}
         >
           {narrow ? null : <span className="[text-box:trim-both_cap_alphabetic]">{tickText(view.id, numeric)}</span>}
         </span>
@@ -121,7 +119,7 @@ function TicketItems({ views, layout }: { views: readonly TicketView[]; layout: 
 }
 
 /**
- * Width the ticket ticks may use, count included: the row minus the first tick and its gap. The strip shrink-wraps
+ * Width the ticket ticks may use, count included: the row minus the first tick, which abuts them. The strip shrink-wraps
  * its ticks, so its own width cannot be the budget. Null until the first measurement.
  */
 function useListRoom(rowRef: RefObject<HTMLElement | null>, firstTick: boolean): number | null {
@@ -133,7 +131,7 @@ function useListRoom(rowRef: RefObject<HTMLElement | null>, firstTick: boolean):
       const width = row.getBoundingClientRect().width;
       if (width <= 0) return;
       const epic = row.querySelector<HTMLElement>("[data-orch-label]");
-      const next = Math.floor(width - SUBPIXEL_SLACK_PX - (epic !== null && firstTick ? epic.getBoundingClientRect().width + ROW_GAP_PX : 0));
+      const next = Math.floor(width - SUBPIXEL_SLACK_PX - (epic !== null && firstTick ? epic.getBoundingClientRect().width : 0));
       setRoom((prev) => (prev === next ? prev : next));
     };
     measure();
@@ -175,9 +173,11 @@ export function OrchTitleRow({ group }: { group: OrchGroupModel }) {
             style={CHIP_HEIGHT}
             className="pointer-events-auto relative z-10 flex w-full min-w-0 flex-1 items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            {hasFirstTick ? <span className="flex shrink-0"><OrchLabel group={group} /></span> : null}
-            <span data-testid="orch-ticket-list" style={{ ...CHIP_HEIGHT, columnGap: `${layout.gap}px` }} className="flex min-w-0 items-center overflow-hidden">
-              <TicketItems views={views} layout={layout} />
+            <span data-testid="orch-bar" className="flex min-w-0 items-center">
+              {hasFirstTick ? <span className="flex shrink-0"><OrchLabel group={group} joined={views.length > 0} /></span> : null}
+              <span data-testid="orch-ticket-list" style={{ ...CHIP_HEIGHT, columnGap: `${layout.gap}px` }} className="flex min-w-0 items-center overflow-hidden">
+                <TicketItems views={views} layout={layout} hasFirstTick={hasFirstTick} />
+              </span>
             </span>
             {layout.showCount ? <OrchCount group={group} /> : null}
           </button>

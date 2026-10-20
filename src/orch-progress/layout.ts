@@ -1,10 +1,10 @@
 /** Advance of one 10px monospace character (text-2xs) and a tick's horizontal padding (px-1.5 each side). */
 export const CHAR_PX = 6;
 export const TICK_PAD_PX = 12;
-/** Gap between chained ticks: the card's own gap-1.5, as between the ticket chip and the title. */
-export const TICK_GAP_PX = 6;
-/** Gap and floor width once the ticks must narrow; height never changes. */
-export const NARROW_GAP_PX = 2;
+/** Gap between chained ticks: none, so they form one progress bar. */
+export const TICK_GAP_PX = 0;
+/** Gap (none, same bar) and floor width once the ticks must narrow; height never changes. */
+export const NARROW_GAP_PX = 0;
 export const TICK_MIN_PX = 4;
 const COUNT_CHAR_PX = 6.6;
 /** Space between the first tick, the ticket ticks and the count: the card's gap-1.5. */
