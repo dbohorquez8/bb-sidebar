@@ -20,17 +20,18 @@ export function barNaturalPx(n: number): number {
 }
 
 /**
- * Gap between segments in a bar `widthPx` wide: the full gap while every segment keeps at least `SEGMENT_MIN_PX`,
- * then narrower, then closed, so a dense list gives its room to the segments. The CSS from `barGapCss` computes the
- * same value from the bar's own width, so no measurement runs in script.
+ * Whole-pixel layout of `n` segments in a bar `widthPx` wide. The gap is a whole number of pixels, the same for every
+ * joint: 2px while every segment keeps its `SEGMENT_MIN_PX` floor, then 1px, then 0px, and it closes for all joints at
+ * once. The segment widths are whole pixels too: the room left after the gaps is shared evenly and the remainder is
+ * spread one pixel at a time over the leftmost segments, so no two widths differ by more than 1px and the gaps never
+ * absorb the rounding. The bar is measured in script (a ResizeObserver) because CSS cannot hand out a remainder.
  */
-export function gapPx(widthPx: number, n: number): number {
-  if (n <= 1) return 0;
-  return Math.min(SEGMENT_GAP_PX, Math.max(0, (widthPx - n * SEGMENT_MIN_PX) / (n - 1)));
-}
-
-/** The `column-gap` expression for `n` segments; `100cqw` is the bar wrapper's width (it is a size container). */
-export function barGapCss(n: number): string {
-  if (n <= 1) return "0px";
-  return `clamp(0px, calc((100cqw - ${n * SEGMENT_MIN_PX}px) / ${n - 1}), ${SEGMENT_GAP_PX}px)`;
+export function segmentLayout(widthPx: number, n: number): { gap: number; widths: number[] } {
+  if (n <= 0) return { gap: 0, widths: [] };
+  const width = Math.max(0, Math.floor(widthPx));
+  const gap = n <= 1 ? 0 : Math.min(SEGMENT_GAP_PX, Math.max(0, Math.floor((width - n * SEGMENT_MIN_PX) / (n - 1))));
+  const room = Math.max(0, width - (n - 1) * gap);
+  const base = Math.floor(room / n);
+  const extra = room - base * n;
+  return { gap, widths: Array.from({ length: n }, (_, index) => Math.min(SEGMENT_MAX_PX, base + (index < extra ? 1 : 0))) };
 }

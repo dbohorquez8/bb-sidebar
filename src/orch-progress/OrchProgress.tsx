@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -16,14 +16,14 @@ import {
   type OrchGroupModel,
   type TicketKind,
 } from "./state";
-import { BAR_HEIGHT_PX, GROUP_MAX_SHARE, barGapCss, barNaturalPx } from "./layout";
+import { BAR_HEIGHT_PX, GROUP_MAX_SHARE, SEGMENT_GAP_PX, barNaturalPx, segmentLayout } from "./layout";
 
 /** Height, radius, padding and type of the ticket chip on an ordinary card (TicketChip.tsx), which the epic or project-code chip copies. A rendered test compares the computed values, so a drift fails. */
 const CHIP_CLASS = "flex h-[18px] shrink-0 whitespace-nowrap items-center gap-1 rounded-full bg-muted px-1.5 font-mono text-2xs font-medium leading-none text-foreground";
 
-/** Segment fill per status: the status colors as the solid `-text` tokens, no transparency, no text; ready is a quiet track tone like helm's empty segments. */
+/** Segment fill per status: pastel solid tokens (hue of the bright helm token, fixed lightness and low chroma, set per theme in theme.css), no transparency, no text; ready is a quiet track tone like helm's empty segments. */
 const SEGMENT_CLASS: Record<TicketKind, string> = {
-  done: "bg-[color:var(--ws-green-text)]",
+  done: "bg-[color:var(--bb-sidebar-pill-progress-done)]",
   "in-review": "bg-[color:var(--bb-sidebar-pill-progress-merging)]",
   "in-progress": "bg-[color:var(--bb-sidebar-pill-progress-working)]",
   ready: "bg-[color:color-mix(in_oklab,var(--foreground)_18%,transparent)]",
@@ -78,23 +78,38 @@ function endRounding(isFirst: boolean, isLast: boolean): string {
 
 /**
  * The slim bar: one text-free segment per ticket. Its width follows the ticket count, is capped by its group's
- * share of the card, and shrinks when the card is narrow (the thread title shrinks first). The wrapper is a size
- * container so the gap can close, in CSS, once the segments reach their floor.
+ * share of the card, and shrinks when the card is narrow (the thread title shrinks first). The wrapper is measured,
+ * and `segmentLayout` gives every segment a whole-pixel width and every joint the same whole-pixel gap, so no gap
+ * looks wider than another. Until the first measurement the segments share the room evenly with a 2px gap.
  */
 function OrchBar({ views }: { views: ReturnType<typeof ticketViews> }) {
+  const wrapper = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const node = wrapper.current;
+    if (!node) return;
+    const measure = () => setWidth(Math.floor(node.getBoundingClientRect().width));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const layout = width === null ? null : segmentLayout(width, views.length);
   return (
-    <span aria-hidden="true" style={{ height: `${BAR_HEIGHT_PX}px`, containerType: "inline-size" }} className="block min-w-0">
+    <span ref={wrapper} aria-hidden="true" style={{ height: `${BAR_HEIGHT_PX}px` }} className="block min-w-0">
       <span
         data-testid="orch-bar"
-        style={{ height: `${BAR_HEIGHT_PX}px`, columnGap: barGapCss(views.length) }}
-        className="flex w-full items-center"
+        style={{ height: `${BAR_HEIGHT_PX}px`, columnGap: `${layout ? layout.gap : SEGMENT_GAP_PX}px` }}
+        className="flex items-center"
       >
         {views.map((view, index) => (
           <span
             key={view.id}
             data-orch-tick=""
             data-orch-kind={view.kind}
-            className={cn("h-full min-w-0 flex-1", SEGMENT_CLASS[view.kind], endRounding(index === 0, index === views.length - 1))}
+            style={layout ? { width: `${layout.widths[index]}px` } : undefined}
+            className={cn("h-full min-w-0", layout ? "shrink-0" : "flex-1", SEGMENT_CLASS[view.kind], endRounding(index === 0, index === views.length - 1))}
           />
         ))}
       </span>

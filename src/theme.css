@@ -147,9 +147,10 @@
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-background: color-mix(in oklab, oklch(85% 0.1 155) 30%, var(--sidebar, #f1f2f8));
-  /* Orchestrator progress bar (WS-101): the text-token status colors as solid segment fills (Done uses --ws-green-text, the shared pill token stays tinted). */
-  --bb-sidebar-pill-progress-working: var(--ws-blue-text);
-  --bb-sidebar-pill-progress-merging: var(--ws-violet-text);
+  /* Orchestrator progress bar (WS-101, candidate F): pastel solid segment fills, the hue of the bright helm token at fixed lightness 0.72 and chroma 0.075 (the shared pill token stays tinted). */
+  --bb-sidebar-pill-progress-done: oklch(from var(--ws-green) 0.72 0.075 h);
+  --bb-sidebar-pill-progress-working: oklch(from var(--ws-blue) 0.72 0.075 h);
+  --bb-sidebar-pill-progress-merging: oklch(from var(--ws-violet) 0.72 0.075 h);
   --bb-sidebar-tick-check: color-mix(in oklab, oklch(62% 0.2 55) 55%, var(--sidebar, #f1f2f8));
   --bb-sidebar-tick-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 55%, var(--sidebar, #f1f2f8));
 }
@@ -215,8 +216,10 @@
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-background: color-mix(in oklab, oklch(68% 0.12 155) 50%, var(--sidebar, #2f313d));
-  --bb-sidebar-pill-progress-working: var(--ws-blue-text);
-  --bb-sidebar-pill-progress-merging: var(--ws-violet-text);
+  /* Orchestrator progress bar (WS-101, candidate F): pastel solid segment fills, the hue of the bright helm token at fixed lightness 0.80 and chroma 0.075 (the shared pill token stays tinted). */
+  --bb-sidebar-pill-progress-done: oklch(from var(--ws-green) 0.80 0.075 h);
+  --bb-sidebar-pill-progress-working: oklch(from var(--ws-blue) 0.80 0.075 h);
+  --bb-sidebar-pill-progress-merging: oklch(from var(--ws-violet) 0.80 0.075 h);
   --bb-sidebar-tick-check: color-mix(in oklab, oklch(62% 0.2 55) 60%, var(--sidebar, #2f313d));
   --bb-sidebar-tick-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 60%, var(--sidebar, #2f313d));
 }

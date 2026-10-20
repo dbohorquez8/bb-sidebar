@@ -18,7 +18,7 @@ export const KIND_FILL: Record<TicketKind, string | null> = {
   ready: null,
   "in-progress": "--bb-sidebar-pill-progress-working",
   "in-review": "--bb-sidebar-pill-progress-merging",
-  done: "--ws-green-text",
+  done: "--bb-sidebar-pill-progress-done",
 };
 
 /** Draw order for the summary; the same four statuses, never an attention color. */
