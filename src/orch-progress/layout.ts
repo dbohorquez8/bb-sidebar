@@ -21,8 +21,8 @@ export function barNaturalPx(n: number): number {
 
 /**
  * Whole-pixel layout of `n` equal segments in a bar of at most `widthPx`. Every segment has the same integer width `segment`
- * and every joint has the same integer `gap`, so nothing can look uneven. The gap is the largest of 2, 1, 0 px that still
- * lets every segment keep its `SEGMENT_MIN_PX` floor (it closes for all joints at once); the segment is then as wide as the
+ * and every joint has the same integer `gap`, so nothing can look uneven. The gap is always 2px, so every bar in the sidebar has the same joints, and
+ * closes (for all joints at once) only when 2px gaps would leave segments under 1px (a huge list in a tiny bar); the segment is then as wide as the
  * room allows, up to `SEGMENT_MAX_PX`. The bar's `total` is n * segment + (n - 1) * gap, which may be a few pixels short of
  * `widthPx`: a slightly shorter bar is preferred to unequal segments. The bar is measured in script (a ResizeObserver)
  * because CSS cannot hand out whole-pixel widths. Only when the room is under 1px per ticket (a huge list) do the segments
@@ -31,9 +31,12 @@ export function barNaturalPx(n: number): number {
 export function segmentLayout(widthPx: number, n: number): { gap: number; segment: number; total: number } {
   if (n <= 0) return { gap: 0, segment: 0, total: 0 };
   const width = Math.max(0, Math.floor(widthPx));
-  if (width < n) return { gap: 0, segment: width / n, total: width };
-  const fit = (gap: number) => Math.min(SEGMENT_MAX_PX, Math.floor((width - (n - 1) * gap) / n));
-  const gap = n <= 1 ? 0 : [SEGMENT_GAP_PX, 1, 0].find((candidate) => candidate === 0 || fit(candidate) >= SEGMENT_MIN_PX) ?? 0;
-  const segment = Math.max(0, fit(gap));
+  const gapsPx = (n - 1) * SEGMENT_GAP_PX;
+  if (width < n + gapsPx) {
+    const whole = width >= n ? Math.min(SEGMENT_MAX_PX, Math.floor(width / n)) : width / n;
+    return { gap: 0, segment: whole, total: n * whole };
+  }
+  const gap = n <= 1 ? 0 : SEGMENT_GAP_PX;
+  const segment = Math.min(SEGMENT_MAX_PX, Math.floor((width - gapsPx) / n));
   return { gap, segment, total: n * segment + (n - 1) * gap };
 }
