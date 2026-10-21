@@ -99,7 +99,7 @@ type Status = AttentionRuleSet["replyMarkers"][number]["status"];
 const STATUS_OPTIONS: readonly { value: Status; label: string }[] = [
   { value: "needs-you", label: "Needs you" },
   { value: "working", label: "Working" },
-  { value: "background", label: "Background" },
+  { value: "background", label: "Waiting" },
   { value: "done", label: "Done" },
 ];
 const FIELD =

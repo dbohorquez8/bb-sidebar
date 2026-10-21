@@ -23,6 +23,8 @@ export const ATTENTION_RULES_EXAMPLE = {
         { marker: "🟡", status: "working" },
         { marker: "⚪", status: "done" },
         { marker: "**Needs You**", status: "needs-you" },
+        { marker: "**Waiting**", status: "working" },
+        { marker: "**Working**", status: "working" },
         { marker: "**Read**", status: "done", position: "reply-start" },
       ],
       skillStatuses: [], skillLabels: [], labelResets: [],

@@ -6,7 +6,7 @@ export const STATUS_LABELS: Readonly<Record<Exclude<AttentionStatus, "idle">, st
   check: "Check?",
   failed: "Failed",
   working: "Working",
-  background: "Background",
+  background: "Waiting",
   done: "Done",
 };
 

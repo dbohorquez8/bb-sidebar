@@ -65,3 +65,31 @@ export function verdictFor(
   if (!rules || activeVersion === null || rules.version !== activeVersion) return null;
   return rules.status;
 }
+
+const RUNNING_KINDS: ReadonlySet<string> = new Set(["working", "background", "check"]);
+
+/**
+ * An idle parent with a running child (one that resolves to working,
+ * background or check) is waiting on it, so it shows the Waiting status
+ * (WS-124). A Done parent stays Done (the chime holds it quiet while the child
+ * runs); it is repeated so a grandparent follows its parent.
+ */
+export function statusesWithWaitingParents(
+  threads: ReadonlyArray<{ id: string; parentId: string | null; status: ResolvedStatus }>,
+): Map<string, ResolvedStatus> {
+  const statusOf = new Map(threads.map((t) => [t.id, t.status]));
+  for (let changed = true; changed; ) {
+    changed = false;
+    const waiting = new Set<string>();
+    for (const { id, parentId } of threads) {
+      if (parentId !== null && RUNNING_KINDS.has(statusOf.get(id)?.kind ?? "")) waiting.add(parentId);
+    }
+    for (const [id, status] of statusOf) {
+      if (status.kind === "idle" && waiting.has(id)) {
+        statusOf.set(id, { kind: "background" });
+        changed = true;
+      }
+    }
+  }
+  return statusOf;
+}

@@ -25,6 +25,7 @@ import {
   silenceOrigin,
   statusKey,
   chimeStatusKey,
+  statusesWithWaitingParents,
   verdictFor,
   SILENCE_THRESHOLD_DEFAULT_MINUTES,
   type AttentionInput,
@@ -350,6 +351,7 @@ export function useAttention(
 
   const resolved = useMemo(() => {
     const byThreadId = new Map<string, ResolvedThread>();
+    const pending: { thread: (typeof threads)[number]; status: ResolvedStatus; build: (status: ResolvedStatus) => ResolvedThread }[] = [];
     const now = options.now;
     const wallNow = Date.now();
     const threadsById = new Map(threads.map((t) => [t.id, t]));
@@ -413,32 +415,39 @@ export function useAttention(
             .failureReported
         : input.failureReported;
 
-      const since = statusSince.get(thread.id);
-      const statusSinceValue =
-        since && since.key === statusKey(status) ? since.since : wallNow;
+      const build = (finalStatus: ResolvedStatus): ResolvedThread => {
+        const since = statusSince.get(thread.id);
+        const statusSinceValue =
+          since && since.key === statusKey(finalStatus) ? since.since : wallNow;
 
-      const ticket = parseTicketId(
-        {
-          title: thread.title ?? thread.titleFallback ?? "",
-          branchName: thread.environment?.branchName ?? null,
-          worktreeName: threadWorktreeName(thread),
-        },
-        ticketPrefixes,
-      );
+        const ticket = parseTicketId(
+          {
+            title: thread.title ?? thread.titleFallback ?? "",
+            branchName: thread.environment?.branchName ?? null,
+            worktreeName: threadWorktreeName(thread),
+          },
+          ticketPrefixes,
+        );
 
-      const view = buildAttentionView({
-        status,
-        statusSince: statusSinceValue,
-        silenceOrigin: origin,
-        ruleLabel: ruleLabelView(currentRules?.label, observation?.slices),
-        ticket,
-        background: liveBackground,
-        ageLabel: relativeTimeLabel(thread.updatedAt, now),
-        now,
-      });
+        const view = buildAttentionView({
+          status: finalStatus,
+          statusSince: statusSinceValue,
+          silenceOrigin: origin,
+          ruleLabel: ruleLabelView(currentRules?.label, observation?.slices),
+          ticket,
+          background: liveBackground,
+          ageLabel: relativeTimeLabel(thread.updatedAt, now),
+          now,
+        });
 
-      byThreadId.set(thread.id, { status, input, observation, view, failing });
+        return { status: finalStatus, input, observation, view, failing };
+      };
+      pending.push({ thread, status, build });
     }
+    const statusOf = statusesWithWaitingParents(
+      pending.map((p) => ({ id: p.thread.id, parentId: p.thread.parentThreadId ?? null, status: p.status })),
+    );
+    for (const { thread, build } of pending) byThreadId.set(thread.id, build(statusOf.get(thread.id) as ResolvedStatus));
     return byThreadId;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
