@@ -21,6 +21,7 @@ import { ProjectAppearanceSettings } from "./ProjectSettings";
 import { ProjectManagement } from "./ProjectManagement";
 import { PortLinkSettings } from "./PortLinkSettings";
 import { AttentionSettings } from "./AttentionSettings";
+import { MachineIconSettings } from "./MachineIconPicker";
 import { SoundsSettings } from "./SoundsSection";
 import {
   configuredSnoozePresetError,
@@ -92,6 +93,7 @@ const SECTION_BY_SETTING: Record<keyof SidebarSettingsValues, string> = {
   projectColorsEnabled: "Project appearance",
   projectColorDisplay: "Project appearance",
   silenceThresholdMinutes: "Attention",
+  machineIcon: "Sidebar layout",
 };
 
 const validHours = (value: number) => Number.isInteger(value) && value >= MIN_INACTIVE_AFTER_HOURS && value <= MAX_INACTIVE_AFTER_HOURS;
@@ -346,6 +348,10 @@ export function SidebarSettings() {
               onChange={(checked) => update("dockShelves", checked)}
             />
           }
+        />
+        <MachineIconSettings
+          defaultIcon={draft.machineIcon}
+          onDefaultChange={(icon) => update("machineIcon", icon)}
         />
       </SettingsSection>
 

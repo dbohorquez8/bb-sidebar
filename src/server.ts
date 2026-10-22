@@ -38,6 +38,9 @@ import {
   CHILD_THREAD_SORT_FIELDS,
   childThreadSettingsOf,
   DEFAULT_SIDEBAR_SETTINGS,
+  MACHINE_ICON_NAMES,
+  MACHINE_ICONS_CHANNEL,
+  machineIconOf,
   PROJECT_COLOR_DISPLAYS,
   projectColorDisplayOf,
   SIDEBAR_SETTINGS_CHANNEL,
@@ -182,6 +185,11 @@ SELECT thread_id,
  WHERE parked_at IS NOT NULL OR snoozed_until IS NOT NULL OR settled_at IS NOT NULL`,
   ...ATTENTION_RULES_STATE_TABLES,
   CLEAR_RETITLE_MIGRATION,
+  `ALTER TABLE sidebar_settings ADD COLUMN machine_icon TEXT NOT NULL DEFAULT 'Computer'`,
+  `CREATE TABLE IF NOT EXISTS machine_icons (
+     host_id TEXT PRIMARY KEY,
+     icon    TEXT NOT NULL
+   )`,
 ];
 
 export interface StoredLifecycleRow {
@@ -233,6 +241,7 @@ interface SidebarSettingsDbRow {
   project_colors_enabled: number;
   project_color_display: string;
   silence_threshold_minutes: number;
+  machine_icon: string;
 }
 
 const threadIdSchema = z.object({ threadId: z.string().trim().min(1) });
@@ -323,6 +332,7 @@ const sidebarSettingsSchema = z
       .int()
       .min(SILENCE_THRESHOLD_MIN_MINUTES)
       .max(SILENCE_THRESHOLD_MAX_MINUTES),
+    machineIcon: z.enum(MACHINE_ICON_NAMES),
   })
   .strict();
 
@@ -446,6 +456,23 @@ export const bbSidebarRpcContract = defineRpcContract({
   regenerateTitle: {
     input: threadIdSchema.strict(),
     output: z.object({ title: z.string().min(1).max(100) }).strict(),
+  },
+  listMachineIcons: {
+    input: z.object({}).strict(),
+    output: z.object({
+      machines: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        icon: z.enum(MACHINE_ICON_NAMES).nullable(),
+      }).strict()),
+    }).strict(),
+  },
+  setMachineIcon: {
+    input: z.object({
+      hostId: z.string().trim().min(1),
+      icon: z.enum(MACHINE_ICON_NAMES).nullable(),
+    }).strict(),
+    output: z.object({ ok: z.boolean() }),
   },
   getProjectColors: {
     input: z.object({}).strict(),
@@ -799,7 +826,7 @@ export default async function plugin(bb: BbPluginApi) {
                 child_sort_field, child_sort_direction, child_icon_style,
                 compact_working_threads, working_shelf, dock_shelves,
                 project_colors_enabled, project_color_display,
-                silence_threshold_minutes
+                silence_threshold_minutes, machine_icon
            FROM sidebar_settings
           WHERE id = 1`,
       )
@@ -825,6 +852,7 @@ export default async function plugin(bb: BbPluginApi) {
           projectColorsEnabled: row.project_colors_enabled === 1,
           projectColorDisplay: projectColorDisplayOf(row.project_color_display),
           silenceThresholdMinutes: row.silence_threshold_minutes,
+          machineIcon: machineIconOf(row.machine_icon),
         }
       : { ...DEFAULT_SIDEBAR_SETTINGS };
   };
@@ -838,8 +866,8 @@ export default async function plugin(bb: BbPluginApi) {
          child_sort_field, child_sort_direction, child_icon_style,
          compact_working_threads, working_shelf, dock_shelves,
          project_colors_enabled, project_color_display,
-         silence_threshold_minutes
-       ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         silence_threshold_minutes, machine_icon
+       ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          snooze_presets = excluded.snooze_presets,
          inactive_threads_enabled = excluded.inactive_threads_enabled,
@@ -857,7 +885,8 @@ export default async function plugin(bb: BbPluginApi) {
          dock_shelves = excluded.dock_shelves,
          project_colors_enabled = excluded.project_colors_enabled,
          project_color_display = excluded.project_color_display,
-         silence_threshold_minutes = excluded.silence_threshold_minutes`,
+         silence_threshold_minutes = excluded.silence_threshold_minutes,
+         machine_icon = excluded.machine_icon`,
     ).run(
       values.snoozePresets,
       values.inactiveThreadsEnabled ? 1 : 0,
@@ -875,6 +904,7 @@ export default async function plugin(bb: BbPluginApi) {
       values.projectColorsEnabled ? 1 : 0,
       values.projectColorDisplay,
       values.silenceThresholdMinutes,
+      values.machineIcon,
     );
   };
 
@@ -934,6 +964,7 @@ export default async function plugin(bb: BbPluginApi) {
         projectColorsEnabled: false,
         projectColorDisplay: DEFAULT_SIDEBAR_SETTINGS.projectColorDisplay,
         silenceThresholdMinutes: DEFAULT_SIDEBAR_SETTINGS.silenceThresholdMinutes,
+        machineIcon: DEFAULT_SIDEBAR_SETTINGS.machineIcon,
       });
       if (hasLegacyValues && migrated.success) {
         writeSidebarSettings(migrated.data);
@@ -2105,6 +2136,29 @@ export default async function plugin(bb: BbPluginApi) {
       return { ok: true };
     },
     regenerateTitle: ({ threadId }) => regenerateTitle(threadId),
+    async listMachineIcons() {
+      const rows = db.prepare("SELECT host_id, icon FROM machine_icons").all() as Array<{ host_id: string; icon: string }>;
+      const icons = new Map(rows.map((row) => [row.host_id, row.icon]));
+      const hosts = await bb.sdk.hosts.list();
+      return {
+        machines: hosts.map(({ id, name }) => ({
+          id,
+          name,
+          // A name no longer in the library falls back to the default, not to Computer.
+          icon: (MACHINE_ICON_NAMES as readonly string[]).includes(icons.get(id) ?? "") ? machineIconOf(icons.get(id)) : null,
+        })),
+      };
+    },
+    async setMachineIcon({ hostId, icon }) {
+      await bb.sdk.hosts.get({ hostId });
+      if (icon === null) {
+        db.prepare("DELETE FROM machine_icons WHERE host_id = ?").run(hostId);
+      } else {
+        db.prepare("INSERT INTO machine_icons (host_id, icon) VALUES (?, ?) ON CONFLICT(host_id) DO UPDATE SET icon = excluded.icon").run(hostId, icon);
+      }
+      bb.realtime.publish(MACHINE_ICONS_CHANNEL, { hostId });
+      return { ok: true };
+    },
     async getProjectColors() {
       const rows = db.prepare("SELECT project_id, color FROM project_colors").all() as Array<{ project_id: string; color: string }>;
       return { colors: Object.fromEntries(rows.map((row) => [row.project_id, row.color])) };

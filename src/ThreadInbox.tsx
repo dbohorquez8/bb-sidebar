@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { MachineIconsProvider } from "./MachineIcon";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
   experimental_useSidebarThreads as useSidebarThreads,
@@ -1532,6 +1533,7 @@ export function ThreadInbox({
     >
     <WorkingSinceContext.Provider value={workingSince}>
     <ChildThreadDisplayContext.Provider value={childDisplay}>
+    <MachineIconsProvider fallback={sidebarSettings?.machineIcon ?? DEFAULT_SIDEBAR_SETTINGS.machineIcon}>
     <OpenPortsProvider>
     <OrchProgressProvider>
     <JumpHintsContext.Provider value={jumpHints}>
@@ -1816,6 +1818,7 @@ export function ThreadInbox({
     </JumpHintsContext.Provider>
     </OrchProgressProvider>
     </OpenPortsProvider>
+    </MachineIconsProvider>
     </ChildThreadDisplayContext.Provider>
     </WorkingSinceContext.Provider>
     </ProjectColorsProvider>

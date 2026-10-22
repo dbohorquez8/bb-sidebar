@@ -572,6 +572,7 @@ describe("lifecycle RPC", () => {
       projectColorsEnabled: false,
       projectColorDisplay: "all",
       silenceThresholdMinutes: 15,
+      machineIcon: "Computer",
     });
     await expect(
       harness.behavior.callRpc("updateSidebarSettings", {
@@ -591,6 +592,7 @@ describe("lifecycle RPC", () => {
         projectColorsEnabled: true,
         projectColorDisplay: "grouped",
         silenceThresholdMinutes: 5,
+        machineIcon: "Laptop",
       }),
     ).resolves.toEqual({
       snoozePresets: "10m, 4h",
@@ -609,6 +611,7 @@ describe("lifecycle RPC", () => {
       projectColorsEnabled: true,
       projectColorDisplay: "grouped",
       silenceThresholdMinutes: 5,
+      machineIcon: "Laptop",
     });
     // A client that predates the setting leaves it out and must not reset it.
     await expect(
@@ -624,7 +627,7 @@ describe("lifecycle RPC", () => {
         childSortDirection: "descending",
         childIconStyle: "provider",
       }),
-    ).resolves.toMatchObject({ compactWorkingThreads: true, workingShelf: true, dockShelves: true, projectColorsEnabled: true, projectColorDisplay: "grouped", silenceThresholdMinutes: 5 });
+    ).resolves.toMatchObject({ compactWorkingThreads: true, workingShelf: true, dockShelves: true, projectColorsEnabled: true, projectColorDisplay: "grouped", silenceThresholdMinutes: 5, machineIcon: "Laptop" });
     expect(harness.inspection.realtimeSignals).toContainEqual({
       channel: "sidebar-settings",
       payload: {},
@@ -644,6 +647,18 @@ describe("lifecycle RPC", () => {
     await expect(reloaded.harness.behavior.callRpc("getSidebarSettings", {})).resolves.toMatchObject({
       projectColorDisplay: "full",
       projectColorsEnabled: false,
+    });
+  });
+
+  it("persists the machine icon across reloads and rejects names outside the library", async () => {
+    const harness = await loadPlugin();
+    const settings = await harness.behavior.callRpc("getSidebarSettings", {}) as Record<string, unknown>;
+    await harness.behavior.callRpc("updateSidebarSettings", { ...settings, machineIcon: "Home" });
+    await expect(harness.behavior.callRpc("updateSidebarSettings", { ...settings, machineIcon: "NotAnIcon" })).rejects.toThrow("rpc input validation failed");
+    const reloaded = await harness.lifecycle.reload(plugin);
+    disposers.push(() => reloaded.harness.lifecycle.dispose());
+    await expect(reloaded.harness.behavior.callRpc("getSidebarSettings", {})).resolves.toMatchObject({
+      machineIcon: "Home",
     });
   });
 
@@ -722,6 +737,7 @@ describe("lifecycle RPC", () => {
       projectColorsEnabled: false,
       projectColorDisplay: "all",
       silenceThresholdMinutes: 15,
+      machineIcon: "Computer",
     });
   });
 
@@ -1737,6 +1753,41 @@ describe("project management", () => {
       version: null, document: null, diagnostics: [], retained: false, problem: expect.stringContaining("No connected host"),
     });
     expect(harness.inspection.experimental_hostRpcCalls).toEqual([]);
+  });
+
+  it("keeps one icon per machine, clears it to the default, and rejects unknown names and machines", async () => {
+    const host = { id: "host_1", name: "Desktop", status: "connected" as const, type: "persistent" as const,
+      createdAt: 1, updatedAt: 1, lastSeenAt: 1, lastRejectedProtocolVersion: null, maxPermissionMode: "auto" as const };
+    const hosts = [host, { ...host, id: "host_2", name: "Laptop", status: "disconnected" as const }];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "bb-sidebar",
+      sdk: {
+        hosts: {
+          list: async () => hosts,
+          get: async ({ hostId }) => {
+            const found = hosts.find((candidate) => candidate.id === hostId);
+            if (!found) throw new Error("Host not found");
+            return found;
+          },
+        },
+      },
+    });
+    await plugin(bb);
+    disposers.push(() => harness.lifecycle.dispose());
+    await expect(harness.behavior.callRpc("listMachineIcons", {})).resolves.toEqual({ machines: [
+      { id: "host_1", name: "Desktop", icon: null },
+      { id: "host_2", name: "Laptop", icon: null },
+    ] });
+    await harness.behavior.callRpc("setMachineIcon", { hostId: "host_2", icon: "Laptop" });
+    await harness.behavior.callRpc("setMachineIcon", { hostId: "host_1", icon: "Home" });
+    await harness.behavior.callRpc("setMachineIcon", { hostId: "host_1", icon: null });
+    expect(harness.inspection.realtimeSignals).toContainEqual({ channel: "machine-icons", payload: { hostId: "host_2" } });
+    await expect(harness.behavior.callRpc("setMachineIcon", { hostId: "host_1", icon: "NotAnIcon" })).rejects.toThrow("rpc input validation failed");
+    await expect(harness.behavior.callRpc("setMachineIcon", { hostId: "host_9", icon: "Home" })).rejects.toThrow("Host not found");
+    await expect(harness.behavior.callRpc("listMachineIcons", {})).resolves.toEqual({ machines: [
+      { id: "host_1", name: "Desktop", icon: null },
+      { id: "host_2", name: "Laptop", icon: "Laptop" },
+    ] });
   });
 
   it("only offers connected machines without a source and rejects duplicate paths", async () => {
