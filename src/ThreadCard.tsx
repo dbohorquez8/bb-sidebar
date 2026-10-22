@@ -21,6 +21,7 @@ import {
   collapsedChildThreads,
 } from "./ChildThreadList";
 import { Icon } from "./components/Icon";
+import { MachineIcon } from "./MachineIcon";
 import { Tooltip } from "./components/Tooltip";
 import { ThreadDetailsTooltip } from "./ThreadDetailsTooltip";
 import { SnoozeSelect } from "./SnoozeSelect";
@@ -583,8 +584,8 @@ export function ThreadCard({
                 <ActivityCount label="background tasks" count={backgroundCount} />
               ) : null}
               {thread.environment?.branchName && thread.host ? (
-                <Icon
-                  name="Computer"
+                <MachineIcon
+                  hostId={thread.host.id}
                   aria-label={`Machine: ${thread.host.name}`}
                   className="size-3 shrink-0 text-muted-foreground/60"
                 />
@@ -679,8 +680,8 @@ function ThreadLocation({ thread }: { thread: PluginSidebarThread }) {
   if (thread.host) {
     return (
       <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
-        <Icon
-          name="Computer"
+        <MachineIcon
+          hostId={thread.host.id}
           aria-hidden
           className="size-3 shrink-0 text-muted-foreground/60"
         />

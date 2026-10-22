@@ -8562,3 +8562,32 @@ it("honors disabled attention retention for fourth-level descendants", async () 
   fireEvent.click(screen.getByRole("button", { name: "Active" }));
   expect(screen.queryByRole("link", { name: "Root" })).toBeNull();
 });
+
+it("draws each machine's own icon on its cards and the default for the rest", async () => {
+  renderSlot(inbox, listProps, {
+    sidebarThreads: {
+      status: "ready",
+      threads: [
+        thread({ id: "on_branch", title: "On a branch", host: { id: "host_a", name: "Desk" }, environment: {
+          id: "env_branch", name: null, branchName: "feature/x", workspaceDisplayKind: "other", path: null, isWorktree: null, providerId: null,
+        } }),
+        thread({ id: "host_a_only", title: "Desk only", host: { id: "host_a", name: "Desk" } }),
+        thread({ id: "host_b_only", title: "Other only", host: { id: "host_b", name: "Other" } }),
+      ],
+      projects: [],
+    },
+    rpc: {
+      getSidebarSettings: () => ({ ...defaultSidebarSettings, inactiveThreadsEnabled: false, machineIcon: "Home" }),
+      listMachineIcons: () => ({ machines: [
+        { id: "host_a", name: "Desk", icon: "Laptop" },
+        { id: "host_b", name: "Other", icon: null },
+      ] }),
+      listLifecycle: () => ({ rows: [] }),
+    },
+  });
+  // Both machine spots: the branch row's label icon and the host-only location.
+  await waitFor(() => expect(document.querySelectorAll('[data-icon="Laptop"]')).toHaveLength(2));
+  expect(document.querySelector('[data-icon="Laptop"][aria-label="Machine: Desk"]')).not.toBeNull();
+  expect(document.querySelectorAll('[data-icon="Home"]')).toHaveLength(1);
+  expect(document.querySelector('[data-icon="Computer"]')).toBeNull();
+});

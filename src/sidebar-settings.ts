@@ -1,4 +1,5 @@
 export const SIDEBAR_SETTINGS_CHANNEL = "sidebar-settings";
+export const MACHINE_ICONS_CHANNEL = "machine-icons";
 
 export const CHILD_THREAD_SORT_FIELDS = ["created", "activity"] as const;
 export type ChildThreadSortField = (typeof CHILD_THREAD_SORT_FIELDS)[number];
@@ -11,6 +12,45 @@ export type ChildThreadIconStyle = (typeof CHILD_THREAD_ICON_STYLES)[number];
 
 export const PROJECT_COLOR_DISPLAYS = ["all", "full", "grouped"] as const;
 export type ProjectColorDisplay = (typeof PROJECT_COLOR_DISPLAYS)[number];
+
+/**
+ * Icons the machine indicator can use. "Computer" is the sidebar's own glyph;
+ * the rest are BB's built-in icon names (as of BB 0.46.1), minus host-internal ones.
+ */
+export const MACHINE_ICON_NAMES = [
+  "Computer",
+  "AiBrain01", "AiBrowser", "AiContentGenerator01", "AlertCircle", "AlertTriangle",
+  "AlignLeft", "AppWindow", "Archive", "ArchiveRestore", "ArrowDown", "ArrowLeft",
+  "ArrowReloadHorizontal", "ArrowRight", "ArrowTurnBackward", "ArrowTurnForward",
+  "ArrowUp", "ArrowUpDown", "ArrowUpRight", "Beaker", "BellDot", "Bot", "Brain",
+  "Browser", "Bug", "Calendar", "CalendarCheckOut02", "ChartColumn", "Check",
+  "ChevronDown", "ChevronLeft", "ChevronRight", "ChevronUp", "ChevronsDown",
+  "ChevronsUp", "ChildThread", "Circle", "CircleArrowShrink", "CircleCheck",
+  "CircleQuestion", "CircleX", "Clean", "Clock", "ClockArrowDown", "ClockArrowUp",
+  "Cloud", "CloudOff", "Code", "Coffee", "Columns2", "ComputerCloud",
+  "ComputerTerminal01", "Copy", "CornerDownLeft", "CornerDownRight", "DateTime",
+  "DiffAdded", "DiffConflict", "DiffModified", "DiffRemoved", "DiffRenamed",
+  "Discord", "DiscordLogo", "Download", "DragDropHorizontal", "DragDropVertical",
+  "Edit", "EditFile", "ElectricPlugs", "Explore", "ExternalLink", "Eye", "EyeOff",
+  "File", "FileAttachment", "FileDiff", "FileQuestion", "FileText", "Filter",
+  "FilterHorizontal", "Folder", "Folder02", "FolderEdit", "FolderExport",
+  "FolderGit", "FolderMinus", "FolderOpen", "FolderPlus", "FolderSync",
+  "FolderUnknown", "Fork", "GitBranch", "GitMerge", "GitPullRequest",
+  "GitPullRequestArrow", "GitPullRequestClosed", "GitPullRequestDraft", "Github",
+  "GithubLogo", "Globe", "GridView", "Home", "Info", "Keyboard", "Laptop", "Layers",
+  "Limitation", "Link", "ListEnd", "ListTodo", "ListView", "Lock", "Mail",
+  "MailOpen", "Maximize2", "MessageCirclePlus", "MessageQuestion", "MessageSquare",
+  "MessageSquarePlus", "Mic", "Minimize2", "Minus", "MoreHorizontal", "MoveTo",
+  "NewTab", "News01", "PackageReceive", "Palette", "PanelBottom", "PanelLeft",
+  "PanelRight", "Paperclip", "Pause", "Pin", "PinOff", "Play", "Plug02", "Plus",
+  "Puzzle", "Repeat", "RotateCcw", "Rows2", "Search", "SecurityCheck", "Sent",
+  "Settings", "SideChat", "SlidersHorizontal", "Smartphone", "Sort",
+  "SortingAZ02", "SortingNineOne", "SortingOneNine", "SortingZA01", "Square",
+  "SquareUnlock02", "Star", "Target", "Terminal", "TextWrap", "TimeSchedule",
+  "ToolCase", "Toolbox", "Trash2", "UserRound", "UserRoundPlus", "Workflow", "X",
+  "Zap", "ZoomIn", "ZoomOut",
+] as const;
+export type MachineIconName = (typeof MACHINE_ICON_NAMES)[number];
 
 export interface ChildThreadSort {
   field: ChildThreadSortField;
@@ -39,6 +79,8 @@ export interface SidebarSettingsValues {
   projectColorDisplay: ProjectColorDisplay;
   /** Minutes of silent background work before a card turns Check?. */
   silenceThresholdMinutes: number;
+  /** The machine icon for machines without their own: one of MACHINE_ICON_NAMES. */
+  machineIcon: MachineIconName;
 }
 
 import { safeSetItem } from "./lib/safe-storage";
@@ -66,6 +108,7 @@ export const DEFAULT_SIDEBAR_SETTINGS: SidebarSettingsValues = {
   projectColorsEnabled: false,
   projectColorDisplay: "all",
   silenceThresholdMinutes: SILENCE_THRESHOLD_DEFAULT_MINUTES,
+  machineIcon: "Computer",
 };
 
 export function childThreadSortOf(
@@ -90,6 +133,10 @@ function oneOf<const T extends string>(
   fallback: T,
 ): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+export function machineIconOf(value: unknown): MachineIconName {
+  return oneOf(MACHINE_ICON_NAMES, value, DEFAULT_SIDEBAR_SETTINGS.machineIcon);
 }
 
 export function projectColorDisplayOf(value: unknown): ProjectColorDisplay {
@@ -171,6 +218,7 @@ function readStoredSidebarSettings(): SidebarSettingsValues | null {
       projectColorsEnabled: value.projectColorsEnabled === true,
       projectColorDisplay: projectColorDisplayOf(value.projectColorDisplay),
       silenceThresholdMinutes: silenceThresholdOf(value.silenceThresholdMinutes),
+      machineIcon: machineIconOf(value.machineIcon),
     } as SidebarSettingsValues);
   } catch {
     return null;
