@@ -73,16 +73,21 @@ const RUNNING_KINDS: ReadonlySet<string> = new Set(["working", "background", "ch
  * background or check) is waiting on it, so it shows the Waiting status
  * (WS-124). A Done parent stays Done (the chime holds it quiet while the child
  * runs); it is repeated so a grandparent follows its parent.
+ *
+ * A child with `markerOnly` set looks running only from its last reply's
+ * marker: BB reports it idle with no live background work, past the silence
+ * threshold. It does not hold its parent in Waiting (WS-140); the marker may
+ * name the wrong word and nothing else would ever expire it.
  */
 export function statusesWithWaitingParents(
-  threads: ReadonlyArray<{ id: string; parentId: string | null; status: ResolvedStatus }>,
+  threads: ReadonlyArray<{ id: string; parentId: string | null; status: ResolvedStatus; markerOnly?: boolean }>,
 ): Map<string, ResolvedStatus> {
   const statusOf = new Map(threads.map((t) => [t.id, t.status]));
   for (let changed = true; changed; ) {
     changed = false;
     const waiting = new Set<string>();
-    for (const { id, parentId } of threads) {
-      if (parentId !== null && RUNNING_KINDS.has(statusOf.get(id)?.kind ?? "")) waiting.add(parentId);
+    for (const { id, parentId, markerOnly } of threads) {
+      if (parentId !== null && !markerOnly && RUNNING_KINDS.has(statusOf.get(id)?.kind ?? "")) waiting.add(parentId);
     }
     for (const [id, status] of statusOf) {
       if (status.kind === "idle" && waiting.has(id)) {

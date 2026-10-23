@@ -351,7 +351,7 @@ export function useAttention(
 
   const resolved = useMemo(() => {
     const byThreadId = new Map<string, ResolvedThread>();
-    const pending: { thread: (typeof threads)[number]; status: ResolvedStatus; build: (status: ResolvedStatus) => ResolvedThread }[] = [];
+    const pending: { thread: (typeof threads)[number]; status: ResolvedStatus; build: (status: ResolvedStatus) => ResolvedThread; markerOnly: boolean }[] = [];
     const now = options.now;
     const wallNow = Date.now();
     const threadsById = new Map(threads.map((t) => [t.id, t]));
@@ -442,10 +442,17 @@ export function useAttention(
 
         return { status: finalStatus, input, observation, view, failing };
       };
-      pending.push({ thread, status, build });
+      // BB reports the thread idle and silent with no live work: only its last
+      // reply's marker still says running, so it must not hold a parent Waiting.
+      const markerOnly =
+        silent &&
+        !input.turnRunning &&
+        !input.hasPendingInteraction &&
+        input.background.workers + input.background.commands + input.background.workflows === 0;
+      pending.push({ thread, status, build, markerOnly });
     }
     const statusOf = statusesWithWaitingParents(
-      pending.map((p) => ({ id: p.thread.id, parentId: p.thread.parentThreadId ?? null, status: p.status })),
+      pending.map((p) => ({ id: p.thread.id, parentId: p.thread.parentThreadId ?? null, status: p.status, markerOnly: p.markerOnly })),
     );
     for (const { thread, build } of pending) byThreadId.set(thread.id, build(statusOf.get(thread.id) as ResolvedStatus));
     return byThreadId;
