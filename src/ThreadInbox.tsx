@@ -9,13 +9,13 @@ import {
 import { MachineIconsProvider } from "./MachineIcon";
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
-  experimental_useSidebarThreads as useSidebarThreads,
   experimental_useProviders as useProviders,
   type PluginSidebarThread,
   type PluginThreadListProps,
   useRealtime,
   useSettings,
 } from "@get-bb/plugin-sdk/app";
+import { useNestedSidebarThreads } from "./useNestedSidebarThreads";
 import {
   autoAnimate,
   type AnimationController,
@@ -483,7 +483,7 @@ export function ThreadInbox({
   onNavigate,
   searchQuery,
 }: PluginThreadListProps) {
-  const { status, threads, projects } = useSidebarThreads();
+  const { status, threads, projects } = useNestedSidebarThreads();
   const workingSince = useWorkingSince(threads);
   const { providers } = useProviders();
   const actions = useSidebarThreadActions();

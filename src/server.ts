@@ -474,6 +474,10 @@ export const bbSidebarRpcContract = defineRpcContract({
     }).strict(),
     output: z.object({ ok: z.boolean() }),
   },
+  listHiddenParents: {
+    input: z.object({ threadIds: z.array(z.string().trim().min(1)).max(200) }).strict(),
+    output: z.object({ parents: z.record(z.string(), z.string().nullable()) }).strict(),
+  },
   getProjectColors: {
     input: z.object({}).strict(),
     output: z.object({ colors: z.record(z.string(), z.string()) }),
@@ -2108,6 +2112,30 @@ export default async function plugin(bb: BbPluginApi) {
       return options
         ? { model: options.model, reasoningLevel: options.reasoningLevel }
         : null;
+    },
+    async listHiddenParents({ threadIds }) {
+      // The live view never lists hidden threads, so the app asks for the
+      // parent of each hidden one it meets, up to the first visible ancestor.
+      const parents = new Map<string, string | null>();
+      for (const start of threadIds) {
+        let current: string | null = start;
+        for (let depth = 0; current !== null && depth < 20 && !parents.has(current); depth += 1) {
+          let thread;
+          try {
+            thread = await bb.sdk.threads.get({ threadId: current });
+          } catch (error) {
+            // A thread that no longer exists ends its chain; any other failure
+            // rejects so the app retries.
+            const { status, message } = (error ?? {}) as { status?: unknown; message?: unknown };
+            if (status === 404 || (typeof message === "string" && /not found/i.test(message))) break;
+            throw error;
+          }
+          if (thread.visibility !== "hidden" || thread.archivedAt !== null || thread.deletedAt !== null) break;
+          parents.set(current, thread.parentThreadId);
+          current = thread.parentThreadId;
+        }
+      }
+      return { parents: Object.fromEntries(parents) };
     },
     async setThreadParent({ threadId, parentThreadId }) {
       return withPinParentChange(threadId, async () => {

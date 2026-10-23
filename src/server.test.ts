@@ -2875,3 +2875,50 @@ describe("release lifecycle safety", () => {
     await expect(h.behavior.callRpc("updateSidebarSettings", { archivedShelfEnabled: true })).rejects.toThrow("validation");
   });
 });
+
+describe("listHiddenParents", () => {
+  it("walks hidden ancestors up to the first visible thread", async () => {
+    const rows: Record<string, ReturnType<typeof makeThreadResponse>> = {
+      thr_h1: makeThreadResponse({ id: "thr_h1", visibility: "hidden", parentThreadId: "thr_h2" }),
+      thr_h2: makeThreadResponse({ id: "thr_h2", visibility: "hidden", parentThreadId: "thr_root" }),
+      thr_root: makeThreadResponse({ id: "thr_root", parentThreadId: null }),
+      thr_gone: makeThreadResponse({ id: "thr_gone", visibility: "hidden", archivedAt: 1, parentThreadId: "thr_root" }),
+    };
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "bb-sidebar",
+      sdk: { threads: { get: async ({ threadId }) => rows[threadId]! } },
+    });
+    await plugin(bb);
+    disposers.push(() => harness.lifecycle.dispose());
+    await expect(harness.behavior.callRpc("listHiddenParents", { threadIds: ["thr_h1", "thr_gone"] }))
+      .resolves.toEqual({ parents: { thr_h1: "thr_h2", thr_h2: "thr_root" } });
+  });
+
+  it("ends a chain at a thread that no longer exists", async () => {
+    const rows: Record<string, ReturnType<typeof makeThreadResponse>> = {
+      thr_h1: makeThreadResponse({ id: "thr_h1", visibility: "hidden", parentThreadId: "thr_root" }),
+    };
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "bb-sidebar",
+      sdk: { threads: { get: async ({ threadId }) => {
+        const row = rows[threadId];
+        if (!row) throw Object.assign(new Error("HTTP 404: Thread not found"), { status: 404 });
+        return row;
+      } } },
+    });
+    await plugin(bb);
+    disposers.push(() => harness.lifecycle.dispose());
+    await expect(harness.behavior.callRpc("listHiddenParents", { threadIds: ["thr_purged", "thr_h1"] }))
+      .resolves.toEqual({ parents: { thr_h1: "thr_root" } });
+  });
+
+  it("rejects when a thread cannot be read, so the app retries", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "bb-sidebar",
+      sdk: { threads: { get: async () => { throw new Error("backend reloading"); } } },
+    });
+    await plugin(bb);
+    disposers.push(() => harness.lifecycle.dispose());
+    await expect(harness.behavior.callRpc("listHiddenParents", { threadIds: ["thr_h1"] })).rejects.toThrow();
+  });
+});

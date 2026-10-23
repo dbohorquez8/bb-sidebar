@@ -1,8 +1,8 @@
 import {
   experimental_useSidebarThreadActions as useSidebarThreadActions,
-  experimental_useSidebarThreads as useSidebarThreads,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
+import { useNestedSidebarThreads } from "./useNestedSidebarThreads";
 import { Icon } from "./components/Icon";
 import { Tooltip } from "./components/Tooltip";
 import { cn } from "./lib/utils";
@@ -21,7 +21,7 @@ export function ParentChip({
   threadId,
   isCompactViewport,
 }: PluginThreadHeaderActionProps) {
-  const { threads } = useSidebarThreads();
+  const { threads } = useNestedSidebarThreads();
   const actions = useSidebarThreadActions();
 
   const parent = parentOf(threads, threadId);

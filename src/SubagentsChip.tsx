@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   experimental_useProviders as useProviders,
   experimental_useSidebarThreadActions as useSidebarThreadActions,
-  experimental_useSidebarThreads as useSidebarThreads,
   type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
+import { useNestedSidebarThreads } from "./useNestedSidebarThreads";
 import { useSidebarSettings } from "./useSidebarSettings";
 import {
   ChildThreadDots,
@@ -33,7 +33,7 @@ export function SubagentsChip({
   threadId,
   isCompactViewport,
 }: PluginThreadHeaderActionProps) {
-  const { threads } = useSidebarThreads();
+  const { threads } = useNestedSidebarThreads();
   const actions = useSidebarThreadActions();
   const [open, setOpen] = useState(false);
   const sidebarSettings = useSidebarSettings();
