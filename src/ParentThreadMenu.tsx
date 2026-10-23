@@ -12,8 +12,12 @@ import { threadDisplayTitle } from "./inbox";
 import { usePortalScopeProps } from "./lib/portal-scope";
 import { parentCandidates } from "./parent-threads";
 
-export function ParentThreadMenu({ thread }: { thread: PluginSidebarThread }) {
+export function ParentThreadMenu({ thread: shown }: { thread: PluginSidebarThread }) {
   const { projects, threads } = useSidebarThreads();
+  // The list may show a child of a hidden thread under a visible ancestor;
+  // changing the parent must start from the real one.
+  const real = threads.find((candidate) => candidate.id === shown.id);
+  const thread = real ? { ...shown, parentThreadId: real.parentThreadId } : shown;
   const rpc = useRpc<typeof bbSidebarRpcContract>();
   const portalScope = usePortalScopeProps();
   const [open, setOpen] = useState(false);
