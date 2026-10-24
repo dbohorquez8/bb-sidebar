@@ -49,6 +49,7 @@ export function ticketStatus(t: OrchTicket): TicketStatus {
   if (t.verification === "verified-done") return note("done", null);
   if (phase === null) return note("ready", null);
   if (phase === "merging" || phase === "landed") return note("in-review", null);
+  if (phase === "landing-held") return note("in-review", "landing held");
   if (WORKING_PHASES.has(phase)) return note("in-progress", null);
   if (phase === "waiting-usage") return note("in-progress", STALL_NOTES.usage!);
   if (phase === "setup-failed") return note("ready", "setup failed");
