@@ -1,4 +1,4 @@
-import { evaluateRuleEvent, resetsLabel, ruleSkills, rulesDocumentVersion, type AttentionRulesDocument, type RuleOutcome } from "./rules";
+import { evaluateRuleEvent, isWakeMessage, resetsLabel, ruleSkills, rulesDocumentVersion, type AttentionRulesDocument, type RuleOutcome } from "./rules";
 import { extractStepInvocation } from "./stage";
 import type {
   ObservationEvent,
@@ -25,6 +25,25 @@ function isContextClear(row: ThreadEventRowLike): boolean {
   if (row.type !== "system/operation") return false;
   const data = row.data as { operation?: string; status?: string };
   return data.operation === "context_clear" && data.status === "completed";
+}
+
+/**
+ * Who asked for a turn. Only `initiator=user` with no `senderThreadId` can be the Owner;
+ * BB's own wake-ups are `system` and other threads' tells are `agent` with a sender (WS-142).
+ * A CLI send from inside a thread is also recorded as the user, so the caller still checks
+ * the text against the rules' wake-message patterns.
+ */
+function turnRequestedEvent(row: ThreadEventRowLike): ObservationEvent {
+  const data = row.data as {
+    initiator?: unknown;
+    senderThreadId?: unknown;
+    input?: readonly { type?: unknown; text?: unknown }[];
+  };
+  const byOwner = data.initiator === "user" && (data.senderThreadId === null || data.senderThreadId === undefined);
+  const text = byOwner
+    ? (data.input ?? []).flatMap((block) => (typeof block.text === "string" ? [block.text] : [])).join("\n").trim()
+    : "";
+  return { kind: "turn-requested", at: row.createdAt, byOwner, text };
 }
 
 // One sequence space (plan Auditor Finding 1): the observer reads BB's event
@@ -75,6 +94,8 @@ export function rowsToObservationEvents(
       events.push({ kind: "background-activity", at: row.createdAt });
       continue;
     }
+
+    if (row.type === "client/turn/requested") events.push(turnRequestedEvent(row));
 
     const step = extractStepInvocation(row);
     if (step !== null) {
@@ -131,13 +152,20 @@ function foldRules(
   const held: ObservedRules = base.rules && base.rules.version === version ? base.rules : { version, status: null, label: null };
   const previous: RuleOutcome = { status: held.status, label: held.label };
   let outcome = previous;
-  if (event.kind === "turn-started") outcome = { ...previous, status: null };
-  else if (event.kind === "turn-failed") outcome = { ...previous, status: null };
+  // Needs you is sticky (WS-142): once set it survives later agent turns and replies, even
+  // one ending in Done, until the Owner's next message or a /clear.
+  const sticky = previous.status === "needs-you";
+  if (event.kind === "turn-requested") {
+    if (event.byOwner && !isWakeMessage(document, event.text)) outcome = { ...previous, status: null };
+  } else if (event.kind === "turn-started") outcome = { ...previous, status: sticky ? previous.status : null };
+  else if (event.kind === "turn-failed") outcome = { ...previous, status: sticky ? previous.status : null };
   else if (event.kind === "context-cleared") outcome = { status: null, label: null };
   else if (event.kind === "turn-ended") {
     outcome = evaluateRuleEvent(document, { ...previous, status: null }, { kind: "reply", text: event.finalReply });
+    if (sticky) outcome = { ...outcome, status: "needs-you" };
   } else if (event.kind === "step-invoked") {
     outcome = evaluateRuleEvent(document, previous, { kind: "skill", skill: event.step });
+    if (sticky) outcome = { ...outcome, status: "needs-you" };
   }
   const labelAt = outcome.label === null ? undefined : outcome.label === previous.label ? held.labelAt : (event as { at?: number }).at;
   return { version, status: outcome.status, label: outcome.label, ...(labelAt !== undefined ? { labelAt } : {}) };

@@ -27,6 +27,11 @@ export const ATTENTION_RULES_EXAMPLE = {
         { marker: "**Working**", status: "working" },
         { marker: "**Read**", status: "done", position: "reply-start" },
       ],
+      // Script- and agent-generated sends recorded as the user: they do not clear Needs you (WS-142).
+      wakeMessages: [
+        { pattern: "^\\S+ finished EXIT=-?\\d+; log \\S" },
+        { pattern: "^Resume /" },
+      ],
       skillStatuses: [], skillLabels: [], labelResets: [],
     },
     {
