@@ -15,6 +15,15 @@ const replyMarkerSchema = z.object({
   /** "reply-start": matches only at the start of the reply's first line. Absent: "line-start". */
   position: z.enum(["line-start", "reply-start"]).optional(),
 }).strict();
+/**
+ * A message sent as the user that is not the Owner (a script's wake-up or an agent's self-resume),
+ * so it does not clear Needs you (WS-142). `pattern` is a regular expression matched against the
+ * first 500 characters of the message; a pattern that does not compile, or that quantifies a group
+ * holding a quantifier or alternation (backtracking-prone), is rejected.
+ */
+const wakeMessageSchema = z.object({
+  pattern: exactText.refine((value) => compilePattern(value) !== null, { message: "Not a valid regular expression." }),
+}).strict();
 const skillStatusSchema = z.object({ skill: exactText, status: statusSchema }).strict();
 const skillLabelSchema = z.object({
   skill: exactText,
@@ -30,6 +39,7 @@ export const attentionRuleSetSchema = z.object({
   label: z.string().trim().min(1).max(120),
   enabled: z.boolean(),
   replyMarkers: z.array(replyMarkerSchema).max(100).default([]),
+  wakeMessages: z.array(wakeMessageSchema).max(100).default([]),
   skillStatuses: z.array(skillStatusSchema).max(100).default([]),
   skillLabels: z.array(skillLabelSchema).max(100).default([]),
   labelResets: z.array(labelResetSchema).max(100).default([]),
@@ -102,6 +112,7 @@ export function parseAttentionRules(input: unknown): ParsedRules {
     const set = attentionRuleSetSchema.safeParse({
       ...header.data,
       replyMarkers: parseRules("replyMarkers", replyMarkerSchema),
+      wakeMessages: parseRules("wakeMessages", wakeMessageSchema),
       skillStatuses: parseRules("skillStatuses", skillStatusSchema),
       skillLabels: parseRules("skillLabels", skillLabelSchema),
       labelResets: parseRules("labelResets", labelResetSchema),
@@ -188,6 +199,68 @@ export function evaluateRuleEvent(
   return { status, label };
 }
 
+/** Only this many leading characters of a message are matched against wake-message patterns. */
+const WAKE_TEXT_LIMIT = 500;
+
+/**
+ * True when a quantified group itself holds a quantifier or an alternation (`(a+)+`, `(a*)*`,
+ * `(a|a)+`): the shapes that make a backtracking match take exponential time. Conservative:
+ * it also refuses harmless ones such as `(?:foo|bar)+`.
+ */
+function hasNestedQuantifier(pattern: string): boolean {
+  const groups: { quantified: boolean; alternation: boolean }[] = [{ quantified: false, alternation: false }];
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i += 1) {
+    const char = pattern[i]!;
+    if (char === "\\") { i += 1; continue; }
+    if (inClass) { if (char === "]") inClass = false; continue; }
+    if (char === "[") { inClass = true; continue; }
+    const top = groups[groups.length - 1]!;
+    if (char === "(") {
+      groups.push({ quantified: false, alternation: false });
+      if (pattern[i + 1] === "?") i += pattern[i + 2] === "<" && pattern[i + 3] !== "=" && pattern[i + 3] !== "!" ? pattern.indexOf(">", i) - i : 2;
+    } else if (char === "|") top.alternation = true;
+    else if (char === "*" || char === "+" || char === "?" || (char === "{" && /^\{\d+(,\d*)?\}/.test(pattern.slice(i)))) top.quantified = true;
+    else if (char === ")" && groups.length > 1) {
+      const closed = groups.pop()!;
+      const next = pattern[i + 1];
+      const repeated = next === "*" || next === "+" || (next === "{" && /^\{\d+(,\d*)?\}/.test(pattern.slice(i + 1)));
+      if (repeated && (closed.quantified || closed.alternation)) return true;
+      const parent = groups[groups.length - 1]!;
+      parent.quantified ||= closed.quantified || repeated;
+      parent.alternation ||= closed.alternation;
+    }
+  }
+  return false;
+}
+
+const compiledPatterns = new Map<string, RegExp | null>();
+
+/** Compiles a wake-message pattern once; null for an invalid or backtracking-prone one. */
+function compilePattern(pattern: string): RegExp | null {
+  const cached = compiledPatterns.get(pattern);
+  if (cached !== undefined) return cached;
+  let compiled: RegExp | null = null;
+  try {
+    if (!hasNestedQuantifier(pattern)) compiled = new RegExp(pattern, "u");
+  } catch {
+    compiled = null;
+  }
+  compiledPatterns.set(pattern, compiled);
+  return compiled;
+}
+
+/** True when the start of the message text matches a wake-message pattern of a selected rule set. */
+export function isWakeMessage(document: AttentionRulesDocument | null | undefined, text: string): boolean {
+  const head = text.slice(0, WAKE_TEXT_LIMIT);
+  for (const set of selectedRuleSets(document)) {
+    for (const rule of set.wakeMessages) {
+      if (compilePattern(rule.pattern)?.test(head)) return true;
+    }
+  }
+  return false;
+}
+
 /** Every skill name any selected rule set reacts to. */
 export function ruleSkills(document: AttentionRulesDocument | null | undefined): ReadonlySet<string> {
   const skills = new Set<string>();
@@ -220,8 +293,9 @@ function canonicalJson(value: unknown): string {
 /**
  * Bumped when the meaning of stored observations changes, so every record is
  * rebuilt from the history once. 2: /clear resets sticky state (WS-70).
+ * 3: Needs you stays until the Owner's next message (WS-142).
  */
-const OBSERVATION_REVISION = 2;
+const OBSERVATION_REVISION = 3;
 
 /**
  * Stamp of one active document's content: it changes whenever any rule, label,

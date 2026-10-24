@@ -93,6 +93,12 @@ export interface ThreadEventRowLike {
 }
 
 export type ObservationEvent =
+  /**
+   * A message asked for a turn (`client/turn/requested`). `byOwner` is true only for
+   * `initiator=user` with no sender thread; `text` is carried only then, is matched against
+   * the wake-message patterns, and is never stored (WS-142).
+   */
+  | { kind: "turn-requested"; at: number; byOwner: boolean; text: string }
   | { kind: "turn-started"; at: number }
   | { kind: "turn-ended"; at: number; finalReply: string | null }
   | { kind: "turn-failed"; at: number }

@@ -46,7 +46,7 @@ export function addRuleSet(
   if (id === "") return { ok: false, reason: "The name needs at least one letter." };
   if (document.ruleSets.some((set) => set.id === id)) return { ok: false, reason: `A rule set with the id "${id}" already exists.` };
   if (document.ruleSets.length >= MAX_RULE_SETS) return { ok: false, reason: `A rules file holds at most ${MAX_RULE_SETS} rule sets.` };
-  const set: AttentionRuleSet = { id, label, enabled: true, replyMarkers: [], skillStatuses: [], skillLabels: [], labelResets: [] };
+  const set: AttentionRuleSet = { id, label, enabled: true, replyMarkers: [], wakeMessages: [], skillStatuses: [], skillLabels: [], labelResets: [] };
   return { ok: true, document: { ...document, ruleSets: [...document.ruleSets, set] } };
 }
 
