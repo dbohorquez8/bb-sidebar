@@ -18,12 +18,13 @@ const replyMarkerSchema = z.object({
 /**
  * A message sent as the user that is not the Owner (a script's wake-up or an agent's self-resume),
  * so it does not clear Needs you (WS-142). `pattern` is a regular expression matched against the
- * whole message text; a pattern that does not compile is rejected.
+ * first 500 characters of the message; a pattern that does not compile, or that quantifies a group
+ * holding a quantifier or alternation (backtracking-prone), is rejected.
  */
 const wakeMessageSchema = z.object({
   pattern: exactText.refine((value) => compilePattern(value) !== null, { message: "Not a valid regular expression." }),
 }).strict();
-const skillStatusSchema =z.object({ skill: exactText, status: statusSchema }).strict();
+const skillStatusSchema = z.object({ skill: exactText, status: statusSchema }).strict();
 const skillLabelSchema = z.object({
   skill: exactText,
   label: z.string().trim().min(1).max(120),
@@ -198,19 +199,63 @@ export function evaluateRuleEvent(
   return { status, label };
 }
 
-function compilePattern(pattern: string): RegExp | null {
-  try {
-    return new RegExp(pattern, "u");
-  } catch {
-    return null;
+/** Only this many leading characters of a message are matched against wake-message patterns. */
+const WAKE_TEXT_LIMIT = 500;
+
+/**
+ * True when a quantified group itself holds a quantifier or an alternation (`(a+)+`, `(a*)*`,
+ * `(a|a)+`): the shapes that make a backtracking match take exponential time. Conservative:
+ * it also refuses harmless ones such as `(?:foo|bar)+`.
+ */
+function hasNestedQuantifier(pattern: string): boolean {
+  const groups: { quantified: boolean; alternation: boolean }[] = [{ quantified: false, alternation: false }];
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i += 1) {
+    const char = pattern[i]!;
+    if (char === "\\") { i += 1; continue; }
+    if (inClass) { if (char === "]") inClass = false; continue; }
+    if (char === "[") { inClass = true; continue; }
+    const top = groups[groups.length - 1]!;
+    if (char === "(") {
+      groups.push({ quantified: false, alternation: false });
+      if (pattern[i + 1] === "?") i += pattern[i + 2] === "<" && pattern[i + 3] !== "=" && pattern[i + 3] !== "!" ? pattern.indexOf(">", i) - i : 2;
+    } else if (char === "|") top.alternation = true;
+    else if (char === "*" || char === "+" || char === "?" || (char === "{" && /^\{\d+(,\d*)?\}/.test(pattern.slice(i)))) top.quantified = true;
+    else if (char === ")" && groups.length > 1) {
+      const closed = groups.pop()!;
+      const next = pattern[i + 1];
+      const repeated = next === "*" || next === "+" || (next === "{" && /^\{\d+(,\d*)?\}/.test(pattern.slice(i + 1)));
+      if (repeated && (closed.quantified || closed.alternation)) return true;
+      const parent = groups[groups.length - 1]!;
+      parent.quantified ||= closed.quantified || repeated;
+      parent.alternation ||= closed.alternation;
+    }
   }
+  return false;
 }
 
-/** True when the message text matches a wake-message pattern of a selected rule set. */
+const compiledPatterns = new Map<string, RegExp | null>();
+
+/** Compiles a wake-message pattern once; null for an invalid or backtracking-prone one. */
+function compilePattern(pattern: string): RegExp | null {
+  const cached = compiledPatterns.get(pattern);
+  if (cached !== undefined) return cached;
+  let compiled: RegExp | null = null;
+  try {
+    if (!hasNestedQuantifier(pattern)) compiled = new RegExp(pattern, "u");
+  } catch {
+    compiled = null;
+  }
+  compiledPatterns.set(pattern, compiled);
+  return compiled;
+}
+
+/** True when the start of the message text matches a wake-message pattern of a selected rule set. */
 export function isWakeMessage(document: AttentionRulesDocument | null | undefined, text: string): boolean {
+  const head = text.slice(0, WAKE_TEXT_LIMIT);
   for (const set of selectedRuleSets(document)) {
     for (const rule of set.wakeMessages) {
-      if (compilePattern(rule.pattern)?.test(text)) return true;
+      if (compilePattern(rule.pattern)?.test(head)) return true;
     }
   }
   return false;

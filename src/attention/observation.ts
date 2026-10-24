@@ -39,7 +39,10 @@ function turnRequestedEvent(row: ThreadEventRowLike): ObservationEvent {
     senderThreadId?: unknown;
     input?: readonly { type?: unknown; text?: unknown }[];
   };
-  const byOwner = data.initiator === "user" && (data.senderThreadId === null || data.senderThreadId === undefined);
+  // A row with no initiator and no sender counts as the Owner: it fails open to the old behaviour,
+  // so Needs you can never stick forever on rows that do not say who sent them.
+  const byOwner = (data.initiator === "user" || data.initiator === undefined || data.initiator === null)
+    && (data.senderThreadId === null || data.senderThreadId === undefined);
   const text = byOwner
     ? (data.input ?? []).flatMap((block) => (typeof block.text === "string" ? [block.text] : [])).join("\n").trim()
     : "";
