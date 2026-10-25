@@ -58,9 +58,15 @@ export function useChime({
     [attention.chimeStatuses, threads],
   );
 
+  // Child threads report to their parent, not to the owner: they never play.
+  const childIds = useMemo(
+    () => new Set(threads.filter((thread) => thread.parentThreadId != null).map((thread) => thread.id)),
+    [threads],
+  );
+
   // Same-render values, read by effects and timers without triggering them.
-  const current = useRef({ soundWindow, settings, windows, lifecycle, snapshot, rpc });
-  current.current = { soundWindow, settings, windows, lifecycle, snapshot, rpc };
+  const current = useRef({ soundWindow, settings, windows, lifecycle, snapshot, rpc, childIds });
+  current.current = { soundWindow, settings, windows, lifecycle, snapshot, rpc, childIds };
 
   const trackerRef = useRef<EntryTracker | null>(null);
   const processedRef = useRef<ThreadSnapshot["statuses"] | null>(null);
@@ -128,7 +134,7 @@ export function useChime({
     const tracker = trackerRef.current;
     if (!tracker || processedRef.current === snapshot.statuses) return;
     processedRef.current = snapshot.statuses;
-    const { soundWindow: w, settings: soundSettings, windows: soundWindows, lifecycle: life } = current.current;
+    const { soundWindow: w, settings: soundSettings, windows: soundWindows, lifecycle: life, childIds } = current.current;
     const at = w.clock.now();
     const detected = detectEntries(tracker, snapshot, at);
     trackerRef.current = detected.tracker;
@@ -137,6 +143,7 @@ export function useChime({
         settings: soundSettings,
         putAway: life.putAwayFor(entry.threadId, at),
         activeThreadId: soundWindows.activeThreadId,
+        isChild: childIds.has(entry.threadId),
       }),
     );
     if (audible.length === 0) return;
