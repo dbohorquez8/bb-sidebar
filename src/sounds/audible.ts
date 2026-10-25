@@ -33,11 +33,13 @@ export interface AudibleContext {
   putAway: boolean;
   /** The active thread across all BB windows at entry.learnedAt (null when no BB window has focus). */
   activeThreadId: string | null;
+  /** The entry's thread has a parent thread. Child threads never play a sound. */
+  isChild: boolean;
 }
 
-/** settings.playSounds && that status's switch && !putAway && threadId !== activeThreadId. */
+/** settings.playSounds && that status's switch && !putAway && !isChild && threadId !== activeThreadId. */
 export function isAudibleEntry(entry: ChimeEntry, ctx: AudibleContext): boolean {
   const { settings } = ctx;
   const switchOn = entry.status === "needs-you" ? settings.needsYouEnabled : settings.doneEnabled;
-  return settings.playSounds && switchOn && !ctx.putAway && entry.threadId !== ctx.activeThreadId;
+  return settings.playSounds && switchOn && !ctx.putAway && !ctx.isChild && entry.threadId !== ctx.activeThreadId;
 }
