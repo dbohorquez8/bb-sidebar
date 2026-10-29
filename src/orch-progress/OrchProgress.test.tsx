@@ -11,10 +11,10 @@ const group: OrchGroupModel = {
   caller: "thr_orch",
   epic: "WS-59",
   tickets: [
-    { id: "WS-1", phase: null, stopKind: null, hasQuestion: false, verification: "verified-done", threadId: null },
-    { id: "WS-2", phase: "running", stopKind: null, hasQuestion: false, verification: null, threadId: null },
-    { id: "WS-3", phase: "stopped", stopKind: "error", hasQuestion: false, verification: null, threadId: null },
-    { id: "WS-4", phase: null, stopKind: null, hasQuestion: false, verification: null, threadId: null },
+    { id: "WS-1", phase: null, stopKind: null, hasQuestion: false, verification: "verified-done", threadId: null, trackerStatus: null },
+    { id: "WS-2", phase: "running", stopKind: null, hasQuestion: false, verification: null, threadId: null, trackerStatus: null },
+    { id: "WS-3", phase: "stopped", stopKind: "error", hasQuestion: false, verification: null, threadId: null, trackerStatus: null },
+    { id: "WS-4", phase: null, stopKind: null, hasQuestion: false, verification: null, threadId: null, trackerStatus: null },
   ],
 };
 
@@ -70,7 +70,7 @@ describe("orchestrator title row components", () => {
   it("keeps one segment per ticket for a very long list", () => {
     const large = { ...group, tickets: Array.from({ length: 49 }, (_, index) => ({
       id: `WS-${index}`, phase: "running", stopKind: null, hasQuestion: false,
-      verification: null, threadId: null,
+      verification: null, threadId: null, trackerStatus: null,
     })) };
     render(<OrchTitleRow group={large} />);
     expect(document.querySelectorAll("[data-orch-tick]")).toHaveLength(49);

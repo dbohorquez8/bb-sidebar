@@ -38,8 +38,19 @@ const STALL_NOTES: Record<string, string> = {
 
 export type TicketStatus = { kind: TicketKind; note: string | null; needsYou: boolean };
 
-/** Status is the tracker status alone; attention (questions, stalls, failures) is a note beside it (plan 3.5). */
+const KIND_RANK: Record<TicketKind, number> = { ready: 0, "in-progress": 1, "in-review": 2, done: 3 };
+const TRACKER_KINDS: Record<string, TicketKind> = { "in-progress": "in-progress", "in-review": "in-review", done: "done" };
+
+/** Status comes from the ledger phase, raised (never lowered) to the tracker status when that is further along. Attention (questions, stalls, failures) is a note beside it (plan 3.5). */
 export function ticketStatus(t: OrchTicket): TicketStatus {
+  const base = phaseStatus(t);
+  if (t.hasQuestion || t.trackerStatus === null) return base;
+  const tracker = Object.hasOwn(TRACKER_KINDS, t.trackerStatus) ? TRACKER_KINDS[t.trackerStatus] : undefined;
+  if (tracker === undefined || KIND_RANK[tracker] <= KIND_RANK[base.kind]) return base;
+  return { ...base, kind: tracker };
+}
+
+function phaseStatus(t: OrchTicket): TicketStatus {
   const { phase, stopKind } = t;
   const needsYou = t.hasQuestion || (phase === "stopped" && stopKind === "decision");
   const note = (kind: TicketKind, text: string | null): TicketStatus => ({

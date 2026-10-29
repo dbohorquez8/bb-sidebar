@@ -42,6 +42,7 @@ function reduceTicket(id: string, state: unknown): OrchTicket {
     hasQuestion: hasQuestion(s.question),
     verification: text(s.verification),
     threadId: text(s.thread_id),
+    trackerStatus: text(s.tracker_status),
   };
 }
 

@@ -8,6 +8,8 @@ export const orchTicketSchema = z.object({
   hasQuestion: z.boolean(),
   verification: z.string().nullable(),
   threadId: z.string().nullable(),
+  // The tracker's neutral status name for the ticket; null when the ledger does not record it.
+  trackerStatus: z.string().nullable(),
 });
 
 // One entry per groups/<id>/ledger.md found on a host.
