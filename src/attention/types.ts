@@ -18,7 +18,7 @@ export type ResolvedStatus =
   | { kind: AttentionStatus }
   | { kind: "bb-word"; word: BbWord };
 
-export type StateRuleKind = "needs-you" | "working" | "background" | "done";
+export type StateRuleKind = "needs-you" | "working" | "background" | "done" | "finalized";
 
 export interface BackgroundWork {
   workers: number;
@@ -44,7 +44,7 @@ export interface SliceProgress {
 export interface ObservedRules {
   /** Active document stamp (rulesDocumentVersion), or null when no document was active. */
   version: string | null;
-  status: "needs-you" | "working" | "background" | "done" | null;
+  status: "needs-you" | "working" | "background" | "done" | "finalized" | null;
   label: {
     text: string;
     tone?: "muted" | "primary" | "success" | "warning" | "danger";
@@ -76,8 +76,6 @@ export interface ThreadObservation {
   rules?: ObservedRules;
   /** When a rule last reset the label; slice workers older than this never count. */
   labelResetAt?: number;
-  /** When /finalize last ran; cleared by the Owner's next message (unless it answers a question) or a /clear. */
-  finalizedAt?: number;
   /** Slice workers' progress; set only on an orchestrator thread, cleared by a label reset. */
   slices?: SliceProgress;
   /** Latest background activity: the thread's own rows, and its child threads' rows. */

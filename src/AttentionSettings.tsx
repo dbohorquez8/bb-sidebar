@@ -101,6 +101,7 @@ const STATUS_OPTIONS: readonly { value: Status; label: string }[] = [
   { value: "working", label: "Working" },
   { value: "background", label: "Waiting" },
   { value: "done", label: "Done" },
+  { value: "finalized", label: "Finalized" },
 ];
 const FIELD =
   "h-7 min-w-0 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring aria-[invalid=true]:border-destructive";

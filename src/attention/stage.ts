@@ -16,8 +16,6 @@ interface TurnRequestedData {
   input?: readonly TurnRequestedInputBlock[];
 }
 
-/** The skill that closes a session for good; running it marks the thread Finalized. */
-export const FINALIZE_SKILL = "finalize";
 
 export function extractStepInvocation(row: ThreadEventRowLike): string | null {
   if (row.type === "item/started") {

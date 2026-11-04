@@ -5,7 +5,7 @@ export const ATTENTION_RULES_VERSION = 1 as const;
 export const ATTENTION_RULES_SCHEMA_ID = "./attention-rules.schema.json";
 
 export const LABEL_TONES = ["muted", "primary", "success", "warning", "danger"] as const;
-const statusSchema = z.enum(["needs-you", "working", "background", "done"]);
+const statusSchema = z.enum(["needs-you", "working", "background", "done", "finalized"]);
 const exactText = z.string().trim().min(1).max(200);
 const identifier = z.string().trim().min(1).max(80).regex(/^[a-z][a-z0-9-]*$/);
 

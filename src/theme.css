@@ -144,7 +144,6 @@
   /* Badge fills are solid against the sidebar, so a badge on the open card keeps its contrast.
      Every status pill mixes its hue at the Needs-you pill's lightness and chroma. */
   --bb-sidebar-pill-done-unread: color-mix(in oklab, var(--bb-sidebar-status-done-unread) 18%, var(--sidebar, #f1f2f8));
-  --bb-sidebar-pill-finalized: color-mix(in oklab, var(--ws-violet) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 18%, var(--sidebar, #f1f2f8));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 18%, var(--sidebar, #f1f2f8));
@@ -215,7 +214,6 @@
   --bb-sidebar-selected: color-mix(in oklab, #ffffff 13%, transparent);
   --bb-sidebar-selected-ring: color-mix(in oklab, var(--color-foreground, #ffffff) 8%, transparent);
   --bb-sidebar-pill-done-unread: color-mix(in oklab, var(--bb-sidebar-status-done-unread) 28%, var(--sidebar, #2f313d));
-  --bb-sidebar-pill-finalized: color-mix(in oklab, var(--ws-violet) 28%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-needs-you: color-mix(in oklab, oklch(62% 0.2 27) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-working: color-mix(in oklab, oklch(62% 0.2 95) 30%, var(--sidebar, #2f313d));
   --bb-sidebar-pill-check: color-mix(in oklab, oklch(62% 0.2 55) 30%, var(--sidebar, #2f313d));

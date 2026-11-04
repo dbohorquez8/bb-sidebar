@@ -12,8 +12,6 @@ export function attentionInputFromThread(
     silent: boolean;
     onInactiveShelf: boolean;
     failureAcknowledged: boolean;
-    /** The thread ran /finalize and the Owner has not written since. */
-    finalized?: boolean;
     /** Child-failure inputs (WS-51); omitted means no status-derived failure. */
     parentOpen?: boolean;
     now?: number;
@@ -60,7 +58,6 @@ export function attentionInputFromThread(
     turnRunning,
     failureReported,
     unreadResult,
-    finalized: context.finalized ?? false,
     background,
     verdict: context.verdict,
     silent: context.silent,

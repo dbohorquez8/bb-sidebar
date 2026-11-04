@@ -202,6 +202,19 @@ describe("StatusOrTime", () => {
     cleanup();
   });
 
+  // WS-206: Finalized is violet text with a flag and no pill background.
+  it("shows Finalized as violet text with a flag and no pill fill (WS-206)", async () => {
+    const { container } = await renderView({ ...workingView, status: { kind: "finalized" }, label: "Finalized" });
+    const label = await screen.findByText("Finalized");
+    const root = label.parentElement as HTMLElement;
+    expect(root.className).toContain("--bb-sidebar-status-finalized");
+    expect(root.className).not.toContain("pill-finalized");
+    expect(root.className).not.toContain("rounded-full");
+    expect(root.className).not.toMatch(/\bbg-/);
+    expect(container.querySelector("svg")).toBeTruthy();
+    cleanup();
+  });
+
   // WS-67 (AC-27, AC-30, AC-32): a rule label renders through the view only.
   it("shows a rule label with its palette tone while Working (AC-27)", async () => {
     await renderView({ ...workingView, ruleLabel: { text: "Finalizing", tone: "success" } });

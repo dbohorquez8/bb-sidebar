@@ -406,7 +406,6 @@ export function useAttention(
         failureAcknowledged,
         parentOpen,
         now: wallNow,
-        finalized: observation?.finalizedAt !== undefined,
       });
       const status = resolveAttentionStatus(input);
       // An acknowledged failure is still a reported one; reading the
