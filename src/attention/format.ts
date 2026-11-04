@@ -8,6 +8,7 @@ export const STATUS_LABELS: Readonly<Record<Exclude<AttentionStatus, "idle">, st
   working: "Working",
   background: "Waiting",
   done: "Done",
+  finalized: "Finalized",
 };
 
 export const BB_WORD_LABELS: Readonly<Record<BbWord, string>> = {

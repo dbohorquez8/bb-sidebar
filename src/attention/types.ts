@@ -8,6 +8,8 @@ export type AttentionStatus =
   | "working"
   | "background"
   | "done"
+  /** The thread ran /finalize and the Owner has not written since: permanent, not an unread result. */
+  | "finalized"
   | "idle";
 
 export type BbWord = "draft" | "queued" | "planning" | "goal";
@@ -74,6 +76,8 @@ export interface ThreadObservation {
   rules?: ObservedRules;
   /** When a rule last reset the label; slice workers older than this never count. */
   labelResetAt?: number;
+  /** When /finalize last ran; cleared by the Owner's next message (unless it answers a question) or a /clear. */
+  finalizedAt?: number;
   /** Slice workers' progress; set only on an orchestrator thread, cleared by a label reset. */
   slices?: SliceProgress;
   /** Latest background activity: the thread's own rows, and its child threads' rows. */
