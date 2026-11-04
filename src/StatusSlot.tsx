@@ -201,15 +201,12 @@ function AttentionStatusOrTime({
     );
   }
   if (kind === "finalized") {
-    // A violet badge with a still flag: the session is closed, nothing is waiting.
+    // Violet text with a still flag and no fill: the session is closed, nothing is waiting.
     return (
       <span
         aria-label={view.label ?? undefined}
         aria-describedby={describedBy}
-        className={cn(
-          badge,
-          "bg-[color:var(--bb-sidebar-pill-finalized)] text-[color:var(--bb-sidebar-status-finalized)]",
-        )}
+        className="inline-flex h-5 min-w-0 items-center gap-1 text-2xs font-semibold leading-4 text-[color:var(--bb-sidebar-status-finalized)]"
       >
         <Icon name="Flag" aria-hidden="true" className="size-3 shrink-0" />
         <span className="truncate">{view.label}</span>

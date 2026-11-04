@@ -1,5 +1,5 @@
 import { evaluateRuleEvent, isWakeMessage, resetsLabel, ruleSkills, rulesDocumentVersion, type AttentionRulesDocument, type RuleOutcome } from "./rules";
-import { extractStepInvocation, FINALIZE_SKILL } from "./stage";
+import { extractStepInvocation } from "./stage";
 import type {
   ObservationEvent,
   ObservedRules,
@@ -217,13 +217,6 @@ function applyObservedEvent(
   };
 
   switch (event.kind) {
-    case "turn-requested": {
-      // Any Owner message ends Finalized, except an answer to a question the thread asked.
-      if (base.finalizedAt === undefined || !event.byOwner || isWakeMessage(rules, event.text)) return base;
-      if (base.rules?.status === "needs-you") return base;
-      const { finalizedAt: _finalizedAt, ...rest } = base;
-      return rest;
-    }
     case "turn-started":
       return { ...base, reply: null, turnStartedAt: event.at };
     case "turn-ended":
@@ -231,13 +224,12 @@ function applyObservedEvent(
     case "turn-failed":
       return { ...base, turnEndedAt: event.at, reply: null };
     case "step-invoked": {
-      const marked = event.step === FINALIZE_SKILL ? { ...base, finalizedAt: event.at } : base;
-      if (!resetsLabel(rules, event.step)) return marked;
-      const { slices: _slices, ...rest } = marked;
+      if (!resetsLabel(rules, event.step)) return base;
+      const { slices: _slices, ...rest } = base;
       return { ...rest, labelResetAt: event.at };
     }
     case "context-cleared": {
-      const { slices: _slices, finalizedAt: _finalizedAt, ...rest } = base;
+      const { slices: _slices, ...rest } = base;
       return { ...rest, reply: null, labelResetAt: event.at };
     }
     case "background-activity":

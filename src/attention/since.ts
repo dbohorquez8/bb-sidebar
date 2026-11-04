@@ -27,7 +27,7 @@ export function historySince(
     case "done":
       return observation.reply?.endedAt ?? observation.turnEndedAt;
     case "finalized":
-      return observation.finalizedAt ?? null;
+      return observation.reply?.endedAt ?? observation.turnEndedAt;
     default:
       return null;
   }

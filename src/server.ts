@@ -372,7 +372,7 @@ const threadObservationSchema = z.object({
   reply: z.object({ endedAt: z.number() }).nullable(),
   rules: z.object({
     version: z.string().nullable(),
-    status: z.enum(["needs-you", "working", "background", "done"]).nullable(),
+    status: z.enum(["needs-you", "working", "background", "done", "finalized"]).nullable(),
     label: z.object({ text: z.string(), tone: z.enum(["muted", "primary", "success", "warning", "danger"]).optional(), progress: z.literal("slices").optional() }).nullable(),
     labelAt: z.number().optional(),
   }).optional(),
