@@ -56,6 +56,8 @@ function attentionLabelClass(status: ResolvedStatus): string {
       return "text-[color:var(--bb-sidebar-status-background)]";
     case "done":
       return "text-[color:var(--bb-sidebar-status-done)]";
+    case "finalized":
+      return "text-[color:var(--bb-sidebar-status-finalized)]";
     case "bb-word":
       switch (status.word) {
         case "draft":
@@ -192,6 +194,24 @@ function AttentionStatusOrTime({
         )}
       >
         <Icon name="CheckCircle" aria-hidden="true" className="bb-sidebar-done-check size-3 shrink-0" />
+        <span className="truncate">{view.label}</span>
+        {time}
+        {description}
+      </span>
+    );
+  }
+  if (kind === "finalized") {
+    // A violet badge with a still flag: the session is closed, nothing is waiting.
+    return (
+      <span
+        aria-label={view.label ?? undefined}
+        aria-describedby={describedBy}
+        className={cn(
+          badge,
+          "bg-[color:var(--bb-sidebar-pill-finalized)] text-[color:var(--bb-sidebar-status-finalized)]",
+        )}
+      >
+        <Icon name="Flag" aria-hidden="true" className="size-3 shrink-0" />
         <span className="truncate">{view.label}</span>
         {time}
         {description}

@@ -7,6 +7,8 @@ export interface AttentionInput {
   /** Error or failed send reported, minus a user acknowledgement (AC-09). */
   failureReported: boolean;
   unreadResult: boolean;
+  /** The thread ran /finalize and the Owner has not written since. */
+  finalized?: boolean;
   background: BackgroundWork;
   /** From the active rules; null when none matched. */
   verdict: StateRuleKind | null;
@@ -27,6 +29,9 @@ export function resolveAttentionStatus(input: AttentionInput): ResolvedStatus {
   if (input.turnRunning) return { kind: "working" };
   if (input.verdict === "working") return { kind: "background" };
   if (backgroundCount > 0) return { kind: "background" };
+  // Finalized is permanent: reading the result does not clear it, only the
+  // Owner's next message does. It stands in for Done and Idle alike.
+  if (input.finalized) return { kind: "finalized" };
   // Done marks a result waiting for the owner: once it has been read, the
   // card is Idle, whatever the final reply's state line said (AC-52).
   if (input.unreadResult) return { kind: "done" };
@@ -47,7 +52,13 @@ export function chimeStatusKey(
   status: ResolvedStatus,
   verdict: StateRuleKind | null,
   heldByChild: boolean,
+  /** An unread Finalized card chimes as Done would: the finalize turn just ended. */
+  unreadResult = false,
 ): string {
+  if (status.kind === "finalized") {
+    if (!unreadResult) return "finalized";
+    status = { kind: "done" };
+  }
   if (status.kind === "done" && (verdict !== "done" || heldByChild)) return QUIET_DONE_KEY;
   return statusKey(status);
 }

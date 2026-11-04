@@ -406,6 +406,7 @@ export function useAttention(
         failureAcknowledged,
         parentOpen,
         now: wallNow,
+        finalized: observation?.finalizedAt !== undefined,
       });
       const status = resolveAttentionStatus(input);
       // An acknowledged failure is still a reported one; reading the
@@ -549,7 +550,7 @@ export function useAttention(
           continue;
         }
         if (observations.has(threadId) || unavailable.has(threadId)) {
-          next.set(threadId, chimeStatusKey(entry.status, entry.input.verdict, childHeld.has(threadId)));
+          next.set(threadId, chimeStatusKey(entry.status, entry.input.verdict, childHeld.has(threadId), entry.input.unreadResult));
         }
       }
     }
