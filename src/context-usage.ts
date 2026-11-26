@@ -4,8 +4,8 @@ export const CONTEXT_USAGE_CHANNEL = "context-usage";
 /** The context-ring plugin's id; its `softLimit` setting is the one source of the limit. */
 export const CONTEXT_RING_PLUGIN_ID = "context-ring";
 
-/** Used when context-ring is absent or its `softLimit` is blank or unparseable. Matches the ring's own default. */
-export const DEFAULT_CONTEXT_SOFT_LIMIT = 150_000;
+/** Used when context-ring is absent or its `softLimit` is blank or unparseable. Matches the soft limit set for this machine (portable-settings.json). */
+export const DEFAULT_CONTEXT_SOFT_LIMIT = 250_000;
 
 /**
  * Parses context-ring's `softLimit` text: "150000", "150k", "150 K", "1.5m".

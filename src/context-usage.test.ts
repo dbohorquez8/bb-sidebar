@@ -23,12 +23,12 @@ describe("resolveContextSoftLimit", () => {
     expect(resolveContextSoftLimit({ softLimit: "200k" })).toBe(200_000);
   });
 
-  it("falls back to 150k when context-ring is absent or the value is invalid", () => {
-    expect(DEFAULT_CONTEXT_SOFT_LIMIT).toBe(150_000);
-    expect(resolveContextSoftLimit(undefined)).toBe(150_000);
-    expect(resolveContextSoftLimit(null)).toBe(150_000);
-    expect(resolveContextSoftLimit({})).toBe(150_000);
-    expect(resolveContextSoftLimit({ softLimit: "" })).toBe(150_000);
-    expect(resolveContextSoftLimit({ softLimit: "lots" })).toBe(150_000);
+  it("falls back to 250k when context-ring is absent or the value is invalid", () => {
+    expect(DEFAULT_CONTEXT_SOFT_LIMIT).toBe(250_000);
+    expect(resolveContextSoftLimit(undefined)).toBe(250_000);
+    expect(resolveContextSoftLimit(null)).toBe(250_000);
+    expect(resolveContextSoftLimit({})).toBe(250_000);
+    expect(resolveContextSoftLimit({ softLimit: "" })).toBe(250_000);
+    expect(resolveContextSoftLimit({ softLimit: "lots" })).toBe(250_000);
   });
 });
