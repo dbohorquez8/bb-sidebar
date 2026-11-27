@@ -18,6 +18,8 @@ export interface Composer {
   card(threadId: string): Promise<CardView>;
   /** The last fetched set. */
   cards(): ReadonlyMap<string, CardView>;
+  /** True when the last fetches hold a row for the thread. */
+  has(threadId: string): boolean;
   /** Refresh now (ATTENTION_CHANNEL in the browser). */
   notify(threadIds?: readonly string[]): void;
   /** Stops the timer; no chime after dispose. */
@@ -46,6 +48,8 @@ export function composeWorld(deps: {
   chimePlayer: ChimePlayer;
   now?: () => number;
   overlay?: (threadId: string) => { draft: boolean };
+  /** BB's createdAt for a thread, when the sidebar's thread list has it (an older thread first seen later is baseline). */
+  createdAtOf?: (threadId: string) => number | undefined;
   /** Called after each fetch has merged its rows (the hook re-renders from it). */
   onChange?: () => void;
 }): Composer {
@@ -61,6 +65,9 @@ export function composeWorld(deps: {
   let tracker: EntryTracker | null = null;
   const sightingFile = new Map<string, "pending" | "read" | "none">();
   const unsettledSince = new Map<string, number>();
+  const pendingPlays: { sound: "needs-you" | "done"; threadId: string }[] = [];
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  const sightingState = new Map<string, { childRunning: boolean; tone: CardView["tone"]; chime: "needs-you" | "done" | "none" }>();
 
   const viewOf = (row: CardRow): CardView => {
     let card = row.card;
@@ -71,7 +78,7 @@ export function composeWorld(deps: {
     return { ...card, timeLabel: timed ? formatTimeInStatus(row.since as number, now()) : null };
   };
 
-  async function playChimes(fetched: readonly CardRow[], baseline: boolean): Promise<void> {
+  async function playChimes(fetched: readonly CardRow[], baseline: boolean, full: boolean): Promise<void> {
     const at = now();
     const statuses = new Map<string, string>(tracker ? tracker.held : []);
     const quiet = new Set<string>(); // changes that must not chime (AC-70)
@@ -88,15 +95,43 @@ export function composeWorld(deps: {
         unsettledSince.delete(row.threadId);
       }
       if (previousFile === "pending") quiet.add(row.threadId);
+      // A Done held while a child ran (AC-64) stays silent for good: when the child stops and the class turns on,
+      // that is a hold lifting, not a fresh transition. The previous sighting had a running child and the
+      // thread's own turn was not running (a yellow card), so the end was reached under the hold.
+      const previous = sightingState.get(row.threadId);
+      const childRunning = [...rows.values()].some(
+        (other) => other.parentThreadId === row.threadId && (other.card.tone === "yellow" || other.card.tone === "green"),
+      );
+      if (previous !== undefined && previous.childRunning && previous.tone !== "yellow" && previous.chime === "none") quiet.add(row.threadId);
+      sightingState.set(row.threadId, { childRunning, tone: row.card.tone, chime: row.chime });
       statuses.set(row.threadId, row.chime);
     }
+    // Threads the sidebar created after listening began are new; older ones first seen later are baseline
+    // (a thread unarchived while in Needs you makes no sound).
+    // A full fetch lists every non-archived thread, so a held thread missing from it was archived (or deleted):
+    // when it comes back it is a returning thread, not a new entry.
+    const archived = new Set<string>();
+    if (full && tracker !== null) {
+      const fetchedIds = new Set(fetched.map((row) => row.threadId));
+      for (const id of tracker.held.keys()) {
+        if (!fetchedIds.has(id)) {
+          archived.add(id);
+          statuses.delete(id);
+        }
+      }
+    }
+    const createdAt = new Map<string, number>();
+    for (const row of fetched) {
+      const created = deps.createdAtOf?.(row.threadId);
+      if (created !== undefined) createdAt.set(row.threadId, created);
+    }
     if (baseline || tracker === null) {
-      tracker = startListening({ statuses, createdAt: new Map(), archived: new Set() }, at);
+      tracker = startListening({ statuses, createdAt, archived: new Set() }, at);
       return;
     }
     const held = new Map(tracker.held);
     for (const id of quiet) if (statuses.has(id)) held.set(id, statuses.get(id) as string);
-    const detected = detectEntries({ ...tracker, held }, { statuses, createdAt: new Map(), archived: new Set() }, at);
+    const detected = detectEntries({ ...tracker, held }, { statuses, createdAt, archived }, at);
     tracker = detected.tracker;
     if (detected.entries.length === 0 || disposed) return;
     // The class switches are read here. The main switch (`playSounds`) is enforced downstream by the browser's
@@ -108,8 +143,19 @@ export function composeWorld(deps: {
     if (settings === null || disposed) return;
     for (const entry of detected.entries) {
       if (entry.status === "needs-you" ? settings.needsYouEnabled !== true : settings.doneEnabled !== true) continue;
-      deps.chimePlayer.play(entry.status, entry.threadId);
+      pendingPlays.push({ sound: entry.status, threadId: entry.threadId });
     }
+    // Needs you first (AC-48): entries found by fetches in the same tick are one update. They play together,
+    // Needs you before Done, so the quiet period that follows the Needs you sound covers the Done.
+    if (pendingPlays.length > 0 && flushTimer === null) flushTimer = setTimeout(flushPlays, 0);
+  }
+
+  function flushPlays(): void {
+    flushTimer = null;
+    const batch = pendingPlays.splice(0);
+    if (disposed) return;
+    batch.sort((a, b) => Number(b.sound === "needs-you") - Number(a.sound === "needs-you"));
+    for (const play of batch) deps.chimePlayer.play(play.sound, play.threadId);
   }
 
   async function fetchOnce(threadIds: readonly string[] | undefined, baseline: boolean): Promise<boolean> {
@@ -124,7 +170,7 @@ export function composeWorld(deps: {
     if (!threadIds) rows.clear();
     for (const row of fetched) rows.set(row.threadId, row);
     deps.onChange?.();
-    await playChimes(threadIds ? fetched.filter((row) => !row.isChild) : fetched, baseline);
+    await playChimes(threadIds ? fetched.filter((row) => !row.isChild) : fetched, baseline, !threadIds);
     return true;
   }
 
@@ -147,6 +193,7 @@ export function composeWorld(deps: {
       tracker = null; // the next successful fetch is the baseline (AC-70)
       sightingFile.clear();
       unsettledSince.clear();
+      sightingState.clear();
       startTimer();
       // A failed first fetch leaves no baseline; the poll retries and the first success takes it.
       await refresh(undefined, true);
@@ -155,6 +202,9 @@ export function composeWorld(deps: {
       await refresh();
       const row = rows.get(threadId);
       return row ? viewOf(row) : IDLE;
+    },
+    has(threadId) {
+      return rows.has(threadId);
     },
     cards() {
       const out = new Map<string, CardView>();
@@ -166,6 +216,7 @@ export function composeWorld(deps: {
     },
     dispose() {
       disposed = true;
+      if (flushTimer !== null) clearTimeout(flushTimer);
       if (timer !== null) clearInterval(timer);
       timer = null;
     },

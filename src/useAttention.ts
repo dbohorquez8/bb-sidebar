@@ -45,6 +45,11 @@ export interface AttentionModel {
   loadGeneration: number;
   /** Subscribes to the chimes the composer decides to play (WS-268, LC-11); returns the unsubscribe. */
   onChime?: (listener: ChimeListener) => () => void;
+  /**
+   * True when the composer holds a card for the thread. `useChime` checks it so a chime for a thread that
+   * the sidebar has not rendered yet is not dropped (the check no longer depends on render order).
+   */
+  hasCard?: (threadId: string) => boolean;
 }
 
 export const AttentionContext = createContext<AttentionModel | null>(null);
@@ -109,6 +114,8 @@ export function useAttention(
   callRef.current = call;
   const draftRef = useRef(draftThreadIds);
   draftRef.current = draftThreadIds;
+  const createdAtRef = useRef<ReadonlyMap<string, number>>(new Map());
+  createdAtRef.current = new Map(threads.map((thread) => [thread.id, thread.createdAt]));
 
   const [composer, setComposer] = useState<Composer | null>(null);
   const composerRef = useRef<Composer | null>(null);
@@ -144,6 +151,7 @@ export function useAttention(
         },
       },
       overlay: (threadId) => ({ draft: draftRef.current.has(threadId) }),
+      createdAtOf: (threadId) => createdAtRef.current.get(threadId),
       onChange: () => {
         if (mountedRef.current) setVersion((v) => v + 1);
       },
@@ -278,6 +286,7 @@ export function useAttention(
       chimeStatuses,
       loadGeneration,
       onChime,
+      hasCard: (threadId) => composerRef.current?.has(threadId) ?? false,
     }),
     [views, silenceThresholdMinutes, chimeStatuses, loadGeneration, onChime],
   );
