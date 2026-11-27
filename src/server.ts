@@ -65,6 +65,7 @@ import {
 } from "./context-usage";
 import { createAttentionObserver, THREAD_ATTENTION_TABLE } from "./attention/observer";
 import { createStatusReader, THREAD_STATUS_MEMORY_TABLE } from "./attention/status-reader";
+import { defaultRules } from "./attention/card";
 import {
   ATTENTION_CHANNEL,
   migrateLegacyAttention,
@@ -857,7 +858,9 @@ export default async function plugin(bb: BbPluginApi) {
   migrateProjectAttention(db, migrateLegacyAttention);
   let rebuildStaleAttention: () => void = () => {};
   const attentionRules = createAttentionRulesState(bb, { db, onActivated: () => rebuildStaleAttention() });
-  const attentionObserver = createAttentionObserver(bb, { db, rules: () => attentionRules.active() });
+  // With no custom document active, the stock rules (the example) read the closing markers (WS-268, LC-4 `rules`).
+  const cardRules = () => attentionRules.active() ?? defaultRules();
+  const attentionObserver = createAttentionObserver(bb, { db, rules: cardRules });
   // New rules make every stored outcome stale: rebuild them and tell the sidebar.
   rebuildStaleAttention = () => {
     void attentionObserver.rebuildStale().then(
@@ -867,7 +870,7 @@ export default async function plugin(bb: BbPluginApi) {
       (error) => bb.log.error(`Attention rebuild failed: ${error instanceof Error ? error.message : String(error)}`),
     );
   };
-  const statusReader = createStatusReader(bb, { db, observer: attentionObserver, rules: () => attentionRules.active() });
+  const statusReader = createStatusReader(bb, { db, observer: attentionObserver, rules: cardRules });
   bb.onDispose(() => statusReader.dispose());
   void attentionRules.start().catch((error) => bb.log.error(`Attention rules watcher failed: ${error instanceof Error ? error.message : String(error)}`));
 

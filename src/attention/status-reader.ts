@@ -59,6 +59,8 @@ interface FileEntry {
   answeredAt: number;
   /** The last read threw (not ENOENT) or timed out: re-read every FAILED_REREAD_MS (D-8 (e)). */
   failed: boolean;
+  /** The latest answer is the read timeout's, not the host's: a chime keeps waiting (AC-69a). */
+  timedOut: boolean;
   lastStartedAt: number;
   gen: number;
   appliedGen: number;
@@ -127,6 +129,8 @@ export function createStatusReader(
   const lastCursor = new Map<string, number | null>();
   const wasRunning = new Map<string, boolean>();
   const turnEndSeen = new Map<string, number>();
+  /** The file-read generation the latest turn end started; the chime settles for a missing file once it has answered. */
+  const turnEndGen = new Map<string, number>();
   const windowFor = new Map<string, { endMs: number; timers: ReturnType<typeof setTimeout>[] }>();
   let disposed = false;
 
@@ -149,16 +153,17 @@ export function createStatusReader(
     const hostId = row.environmentHostId;
     let entry = files.get(row.id);
     if (!entry || entry.path !== path || entry.hostId !== hostId) {
-      entry = { path, hostId, text: null, file: null, answered: false, answeredAt: 0, failed: false, lastStartedAt: 0, gen: 0, appliedGen: 0 };
+      entry = { path, hostId, text: null, file: null, answered: false, answeredAt: 0, failed: false, timedOut: false, lastStartedAt: 0, gen: 0, appliedGen: 0 };
       files.set(row.id, entry);
     }
     const target = entry;
     target.lastStartedAt = now();
     const gen = ++target.gen;
 
-    const apply = (text: string | null, file: StatusFile | null, failed: boolean): void => {
+    const apply = (text: string | null, file: StatusFile | null, failed: boolean, timedOut = false): void => {
       if (disposed || files.get(row.id) !== target || gen < target.appliedGen) return;
       target.appliedGen = gen;
+      target.timedOut = timedOut;
       const changed = target.text !== text || (target.file?.updatedMs ?? null) !== (file?.updatedMs ?? null);
       target.text = text;
       target.file = file;
@@ -170,7 +175,7 @@ export function createStatusReader(
 
     // No answer in time counts as failed (inference); a late answer still replaces it.
     const timer = setTimeout(() => {
-      if (target.appliedGen < gen) apply(null, null, true);
+      if (target.appliedGen < gen) apply(null, null, true, true);
     }, FILE_READ_TIMEOUT_MS);
     (timer as { unref?: () => void }).unref?.();
 
@@ -205,16 +210,22 @@ export function createStatusReader(
     const timers: ReturnType<typeof setTimeout>[] = [];
     windowFor.set(id, { endMs, timers });
     const floor = floorSecond(endMs);
-    const step = (): void => {
+    const step = (): boolean => {
       const row = lastRows.get(id);
-      if (disposed || !row) return;
+      if (disposed || !row) return false;
       const file = files.get(id)?.file ?? null;
-      if (file !== null && file.updatedMs >= floor) return;
+      if (file !== null && file.updatedMs >= floor) return false;
       startRead(row);
+      return true;
     };
     for (let at = 0; at <= TURN_END_WINDOW_MS; at += TURN_END_REREAD_MS) {
-      if (at === 0) step();
-      else {
+      if (at === 0) {
+        // The read this turn end starts; a no-file chime settles when it has answered (settledOf).
+        const started = step();
+        const entry = files.get(id);
+        if (started && entry) turnEndGen.set(id, entry.gen);
+        else turnEndGen.delete(id);
+      } else {
         const t = setTimeout(step, at);
         (t as { unref?: () => void }).unref?.();
         timers.push(t);
@@ -258,6 +269,7 @@ export function createStatusReader(
     lastCursor.delete(thread.id);
     wasRunning.delete(thread.id);
     turnEndSeen.delete(thread.id);
+    turnEndGen.delete(thread.id);
     for (const t of windowFor.get(thread.id)?.timers ?? []) clearTimeout(t);
     windowFor.delete(thread.id);
   });
@@ -292,8 +304,12 @@ export function createStatusReader(
     const entry = files.get(id);
     if (!entry) return true; // no environment: nothing to wait for
     if (!entry.answered) return false;
+    if (entry.timedOut) return false; // a timeout is not an answer (AC-69a)
     if (entry.file !== null) return entry.file.updatedMs >= floorSecond(turnEnd);
-    return entry.answeredAt >= turnEnd;
+    // No file: settled once the read this turn end started has answered. Comparing times would let an earlier
+    // read that answered in the same millisecond as the turn end count as that read.
+    const endGen = turnEndGen.get(id);
+    return endGen !== undefined ? entry.appliedGen >= endGen : entry.answeredAt >= turnEnd;
   };
 
   return {
@@ -351,6 +367,7 @@ export function createStatusReader(
         if (running) {
           wasRunning.set(row.id, true);
           turnEndSeen.delete(row.id);
+          turnEndGen.delete(row.id);
         } else if (wasRunning.get(row.id) === true) {
           wasRunning.set(row.id, false);
           turnEndSeen.set(row.id, turnEndSeen.get(row.id) ?? at);
@@ -377,8 +394,7 @@ export function createStatusReader(
         const mem = memory.get(row.id);
         let endWord = mem?.endWord ?? null;
         if (endWord !== null && mem?.endWordAt != null && hf.clearedAt !== null && mem.endWordAt < hf.clearedAt) endWord = null;
-        const saved: SavedMemory = { endWord, needsYouAt: mem?.needsYouAt ?? null };
-        const ownKind = kindOfFile(row.id);
+        const saved: SavedMemory = { endWord, needsYouAt: mem?.needsYouAt ?? null };        const ownKind = kindOfFile(row.id);
         return {
           id: row.id,
           file: files.get(row.id)?.text ?? null,

@@ -58,7 +58,7 @@ export interface CardInput {
 }
 
 let defaultRulesDocument: AttentionRulesDocument | null | undefined;
-function defaultRules(): AttentionRulesDocument | null {
+export function defaultRules(): AttentionRulesDocument | null {
   if (defaultRulesDocument === undefined) defaultRulesDocument = parseAttentionRules(ATTENTION_RULES_EXAMPLE).document;
   return defaultRulesDocument;
 }
@@ -97,7 +97,7 @@ const END_LOOK: Readonly<Record<string, LookKey>> = {
   "Handed over": "handed-over",
   Done: "done-child",
 };
-const BB_TONE: Readonly<Record<string, Tone>> = { Draft: "orange", Queued: "orange", Planning: "muted", Goal: "green" };
+export const BB_TONE: Readonly<Record<string, Tone>> = { Draft: "orange", Queued: "orange", Planning: "muted", Goal: "green" };
 
 function mk(key: LookKey, word: string, o: { count?: string | null; hint?: string | null; bar?: BarSegment[] | null } = {}): CardView {
   const look = LOOK[key];
