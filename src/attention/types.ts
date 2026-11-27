@@ -79,8 +79,8 @@ export interface HistoryFacts {
 }
 
 export interface ThreadObservation extends Partial<Pick<HistoryFacts, "latestOwnerAt" | "clearedAt" | "needsYouBlockAt" | "closing" | "closingEndWord">> {
-  /** Still 2: the v3 bump needs observation.ts, observer.ts and the server.ts RPC schema, which later slices own. */
-  v: 2;
+  /** 3: adds the history fields of WS-268 and `item/completed` rows (D-13). */
+  v: 3;
   threadId: string;
   /**
    * Highest `seq` among rows returned by reads filtered with

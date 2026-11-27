@@ -17,12 +17,8 @@ import {
   finalReplyTurn,
   HISTORY_EVENT_TYPES,
   HISTORY_PAGE_SIZE,
-  countSlicesInPlan,
-  mergeChildLabel,
-  mergeSliceProgress,
   parseStoredObservation,
   rowsToObservationEvents,
-  sliceNumberOf,
 } from "./observation";
 import { rulesDocumentVersion, type AttentionRulesDocument } from "./rules";
 import { ATTENTION_CHANNEL } from "./settings";
@@ -30,8 +26,6 @@ import type { ThreadEventRowLike, ThreadObservation } from "./types";
 
 const CHILD_SCAN_LIMIT = 20; // newest children read per parent
 const CHILD_SCAN_TTL_MS = 30_000; // events cover changes between scans
-
-type SliceReport = { feature: string; slice: number; finished: boolean; at: number; planTotal: number | null };
 
 type SyncResult = "changed" | "unchanged" | "unavailable";
 
@@ -52,7 +46,7 @@ export const THREAD_ATTENTION_TABLE = `CREATE TABLE IF NOT EXISTS thread_attenti
 
 function emptyObservation(threadId: string, observedAt: number, rulesVersion: string | null): ThreadObservation {
   return {
-    v: 2,
+    v: 3,
     rules: { version: rulesVersion, status: null, label: null },
     threadId,
     cursorSeq: null,
@@ -256,96 +250,19 @@ export function createAttentionObserver(
     return { result: changed ? "changed" : "unchanged", newestAt, observedAt: next.observedAt };
   }
 
-  // A child's own rows count as its parent's background activity, and its
-  // label and slice progress count toward the parent's (newest wins, resets respected).
-  async function bumpParent(
-    parentId: string,
-    at: number | null,
-    child: ThreadObservation | undefined,
-    slice: SliceReport | null,
-  ): Promise<boolean> {
+  // A child's own rows count as its parent's background activity. Nothing else
+  // is copied up: no label and no slice progress (D-12).
+  async function bumpParent(parentId: string, at: number): Promise<boolean> {
     return serialized(parentId, async () => {
       const existing = readRecord(parentId);
       // A parent record made under other rules restarts empty; its own sync reads it cold.
       const stored = existing && isCurrent(existing) ? existing : undefined;
       let next = stored ?? emptyObservation(parentId, now(), rulesDocumentVersion(activeRules()));
-      if (at !== null) next = applyObservationEvent(next, parentId, { kind: "background-activity", at }, activeRules());
-      next = mergeChildLabel(next, child);
-      if (slice) next = mergeSliceProgress(next, slice, slice.planTotal);
+      next = applyObservationEvent(next, parentId, { kind: "background-activity", at }, activeRules());
       if (stored && comparable(stored) === comparable(next)) return false;
       writeRecord(next);
       return true;
     });
-  }
-
-  // Slice number per child id: filled from the SDK child in scanChildren (it
-  // carries environmentName/environmentPath), else resolved once by threads.get.
-  // list() hands over only ids and the event `thread` has no environment name.
-  const sliceOf = new Map<string, { feature: string; slice: number } | null>();
-  const environmentNameOf = (thread: { environmentName?: string | null; environmentPath?: string | null }) =>
-    thread.environmentName ?? thread.environmentPath?.split("/").filter(Boolean).pop() ?? null;
-
-  async function resolveSlice(childId: string): Promise<{ feature: string; slice: number } | null> {
-    if (sliceOf.has(childId)) return sliceOf.get(childId) ?? null;
-    try {
-      const thread = await bb.sdk.threads.get({ threadId: childId });
-      const found = sliceNumberOf(environmentNameOf(thread as never));
-      sliceOf.set(childId, found);
-      return found;
-    } catch {
-      return null; // not cached: try again next sync
-    }
-  }
-
-  // The plan's slice count, read with the 30 s scan TTL so it follows edits.
-  const planTotals = new Map<string, { at: number; total: number | null }>();
-  async function planTotalFor(parentId: string, feature: string): Promise<number | null> {
-    const key = `${parentId}\u0000${feature}`;
-    const cached = planTotals.get(key);
-    if (cached && now() - cached.at < CHILD_SCAN_TTL_MS) return cached.total;
-    let total: number | null = null;
-    try {
-      const parent = await bb.sdk.threads.get({ threadId: parentId });
-      const projectId = (parent as { projectId?: string | null }).projectId;
-      const environmentId = (parent as { environmentId?: string | null }).environmentId;
-      if (projectId && environmentId) {
-        const found = await bb.sdk.projects.paths({
-          projectId,
-          environmentId,
-          includeFiles: "true",
-          includeDirectories: "false",
-          limit: "100",
-          query: `${feature}/slices.md`,
-        });
-        const matches = found.paths
-          .map((entry) => entry.path)
-          .filter((path) => new RegExp(`^docs/features/[^/]*-${feature.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/slices\\.md$`).test(path));
-        if (matches.length === 1) {
-          const file = await bb.sdk.projects.fileContent({ projectId, environmentId, path: matches[0]! });
-          const content = (file as { content?: string }).content;
-          total = typeof content === "string" ? countSlicesInPlan(content) : null;
-        }
-      }
-    } catch {
-      total = null;
-    }
-    planTotals.set(key, { at: now(), total });
-    return total;
-  }
-
-  async function sliceReport(
-    childId: string,
-    parentId: string,
-    child: ThreadObservation,
-  ): Promise<SliceReport | null> {
-    const found = await resolveSlice(childId);
-    if (!found) return null;
-    return {
-      ...found,
-      finished: child.reply !== null,
-      at: child.turnEndedAt ?? child.turnStartedAt ?? 0,
-      planTotal: await planTotalFor(parentId, found.feature),
-    };
   }
 
   async function syncWithParent(threadId: string, hint?: string | null): Promise<SyncOutcome> {
@@ -353,13 +270,7 @@ export function createAttentionObserver(
     const changedIds = outcome.result === "changed" ? [threadId] : [];
     const parentId = parents.get(threadId) ?? null;
     if (parentId !== null && parentId !== threadId) {
-      const childRecord = readRecord(threadId);
-      // Hidden and visible slice workers both pass here, so each counts once.
-      const slice = childRecord ? await sliceReport(threadId, parentId, childRecord) : null;
-      if (
-        (outcome.newestAt !== null || childRecord?.rules?.label != null || slice !== null) &&
-        (await bumpParent(parentId, outcome.newestAt, childRecord, slice))
-      ) {
+      if (outcome.newestAt !== null && (await bumpParent(parentId, outcome.newestAt))) {
         changedIds.push(parentId);
       }
     }
@@ -388,7 +299,6 @@ export function createAttentionObserver(
       const archived = child.archivedAt !== null && child.archivedAt !== undefined;
       if (archived && foldedArchived.has(child.id)) continue;
       parents.set(child.id, parentId);
-      if (!sliceOf.has(child.id)) sliceOf.set(child.id, sliceNumberOf(environmentNameOf(child as never)));
       await syncWithParent(child.id);
       if (archived) {
         foldedArchived.add(child.id);

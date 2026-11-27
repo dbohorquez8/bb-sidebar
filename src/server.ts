@@ -364,7 +364,7 @@ const putAwayRecordSchema = z.object({
 });
 
 const threadObservationSchema = z.object({
-  v: z.literal(2),
+  v: z.literal(3),
   threadId: z.string(),
   cursorSeq: z.number().nullable(),
   turnStartedAt: z.number().nullable(),

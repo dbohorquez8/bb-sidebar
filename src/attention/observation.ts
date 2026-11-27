@@ -1,8 +1,9 @@
-import { evaluateRuleEvent, isWakeMessage, resetsLabel, ruleSkills, rulesDocumentVersion, type AttentionRulesDocument, type RuleOutcome } from "./rules";
+import { evaluateRuleEvent, isWakeMessage, ruleSkills, rulesDocumentVersion, type AttentionRulesDocument, type RuleOutcome } from "./rules";
 import { extractStepInvocation } from "./stage";
 import type {
   ObservationEvent,
   ObservedRules,
+  StateRuleKind,
   ThreadEventRowLike,
   ThreadObservation,
 } from "./types";
@@ -57,6 +58,7 @@ export const HISTORY_EVENT_TYPES = [
   "turn/started",
   "turn/completed",
   "item/started",
+  "item/completed",
   "client/turn/requested",
   "system/interaction/lifecycle",
   "item/delegation/progress",
@@ -99,6 +101,15 @@ export function rowsToObservationEvents(
     }
 
     if (row.type === "client/turn/requested") events.push(turnRequestedEvent(row));
+
+    // An agent message (D-13): only agentMessage items count; every other completed item is ignored.
+    if (row.type === "item/completed") {
+      const item = (row.data as { item?: { type?: unknown; text?: unknown } } | null)?.item;
+      if (item?.type === "agentMessage" && typeof item.text === "string") {
+        events.push({ kind: "agent-message", at: row.createdAt, text: item.text });
+      }
+      continue;
+    }
 
     const step = extractStepInvocation(row);
     if (step !== null) {
@@ -170,14 +181,36 @@ function foldRules(
     outcome = evaluateRuleEvent(document, previous, { kind: "skill", skill: event.step });
     if (sticky) outcome = { ...outcome, status: "needs-you" };
   }
-  const labelAt = outcome.label === null ? undefined : outcome.label === previous.label ? held.labelAt : (event as { at?: number }).at;
-  return { version, status: outcome.status, label: outcome.label, ...(labelAt !== undefined ? { labelAt } : {}) };
+  // D-12: skill labels are gone; only the status of a rule outcome is kept.
+  return { version, status: outcome.status, label: null };
+}
+
+/** The rule status each line of a message gets (`reply-start` markers count on the first line only). */
+function lineStatuses(document: AttentionRulesDocument | null | undefined, text: string): (RuleOutcome["status"])[] {
+  return text.split(/\r?\n/).map((line, index) => {
+    // A leading empty line keeps a `reply-start` marker from matching a later line.
+    const probe = index === 0 ? line : `\n${line}`;
+    return evaluateRuleEvent(document, { status: null, label: null }, { kind: "reply", text: probe }).status;
+  });
+}
+
+/** The closing verdict of a message (its last matching line) and whether any line is a Needs You block. */
+function readAgentMessage(
+  document: AttentionRulesDocument | null | undefined,
+  text: string,
+): { closing: StateRuleKind | null; hasNeedsYouBlock: boolean } {
+  const statuses = lineStatuses(document, text);
+  let closing: StateRuleKind | null = null;
+  for (const status of statuses) if (status !== null) closing = status;
+  return { closing, hasNeedsYouBlock: statuses.includes("needs-you") };
 }
 
 /**
  * Folds a child thread's label into its parent's: the newest label wins, and a
  * label set before the parent's last reset never counts. Returns the same
  * object when nothing changes.
+ *
+ * No longer called since D-12 (labels are removed); kept exported until slice 08 retires its tests.
  */
 export function mergeChildLabel(parent: ThreadObservation, child: ThreadObservation | null | undefined): ThreadObservation {
   const incoming = child?.rules;
@@ -205,7 +238,7 @@ function applyObservedEvent(
   rules: AttentionRulesDocument | null | undefined,
 ): ThreadObservation {
   const base: ThreadObservation = previous ?? {
-    v: 2,
+    v: 3,
     threadId,
     cursorSeq: null,
     turnStartedAt: null,
@@ -217,21 +250,39 @@ function applyObservedEvent(
   };
 
   switch (event.kind) {
+    case "turn-requested": {
+      // The Owner's own message (not a wake-up) ends a sticky Needs You block (AC-48, AC-50).
+      if (!event.byOwner || isWakeMessage(rules, event.text)) return base;
+      return { ...base, latestOwnerAt: event.at, needsYouBlockAt: null };
+    }
     case "turn-started":
-      return { ...base, reply: null, turnStartedAt: event.at };
-    case "turn-ended":
-      return { ...base, turnEndedAt: event.at, reply: { endedAt: event.at } };
+      // A new turn has no closing yet; a Needs You block and an end word survive it (AC-41, AC-46).
+      return { ...base, reply: null, turnStartedAt: event.at, closing: null };
+    case "turn-ended": {
+      // AC-41: the closing of the turn's last message sets an end word. Done never displaces Finalized.
+      const closingEndWord = base.closing === "finalized"
+        ? "Finalized"
+        : base.closing === "done" && (base.closingEndWord ?? null) === null
+          ? "Done"
+          : base.closingEndWord ?? null;
+      return { ...base, turnEndedAt: event.at, reply: { endedAt: event.at }, closingEndWord };
+    }
     case "turn-failed":
       return { ...base, turnEndedAt: event.at, reply: null };
-    case "step-invoked": {
-      if (!resetsLabel(rules, event.step)) return base;
-      const { slices: _slices, ...rest } = base;
-      return { ...rest, labelResetAt: event.at };
+    case "agent-message": {
+      // AC-47: every agent message is checked for a Needs You block, not only the turn's last.
+      const message = readAgentMessage(rules, event.text);
+      const closingEndWord = message.closing === "finalized" ? "Finalized" : base.closingEndWord ?? null;
+      return {
+        ...base,
+        closing: message.closing,
+        closingEndWord,
+        needsYouBlockAt: message.hasNeedsYouBlock ? event.at : base.needsYouBlockAt ?? null,
+      };
     }
-    case "context-cleared": {
-      const { slices: _slices, ...rest } = base;
-      return { ...rest, reply: null, labelResetAt: event.at };
-    }
+    case "context-cleared":
+      // D-11: /clear ends the sticky Needs You block and the remembered end word.
+      return { ...base, reply: null, clearedAt: event.at, needsYouBlockAt: null, closing: null, closingEndWord: null };
     case "background-activity":
       return {
         ...base,
@@ -317,7 +368,7 @@ export function coldReadComplete(
 export function parseStoredObservation(json: unknown): ThreadObservation | null {
   if (json === null || typeof json !== "object") return null;
   const candidate = json as Partial<ThreadObservation>;
-  if (candidate.v !== 2) return null;
+  if (candidate.v !== 3) return null; // D-13: a stored v2 record is unreadable and the thread is cold-read again
   if (typeof candidate.threadId !== "string") return null;
   return candidate as ThreadObservation;
 }
