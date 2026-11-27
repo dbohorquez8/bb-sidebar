@@ -44,7 +44,7 @@ export function buildAttentionView(args: {
   ageLabel: string; // today's relativeTimeLabel(thread.updatedAt, now), used for idle
   now: number;
   /** The status-file card (WS-268) from `cardFor`; passed through to the view when given. */
-  card?: CardView;
+  card: CardView;
 }): AttentionView {
   const { status, statusSince, silenceOrigin, ruleLabel = null, ticket, background, ageLabel, now, card } =
     args;
@@ -71,6 +71,6 @@ export function buildAttentionView(args: {
     background,
     backgroundCount,
     accessibleText,
-    ...(card ? { card } : {}),
+    card,
   };
 }

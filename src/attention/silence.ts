@@ -1,6 +1,8 @@
 import type { BackgroundWork } from "./types";
 
-export const SILENCE_THRESHOLD_DEFAULT_MINUTES = 15;
+import { CHECK_THRESHOLD_DEFAULT_MINUTES } from "./status-constants";
+
+export const SILENCE_THRESHOLD_DEFAULT_MINUTES = CHECK_THRESHOLD_DEFAULT_MINUTES; // 40 (AC-60)
 export const SILENCE_THRESHOLD_MIN_MINUTES = 1;
 export const SILENCE_THRESHOLD_MAX_MINUTES = 1440;
 

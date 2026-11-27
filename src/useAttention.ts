@@ -36,6 +36,7 @@ import {
 } from "./attention";
 import { attentionInputFromThread } from "./attention-thread-input";
 import { readFailedAck, readStatusSince, writeFailedAck, writeStatusSince } from "./attention-since-storage";
+import { cardFor } from "./attention/card";
 import { isInactiveThread } from "./inactive";
 import { relativeTimeLabel } from "./relative-time";
 import { threadWorktreeName } from "./inbox";
@@ -438,6 +439,8 @@ export function useAttention(
           background: liveBackground,
           ageLabel: relativeTimeLabel(thread.updatedAt, now),
           now,
+          // Placeholder until the composer (slice 07) supplies the server's card.
+          card: cardFor({ now }),
         });
 
         return { status: finalStatus, input, observation, view, failing };

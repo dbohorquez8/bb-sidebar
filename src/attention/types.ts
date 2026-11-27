@@ -156,5 +156,5 @@ export interface AttentionView {
   /** Text for assistive technology: "Needs you, 6m"; an idle card gives its age. */
   accessibleText: string;
   /** The status-file card (WS-268). Optional until buildAttentionView supplies it (slice 05); StatusSlot falls back to the word without it. */
-  card?: CardView;
+  card: CardView;
 }

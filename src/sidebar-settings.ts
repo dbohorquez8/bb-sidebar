@@ -100,7 +100,7 @@ export const DEFAULT_SIDEBAR_SETTINGS: SidebarSettingsValues = {
   autoSettleAfterDays: 3,
   autoSettleOnMerge: true,
   childSortField: "created",
-  childSortDirection: "ascending",
+  childSortDirection: "descending",
   childIconStyle: "disc",
   compactWorkingThreads: false,
   workingShelf: false,
