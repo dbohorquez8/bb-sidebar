@@ -54,7 +54,7 @@ export interface AttentionModel {
 
 export const AttentionContext = createContext<AttentionModel | null>(null);
 
-const IDLE_CARD: CardView = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null };
+const IDLE_CARD: CardView = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null, phase: null };
 const EMPTY_CARDS: ReadonlyMap<string, CardView> = new Map();
 
 function sameStatuses(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {

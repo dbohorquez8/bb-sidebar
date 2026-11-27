@@ -38,7 +38,7 @@ interface CardRow {
   settled: boolean;
 }
 
-const IDLE: CardView = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null };
+const IDLE: CardView = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null, phase: null };
 
 /** BB's own words that show no time (today's `isTimedStatus`). */
 const UNTIMED_WORDS: ReadonlySet<string> = new Set(["Draft", "Queued"]);
