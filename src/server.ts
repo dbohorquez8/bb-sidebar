@@ -64,6 +64,7 @@ import {
   resolveContextSoftLimit,
 } from "./context-usage";
 import { createAttentionObserver, THREAD_ATTENTION_TABLE } from "./attention/observer";
+import { createStatusReader, THREAD_STATUS_MEMORY_TABLE } from "./attention/status-reader";
 import {
   ATTENTION_CHANNEL,
   migrateLegacyAttention,
@@ -190,6 +191,12 @@ SELECT thread_id,
      host_id TEXT PRIMARY KEY,
      icon    TEXT NOT NULL
    )`,
+  // 31 — WS-268 AC-61 (runs once; a later Owner 15 stays: AC-62)
+  `UPDATE sidebar_settings SET silence_threshold_minutes = 40 WHERE id = 1 AND silence_threshold_minutes = 15`,
+  // 32 — WS-268 AC-74 (runs once; a later Owner choice stays: AC-75)
+  `UPDATE sidebar_settings SET child_sort_direction = 'descending' WHERE id = 1 AND child_sort_direction = 'ascending'`,
+  // 33 — WS-268 LC-8
+  THREAD_STATUS_MEMORY_TABLE,
 ];
 
 export interface StoredLifecycleRow {
@@ -381,7 +388,40 @@ const threadObservationSchema = z.object({
   lastActivityAt: z.number().nullable(),
   interactionAt: z.number().nullable(),
   observedAt: z.number(),
+  latestOwnerAt: z.number().nullable().optional(),
+  clearedAt: z.number().nullable().optional(),
+  needsYouBlockAt: z.number().nullable().optional(),
+  closing: z.enum(["needs-you", "working", "background", "done", "finalized"]).nullable().optional(),
+  closingEndWord: z.enum(["Finalized", "Done"]).nullable().optional(),
 });
+const cardViewSchema = z
+  .object({
+    word: z.string().nullable(),
+    count: z.string().nullable(),
+    text: z.string().nullable(),
+    tone: z.enum(["yellow", "green", "red", "orange", "white", "violet", "muted"]).nullable(),
+    icon: z.enum([
+      "spinner", "gear", "ticket", "bell", "check-in-circle", "question-mark-in-circle", "hand-or-shield",
+      "X-in-circle", "clock", "rocket", "moon", "bookmark", "swap-arrows", "flag", "none",
+    ]),
+    pill: z.boolean(),
+    hint: z.string().nullable(),
+    bar: z.array(z.enum(["green", "pulsing", "empty"])).nullable(),
+    timeLabel: z.string().nullable(),
+  })
+  .strict();
+const threadCardSchema = z
+  .object({
+    threadId: z.string(),
+    parentThreadId: z.string().nullable(),
+    card: cardViewSchema,
+    since: z.number().nullable(),
+    chime: z.enum(["needs-you", "done", "none"]),
+    isChild: z.boolean(),
+    fileState: z.enum(["pending", "read", "none"]),
+    settled: z.boolean(),
+  })
+  .strict();
 const uploadFilenameSchema = z
   .string()
   .trim()
@@ -498,6 +538,10 @@ export const bbSidebarRpcContract = defineRpcContract({
       threads: z.array(z.object({ id: z.string().min(1), parentId: z.string().min(1).nullable() }).strict()).max(1000),
     }).strict(),
     output: z.object({ observations: z.array(threadObservationSchema), unavailable: z.array(z.string()) }),
+  },
+  getThreadCards: {
+    input: z.object({ threadIds: z.array(z.string().min(1)).max(2000).optional() }).strict(),
+    output: z.object({ cards: z.array(threadCardSchema) }).strict(),
   },
   getAttentionRules: {
     input: z.object({}).strict(),
@@ -801,7 +845,12 @@ export default async function plugin(bb: BbPluginApi) {
   const threadPullRequests = createThreadPullRequests(bb);
   const regenerateTitle = createTitleRegenerator(bb);
   const db = bb.storage.database();
-  bb.storage.migrate(db, migrations);
+  // A failed migration must not stop the plugin loading (D-5).
+  try {
+    bb.storage.migrate(db, migrations);
+  } catch (error) {
+    bb.log.error(`Storage migration failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
   createAutoTitleRecovery(bb, regenerateTitle);
   createClearRetitle(bb, regenerateTitle);
   // Legacy project attention rows become one global selection, once.
@@ -818,6 +867,8 @@ export default async function plugin(bb: BbPluginApi) {
       (error) => bb.log.error(`Attention rebuild failed: ${error instanceof Error ? error.message : String(error)}`),
     );
   };
+  const statusReader = createStatusReader(bb, { db, observer: attentionObserver, rules: () => attentionRules.active() });
+  bb.onDispose(() => statusReader.dispose());
   void attentionRules.start().catch((error) => bb.log.error(`Attention rules watcher failed: ${error instanceof Error ? error.message : String(error)}`));
 
   const readSidebarSettings = (): SidebarSettingsValues => {
@@ -2205,6 +2256,7 @@ export default async function plugin(bb: BbPluginApi) {
       return readSidebarSettings();
     },
     listAttention: ({ threads }) => attentionObserver.list(threads),
+    getThreadCards: ({ threadIds }) => statusReader.cards(threadIds, readSidebarSettings().silenceThresholdMinutes),
     getAttentionRules: () => attentionRules.open(),
     reloadAttentionRules: () => attentionRules.reload(),
     installAttentionRulesExample: () => attentionRules.install(),

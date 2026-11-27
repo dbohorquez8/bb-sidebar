@@ -106,6 +106,7 @@ const workingView: AttentionView = {
   background: { workers: 0, commands: 0, workflows: 0 },
   backgroundCount: 0,
   accessibleText: "Working",
+  card: { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null },
 };
 
 describe("StatusOrTime", () => {
