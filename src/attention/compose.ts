@@ -66,7 +66,7 @@ export function composeWorld(deps: {
   const sightingFile = new Map<string, "pending" | "read" | "none">();
   const unsettledSince = new Map<string, number>();
   const pendingPlays: { sound: "needs-you" | "done"; threadId: string }[] = [];
-  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let queued = 0;
   const sightingState = new Map<string, { childRunning: boolean; tone: CardView["tone"]; chime: "needs-you" | "done" | "none" }>();
 
   const viewOf = (row: CardRow): CardView => {
@@ -145,13 +145,12 @@ export function composeWorld(deps: {
       if (entry.status === "needs-you" ? settings.needsYouEnabled !== true : settings.doneEnabled !== true) continue;
       pendingPlays.push({ sound: entry.status, threadId: entry.threadId });
     }
-    // Needs you first (AC-48): entries found by fetches in the same tick are one update. They play together,
-    // Needs you before Done, so the quiet period that follows the Needs you sound covers the Done.
-    if (pendingPlays.length > 0 && flushTimer === null) flushTimer = setTimeout(flushPlays, 0);
   }
 
+  // Needs you first (AC-48): entries found by fetches queued together are one update. They play together, Needs you
+  // before Done, so the quiet period that follows the Needs you sound covers the Done. The batch plays when the last
+  // queued fetch ends (no timer: a timer started at the end of a tick can fire after the tick that owns it).
   function flushPlays(): void {
-    flushTimer = null;
     const batch = pendingPlays.splice(0);
     if (disposed) return;
     batch.sort((a, b) => Number(b.sound === "needs-you") - Number(a.sound === "needs-you"));
@@ -175,7 +174,15 @@ export function composeWorld(deps: {
   }
 
   function refresh(threadIds?: readonly string[], baseline = false): Promise<boolean> {
-    const run = chain.then(() => (disposed ? false : fetchOnce(threadIds, baseline)));
+    queued += 1;
+    const run = chain.then(async () => {
+      try {
+        return disposed ? false : await fetchOnce(threadIds, baseline);
+      } finally {
+        queued -= 1;
+        if (queued === 0) flushPlays();
+      }
+    });
     chain = run.catch(() => undefined);
     return run;
   }
@@ -216,7 +223,7 @@ export function composeWorld(deps: {
     },
     dispose() {
       disposed = true;
-      if (flushTimer !== null) clearTimeout(flushTimer);
+      pendingPlays.length = 0;
       if (timer !== null) clearInterval(timer);
       timer = null;
     },
