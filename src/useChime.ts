@@ -63,8 +63,8 @@ export function useChime({
   );
 
   // Same-render values, read by effects and timers without triggering them.
-  const current = useRef({ soundWindow, settings, windows, lifecycle, snapshot, rpc, childIds });
-  current.current = { soundWindow, settings, windows, lifecycle, snapshot, rpc, childIds };
+  const current = useRef({ soundWindow, settings, windows, lifecycle, snapshot, rpc, childIds, attention });
+  current.current = { soundWindow, settings, windows, lifecycle, snapshot, rpc, childIds, attention };
 
   const quietRef = useRef<QuietPeriod | null>(null);
   const pendingRef = useRef<PlayRequest[]>([]);
@@ -112,7 +112,8 @@ export function useChime({
     const { start, keep } = decidePlayback(pendingRef.current, {
       now,
       isPlayingWindow: soundWindows.isPlayingWindow,
-      isTracked: (threadId) => snap.statuses.has(threadId) && !snap.archived.has(threadId),
+      // A thread the composer has a card for is tracked even before the next render adds it to the snapshot.
+      isTracked: (threadId) => (snap.statuses.has(threadId) || (current.current.attention.hasCard?.(threadId) ?? false)) && !snap.archived.has(threadId),
       isPutAway: (threadId) => life.putAwayFor(threadId, now),
     });
     pendingRef.current = keep;
