@@ -211,7 +211,9 @@ export function useAttention(
     const wallNow = Date.now();
     for (const thread of threads) {
       if (thread.isArchived) continue;
-      const card = cards.get(thread.id) ?? IDLE_CARD;
+      const card = cards.get(thread.id);
+      // No card yet: no view, so the slot falls back to BB's own indicator (AC-24, AC-04).
+      if (!card) continue;
       const background = {
         workers: thread.activity.backgroundAgents,
         commands: thread.activity.backgroundCommands,
