@@ -98,7 +98,7 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
 }
 
 const idleCard: CardView = {
-  word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null,
+  word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null, phase: null,
 };
 const cardOf = (overrides: Partial<CardView>): CardView => ({ ...idleCard, ...overrides });
 const workingCard = cardOf({ word: "Working", text: "Working", tone: "yellow", icon: "spinner" });

@@ -99,7 +99,11 @@ const END_LOOK: Readonly<Record<string, LookKey>> = {
 };
 export const BB_TONE: Readonly<Record<string, Tone>> = { Draft: "orange", Queued: "orange", Planning: "muted", Goal: "green" };
 
-function mk(key: LookKey, word: string, o: { count?: string | null; hint?: string | null; bar?: BarSegment[] | null } = {}): CardView {
+function mk(
+  key: LookKey,
+  word: string,
+  o: { count?: string | null; hint?: string | null; bar?: BarSegment[] | null; phase?: string | null } = {},
+): CardView {
   const look = LOOK[key];
   const count = o.count ?? null;
   return {
@@ -112,10 +116,22 @@ function mk(key: LookKey, word: string, o: { count?: string | null; hint?: strin
     hint: o.hint ?? null,
     bar: o.bar ?? null,
     timeLabel: null,
+    phase: o.phase ?? null,
   };
 }
 
-const IDLE_CARD: CardView = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null };
+const IDLE_CARD: CardView = {
+  word: null,
+  count: null,
+  text: null,
+  tone: null,
+  icon: "none",
+  pill: false,
+  hint: null,
+  bar: null,
+  timeLabel: null,
+  phase: null,
+};
 const runningHint = (n: number): string | null => (n > 0 ? `${n} running` : null);
 
 interface Resolved {
@@ -200,6 +216,9 @@ function resolve(input: CardInput): Resolved {
   if (kind === "worker" && isChild && endWord !== null) endWord = "Done";
   if (state === "Handing over") endWord = null; // Handing over replaces it (AC-41)
 
+  // AC-76: the file's phase word (and count) shown in the tooltip on the Needs you, Handing over and Check? cards.
+  const phaseText = phase === null ? null : counts === null ? phase : `${phase} ${counts}`;
+
   const greenWord = (): { word: string; count: string | null } =>
     phase !== null ? { word: phase, count: counts } : { word: kind === "worker" && isChild ? "Working" : "Waiting", count: null };
 
@@ -235,7 +254,7 @@ function resolve(input: CardInput): Resolved {
     const savedNeedsYou = reset ? null : (input.saved?.needsYouAt ?? null);
     const stickyNeedsYou = savedNeedsYou !== null && (cutoffAt === null || savedNeedsYou > cutoffAt);
     const fileNeedsYou = state === "Needs you" && file !== null && fileCountsAfter(file.updatedMs, cutoffAt);
-    if (pending || hf.needsYouBlockAt !== null || stickyNeedsYou || fileNeedsYou || descAsks) return out(mk("needs-you", "Needs you"));
+    if (pending || hf.needsYouBlockAt !== null || stickyNeedsYou || fileNeedsYou || descAsks) return out(mk("needs-you", "Needs you", { phase: phaseText }));
   }
 
   // ================================================================ step 2: Failed, while the turn is not running
@@ -245,7 +264,7 @@ function resolve(input: CardInput): Resolved {
   }
 
   // ================================================================ step 2b: Handing over, running or not
-  if (state === "Handing over") return out(mk("handing-over", "Handing over"));
+  if (state === "Handing over") return out(mk("handing-over", "Handing over", { phase: phaseText }));
 
   // ================================================================ step 3: the yellow live word
   if (turnRunning) {
@@ -267,7 +286,7 @@ function resolve(input: CardInput): Resolved {
 
   // ================================================================ step 6: Check? (top-level only)
   if (!isChild && !isDone && (facts.silentMin ?? 0) >= threshold && (background > 0 || closingWorking)) {
-    return out(mk("check", "Check?"));
+    return out(mk("check", "Check?", { phase: phaseText }));
   }
 
   // ================================================================ step 7: queued word, then the green live word

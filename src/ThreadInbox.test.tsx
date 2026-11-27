@@ -456,7 +456,7 @@ function render(
  * a card's word, icon, or colour wires the card here; with none wired the row keeps bb's own indicator
  * wording (AC-04, AC-24).
  */
-const NO_CARD = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null };
+const NO_CARD = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null, phase: null };
 const cardRow = (threadId: string, card: Record<string, unknown>, parentThreadId: string | null = null) => ({
   threadId, parentThreadId, card: { ...NO_CARD, ...card }, since: null, chime: "none", isChild: parentThreadId !== null,
   fileState: "none", settled: true,

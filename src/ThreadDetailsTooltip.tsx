@@ -39,6 +39,7 @@ export function AttentionHoverRows({ view }: { view: AttentionView | null }) {
           value={`${view.background.workers} workers · ${view.background.commands} background commands · ${view.background.workflows} workflows`}
         />
       ) : null}
+      {typeof view?.card?.phase === "string" ? <DetailRow icon="Gear" label="Phase" value={view.card.phase} /> : null}
     </>
   );
 }

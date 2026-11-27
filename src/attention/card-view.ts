@@ -36,6 +36,8 @@ export interface CardView {
   bar: BarSegment[] | null;
   /** The muted age after the word; null when none is shown. */
   timeLabel: string | null;
+  /** AC-76: the file's phase word and count ("Building 1 / 2") on a Needs you, Handing over or Check? card; else null. */
+  phase: string | null;
 }
 
 /** Icon shape → `Icon` name (LC-7). "none" has no glyph. */

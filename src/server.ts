@@ -409,6 +409,7 @@ const cardViewSchema = z
     hint: z.string().nullable(),
     bar: z.array(z.enum(["green", "pulsing", "empty"])).nullable(),
     timeLabel: z.string().nullable(),
+    phase: z.string().nullable(),
   })
   .strict();
 const threadCardSchema = z
