@@ -1,6 +1,8 @@
 // Locked contract types for the sidebar attention feature (004-sidebar-attention).
 // See docs/features/004-sidebar-attention/plan.md § Locked Contracts.
 
+import type { CardView } from "./card-view";
+
 export type AttentionStatus =
   | "needs-you"
   | "check"
@@ -59,7 +61,25 @@ export type RuleLabelView = NonNullable<ObservedRules["label"]> & {
   sliceProgress?: { done: number; total: number };
 };
 
-export interface ThreadObservation {
+/** The folded history a card reads (WS-268, LC-4); never holds reply text (WS-142). */
+export interface HistoryFacts {
+  /** Latest non-wake Owner message. */
+  latestOwnerAt: number | null;
+  /** Latest /clear (D-11). */
+  clearedAt: number | null;
+  turnStartedAt: number | null;
+  turnEndedAt: number | null;
+  /** Latest agent message with a Needs You block after latestOwnerAt and clearedAt (AC-46, AC-47). */
+  needsYouBlockAt: number | null;
+  /** The closing verdict of the turn's last agent message, from the rules document's state rules. */
+  closing: StateRuleKind | null;
+  /** An end word from a closing marker, kept per AC-41 until /clear or a later end word. */
+  closingEndWord: "Finalized" | "Done" | null;
+  lastActivityAt: number | null;
+}
+
+export interface ThreadObservation extends Partial<Pick<HistoryFacts, "latestOwnerAt" | "clearedAt" | "needsYouBlockAt" | "closing" | "closingEndWord">> {
+  /** Still 2: the v3 bump needs observation.ts, observer.ts and the server.ts RPC schema, which later slices own. */
   v: 2;
   threadId: string;
   /**
@@ -110,6 +130,8 @@ export type ObservationEvent =
   | { kind: "interaction-resolved"; at: number }
   /** The conversation was reset (/clear): sticky label and reply-marker status no longer apply. */
   | { kind: "context-cleared"; at: number }
+  /** An agent message completed (`item/completed` agentMessage). `text` is used only while folding and never stored. */
+  | { kind: "agent-message"; at: number; text: string }
   | { kind: "cursor"; seq: number }; // highest seq of a filtered batch
 
 export interface TicketMatch {
@@ -133,4 +155,6 @@ export interface AttentionView {
   backgroundCount: number;
   /** Text for assistive technology: "Needs you, 6m"; an idle card gives its age. */
   accessibleText: string;
+  /** The status-file card (WS-268). Optional until buildAttentionView supplies it (slice 05); StatusSlot falls back to the word without it. */
+  card?: CardView;
 }

@@ -3,7 +3,7 @@ import {
   type PluginSidebarThread,
   type PluginSidebarThreadIndicator,
 } from "@get-bb/plugin-sdk/app";
-import { useContext, useId, useMemo } from "react";
+import { useContext, useId, useMemo, type ReactNode } from "react";
 import { isWorkingIndicator } from "./child-status";
 import { Icon } from "./components/Icon";
 import { cn } from "./lib/utils";
@@ -11,7 +11,106 @@ import { relativeTimeLabel } from "./relative-time";
 import { useWorkingSinceContext } from "./useWorkingSince";
 import { statusWithDuration } from "./working-since";
 import { AttentionContext } from "./useAttention";
-import { LABEL_TONE_COLOURS, ruleLabelText, type AttentionView, type ResolvedStatus } from "./attention";
+import type { AttentionView, ResolvedStatus } from "./attention";
+import { ICON_OF_SHAPE, type CardView, type Tone } from "./attention/card-view";
+
+/** Text colour per card tone, from the attention tokens (LC-7). Needs you is the red pill; the other reds use the failed token. */
+function cardToneClass(card: CardView): string {
+  switch (card.tone) {
+    case "yellow":
+      return "text-[color:var(--bb-sidebar-status-working)]";
+    case "green":
+      return "text-[color:var(--bb-sidebar-status-background)]";
+    case "red":
+      return card.pill
+        ? "text-[color:var(--bb-sidebar-status-needs-you)]"
+        : "text-[color:var(--bb-sidebar-status-failed)]";
+    case "orange":
+      return "text-[color:var(--bb-sidebar-status-check)]";
+    case "violet":
+      return "text-[color:var(--bb-sidebar-status-finalized)]";
+    case "white":
+      return card.pill
+        ? "text-[color:var(--bb-sidebar-status-done-unread)]"
+        : "text-[color:var(--bb-sidebar-status-end)]";
+    case "muted":
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+const PILL_BG: Partial<Record<Tone, string>> = {
+  red: "bg-[color:var(--bb-sidebar-pill-needs-you)]",
+  white: "bg-[color:var(--bb-sidebar-pill-done-unread)]",
+};
+
+const BAR_SEGMENT_CLASS = {
+  green: "bg-[color:var(--bb-sidebar-status-background)]",
+  pulsing: "bg-[color:var(--bb-sidebar-status-background)] animate-pulse",
+  empty: "bg-muted-foreground/30",
+} as const;
+
+/** The status slot for a card (LC-7 DOM contract): slice bar, icon, word, hint, time label. */
+function CardSlot({
+  card,
+  ariaLabel,
+  describedBy,
+  description,
+}: {
+  card: CardView;
+  ariaLabel: string | undefined;
+  describedBy: string | undefined;
+  description: ReactNode;
+}) {
+  const iconName = card.icon === "none" ? null : ICON_OF_SHAPE[card.icon];
+  // Only the Needs you bell and the Done-pill check keep their animation (AC-39a).
+  const iconMotion =
+    card.icon === "spinner"
+      ? "animate-spin"
+      : card.icon === "gear"
+        ? "animate-[spin_4s_linear_infinite]"
+        : card.icon === "bell" && card.pill
+          ? "bb-sidebar-needs-you-bell"
+          : card.icon === "check-in-circle" && card.pill
+            ? "bb-sidebar-done-check"
+            : "";
+  return (
+    <span
+      aria-label={ariaLabel}
+      aria-describedby={describedBy}
+      className={cn(
+        "inline-flex min-w-0 items-center gap-1 text-2xs font-semibold leading-4",
+        card.pill ? "h-[18px] rounded-full px-1.5" : "h-5",
+        card.pill && card.tone ? PILL_BG[card.tone] : null,
+        cardToneClass(card),
+      )}
+    >
+      {card.bar ? (
+        <span data-slice-bar className="flex w-8 shrink-0 flex-nowrap items-center gap-px">
+          {card.bar.map((state, index) => (
+            <span
+              key={index}
+              data-slice-segment
+              data-state={state}
+              className={cn("h-1 min-w-0 flex-1 rounded-full", BAR_SEGMENT_CLASS[state])}
+            />
+          ))}
+        </span>
+      ) : null}
+      {iconName ? (
+        <Icon name={iconName} aria-hidden="true" className={cn("size-3 shrink-0", iconMotion)} />
+      ) : null}
+      <span className="truncate">{card.text}</span>
+      {card.hint !== null ? (
+        <span className="truncate font-normal text-muted-foreground">{card.hint}</span>
+      ) : null}
+      {card.timeLabel !== null ? (
+        <span className="font-normal tabular-nums text-muted-foreground">{card.timeLabel}</span>
+      ) : null}
+      {description}
+    </span>
+  );
+}
 
 /**
  * The default trailing slot for cards and flat rows: fixed and right-aligned.
@@ -106,6 +205,31 @@ function AttentionStatusOrTime({
   now: number;
 }) {
   const descriptionId = useId();
+  if (view.card) {
+    const card = view.card;
+    if (card.text === null) {
+      return (
+        <span className="tabular-nums text-2xs text-muted-foreground">
+          {relativeTimeLabel(listedThread.updatedAt, now)}
+        </span>
+      );
+    }
+    const hasTime = card.timeLabel !== null;
+    return (
+      <CardSlot
+        card={card}
+        ariaLabel={listedThread.hasPendingInteraction ? card.text : (listedThread.indicatorLabel ?? card.text)}
+        describedBy={hasTime ? descriptionId : undefined}
+        description={
+          hasTime ? (
+            <span id={descriptionId} className="sr-only">
+              {view.accessibleText}
+            </span>
+          ) : null
+        }
+      />
+    );
+  }
   if (view.label === null) {
     // Idle: only the age, exactly as today's card does.
     return (
@@ -150,13 +274,7 @@ function AttentionStatusOrTime({
           aria-hidden="true"
           className={cn("size-3 shrink-0", kind === "working" ? "animate-spin" : "animate-[spin_4s_linear_infinite]")}
         />
-        {/* A rule label, else the stage, else the status word. The label's tone is a design-system token. */}
-        <span
-          className="truncate"
-          style={view.ruleLabel?.tone ? { color: LABEL_TONE_COLOURS[view.ruleLabel.tone] } : undefined}
-        >
-          {view.ruleLabel ? ruleLabelText(view.ruleLabel) : view.label}
-        </span>
+        <span className="truncate">{view.label}</span>
         {view.timeLabel !== null ? (
           <span className="font-normal tabular-nums text-muted-foreground">{view.timeLabel}</span>
         ) : null}

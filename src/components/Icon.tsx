@@ -1,5 +1,11 @@
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
+  ArrowDataTransferHorizontalIcon,
+  Bookmark02Icon,
+  HandIcon,
+  Moon02Icon,
+  Rocket01Icon,
+  Ticket01Icon,
   ArrowDown01Icon,
   ArrowLeft01Icon,
   ArrowRight01Icon,
@@ -80,6 +86,12 @@ const ICON_MAP = {
   Terminal: ComputerTerminal01Icon,
   UserRoundPlus: UserAdd01Icon,
   Workflow: WorkflowCircle03Icon,
+  Ticket: Ticket01Icon,
+  Hand: HandIcon,
+  Rocket: Rocket01Icon,
+  Moon: Moon02Icon,
+  Bookmark: Bookmark02Icon,
+  SwapArrows: ArrowDataTransferHorizontalIcon,
 } as const satisfies Record<string, IconSvgElement>;
 
 export type IconName = keyof typeof ICON_MAP;
