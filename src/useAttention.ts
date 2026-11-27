@@ -6,41 +6,26 @@ import {
   useSidebarThreadDraftIds,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
-import { isWorkingIndicator } from "./child-status";
 import type { AttentionRulesState } from "./attention-rules-state";
 import type { bbSidebarRpcContract } from "./server";
 import {
   ATTENTION_CHANNEL,
   ATTENTION_RULES_CHANNEL,
-  backgroundSignature,
-  buildAttentionView,
-  ruleLabelView,
-  historySince,
-  isSilentPastThreshold,
+  backgroundWorkCount,
   parseTicketId,
-  reconcileFailedAck,
-  reconcileStatusSince,
-  resolveAttentionStatus,
   selectedTicketPrefixes,
-  silenceOrigin,
-  statusKey,
-  chimeStatusKey,
-  statusesWithWaitingParents,
-  verdictFor,
   SILENCE_THRESHOLD_DEFAULT_MINUTES,
-  type AttentionInput,
   type AttentionView,
+  type BbWord,
   type ResolvedStatus,
-  type StatusSinceEntry,
-  type ThreadObservation,
 } from "./attention";
-import { attentionInputFromThread } from "./attention-thread-input";
-import { readFailedAck, readStatusSince, writeFailedAck, writeStatusSince } from "./attention-since-storage";
-import { cardFor } from "./attention/card";
-import { isInactiveThread } from "./inactive";
+import type { CardView } from "./attention/card-view";
+import { composeWorld, type Composer } from "./attention/compose";
 import { relativeTimeLabel } from "./relative-time";
 import { threadWorktreeName } from "./inbox";
 import { useSidebarSettings } from "./useSidebarSettings";
+
+export type ChimeListener = (sound: "needs-you" | "done", threadId: string) => void;
 
 export interface AttentionModel {
   viewFor(threadId: string): AttentionView | null;
@@ -48,25 +33,24 @@ export interface AttentionModel {
   needsYouSince(threadId: string): number | null;
   silenceThresholdMinutes: number;
   /**
-   * chimeStatusKey(status, verdict, heldByChild) per non-archived thread whose attention record has
-   * loaded (present in observations or named in `unavailable`), and only after
-   * the global attention rules state has loaded once. A thread is omitted until then.
-   * While its record reloads after BB reports a status or indicator change for
-   * it, a thread keeps the status it last had here.
+   * One entry per non-archived thread the composer holds a card for (the card's word, or "none" when idle).
+   * Chimes no longer come from changes here: the composer plays them (see `onChime`). The map tells
+   * `useChime` which threads are tracked.
    */
   chimeStatuses: ReadonlyMap<string, string>;
   /**
-   * Increments each time a full load attempt (listAttention for every
-   * non-archived thread, plus getAttentionRules) has settled, success or
-   * failure: on mount and after each realtime reconnect.
+   * Increments each time a composer load has settled, success or failure: on mount and after each
+   * realtime reconnect.
    */
   loadGeneration: number;
+  /** Subscribes to the chimes the composer decides to play (WS-268, LC-11); returns the unsubscribe. */
+  onChime?: (listener: ChimeListener) => () => void;
 }
 
 export const AttentionContext = createContext<AttentionModel | null>(null);
 
-/** A full load in which a call failed is retried after this long, until one succeeds. */
-const FULL_LOAD_RETRY_MS = 5_000;
+const IDLE_CARD: CardView = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null };
+const EMPTY_CARDS: ReadonlyMap<string, CardView> = new Map();
 
 function sameStatuses(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {
   if (a.size !== b.size) return false;
@@ -76,68 +60,32 @@ function sameStatuses(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, str
   return true;
 }
 
-/** BB's own status and indicator for a thread; a change reloads its record. */
-function bbStatusSignature(thread: PluginSidebarThread): string {
-  return `${thread.status}\0${thread.indicator}`;
-}
+const BB_WORDS: Readonly<Record<string, BbWord>> = { Draft: "draft", Queued: "queued", Planning: "planning", Goal: "goal" };
+const NEEDS_YOU_WORDS: ReadonlySet<string> = new Set(["Needs you", "Asking", "Approval"]);
+const END_WORDS: ReadonlySet<string> = new Set(["Stopped", "Wrapped", "Handed over", "Landed", "Done", "Verified"]);
 
-interface ResolvedThread {
-  status: ResolvedStatus;
-  input: AttentionInput;
-  observation: ThreadObservation | null;
-  view: AttentionView;
-  /** BB reports a failure, acknowledged or not (reconcileFailedAck's `failing`). */
-  failing: boolean;
-}
-
-function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const value of a) {
-    if (!b.has(value)) return false;
-  }
-  return true;
-}
-
-function later(a: number | null, b: number | null): number | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  return Math.max(a, b);
+/** The coarse status other parts of the sidebar (glyphs, child lists) still read, taken from the card. */
+function statusOfCard(card: CardView): ResolvedStatus {
+  const word = card.word;
+  if (word === null) return { kind: "idle" };
+  const bbWord = BB_WORDS[word];
+  if (bbWord !== undefined) return { kind: "bb-word", word: bbWord };
+  if (NEEDS_YOU_WORDS.has(word)) return { kind: "needs-you" };
+  if (word === "Failed") return { kind: "failed" };
+  if (word === "Check?") return { kind: "check" };
+  if (word === "Finalized") return { kind: "finalized" };
+  if (END_WORDS.has(word)) return { kind: "done" };
+  if (card.tone === "green") return { kind: "background" };
+  return { kind: "working" };
 }
 
 /**
- * Folds an unsent composer draft into a thread's indicator the way
- * `StatusSlot`'s `useThreadWithDraft` does, so a thread with a draft resolves
- * to the same Draft/Drafting bb-word here as it would through the fallback
- * path. Drafts are per-client state the SDK keeps out of `indicator`.
- */
-function withDraft(thread: PluginSidebarThread, hasDraft: boolean): PluginSidebarThread {
-  if (!hasDraft) return thread;
-  const indicator = isWorkingIndicator(thread.indicator)
-    ? "working-draft"
-    : thread.indicator === "none"
-      ? "draft"
-      : thread.indicator;
-  if (indicator === thread.indicator) return thread;
-  return {
-    ...thread,
-    indicator,
-    indicatorLabel:
-      indicator === "draft"
-        ? "Thread has unsubmitted draft"
-        : "Thread working with unsubmitted draft",
-  };
-}
-
-/**
- * Computes, for the sidebar's whole live thread set, the attention status,
- * view, and Needs you placement every card reads from `AttentionContext`.
+ * Computes, for the sidebar's whole live thread set, the card view and Needs you placement every card reads
+ * from `AttentionContext`.
  *
- * Fetches `listAttention` for every non-archived thread on mount and again
- * for ids named by an `ATTENTION_CHANNEL` message, and `getAttentionRules`
- * (one global state, every project) on mount and on `ATTENTION_RULES_CHANNEL`.
- * A thread with no record yet, one named in `unavailable`, or one whose record
- * was made under other rules than the active ones resolves from BB's live
- * thread fields alone.
+ * The cards come from the composer (`attention/compose.ts`), which fetches `getThreadCards` on mount, on a
+ * short poll, and for ids named by an `ATTENTION_CHANNEL` message, and plays the chimes. The global rules state
+ * is still read for ticket prefixes.
  */
 export function useAttention(
   threads: readonly PluginSidebarThread[],
@@ -154,426 +102,181 @@ export function useAttention(
   const silenceThresholdMinutes =
     sidebarSettings?.silenceThresholdMinutes ?? SILENCE_THRESHOLD_DEFAULT_MINUTES;
 
-  const [observations, setObservations] = useState<ReadonlyMap<string, ThreadObservation>>(
-    () => new Map(),
-  );
-  const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
-  // Null until the global rules state has loaded; then the active document (or
-  // none) and its version. Custom behaviour is absent while this is null.
+  // Null until the global rules state has loaded.
   const [rulesState, setRulesState] = useState<Pick<AttentionRulesState, "document" | "version"> | null>(null);
 
-  const firstSeenRef = useRef<Map<string, number>>(new Map());
-  const backgroundSignatureRef = useRef<Map<string, { signature: string; at: number }>>(new Map());
+  const callRef = useRef(call);
+  callRef.current = call;
+  const draftRef = useRef(draftThreadIds);
+  draftRef.current = draftThreadIds;
 
-  /**
-   * Resolves true when the records loaded (or nothing needed loading).
-   * `settled` runs once the call has answered, before its state lands.
-   */
-  const loadAttention = async (
-    ids: readonly { id: string; parentId: string | null }[],
-    settled?: () => void,
-  ): Promise<boolean> => {
-    if (ids.length === 0) return true;
-    try {
-      const result = await call("listAttention", { threads: ids.slice(0, 1000) });
-      settled?.();
-      setObservations((current) => {
-        const next = new Map(current);
-        for (const observation of result.observations) next.set(observation.threadId, observation);
-        return next;
-      });
-      setUnavailable((current) => {
-        const next = new Set(current);
-        for (const { id } of ids) next.delete(id);
-        for (const id of result.unavailable) next.add(id);
-        return next;
-      });
-      return true;
-    } catch {
-      // The host has no RPC yet, or the call failed: cards fall back to BB's
-      // own live state until the next successful load.
-      if (settled) {
-        settled();
-        setReloadsSettled((count) => count + 1);
-      }
-      return false;
-    }
-  };
-
-  const threadsRef = useRef(threads);
-  threadsRef.current = threads;
-  const liveThreadIds = () =>
-    threadsRef.current
-      .filter((thread) => !thread.isArchived)
-      .map((thread) => ({ id: thread.id, parentId: thread.parentThreadId }));
-
-  const threadIdsKey = threads.map((thread) => `${thread.id}:${thread.parentThreadId ?? ""}`).join("\0");
-  const firstThreadIdsRun = useRef(true);
-  useEffect(() => {
-    // The mount's full load (below) covers the first thread list.
-    if (firstThreadIdsRun.current) {
-      firstThreadIdsRun.current = false;
-      return;
-    }
-    void loadAttention(liveThreadIds());
-    // threadIdsKey captures every id/parent pair this effect depends on.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadIdsKey]);
-
-  // BB can announce a turn (`thread.active`) before the turn's rows exist, so
-  // the record synced then still carries the previous reply, and a stale
-  // Needs you verdict would outrank the running turn until it ends. Reloading
-  // a thread's record when BB's own status or indicator for it changes reads
-  // the new rows. Until that reload answers, the thread's status is left out
-  // of chimeStatuses: BB's list can say a turn ended (and its result is
-  // unread) before the record holds the final reply, and the status resolved
-  // in between (Done in place of Needs you) must not count as an entry.
-  const bbStatusRef = useRef<Map<string, string> | null>(null);
-  /** Thread id → the latest status-change reload's sequence number, while it is in flight. */
-  const reloadingRef = useRef<Map<string, number>>(new Map());
-  const reloadSeqRef = useRef(0);
-  const [reloadsSettled, setReloadsSettled] = useState(0);
-  useEffect(() => {
-    const previous = bbStatusRef.current;
-    const next = new Map<string, string>();
-    const changed: { id: string; parentId: string | null }[] = [];
-    for (const thread of threads) {
-      if (thread.isArchived) continue;
-      const signature = bbStatusSignature(thread);
-      next.set(thread.id, signature);
-      const before = previous?.get(thread.id);
-      if (before !== undefined && before !== signature) {
-        changed.push({ id: thread.id, parentId: thread.parentThreadId });
-      }
-    }
-    bbStatusRef.current = next;
-    if (changed.length === 0) return;
-    const seq = ++reloadSeqRef.current;
-    for (const { id } of changed) reloadingRef.current.set(id, seq);
-    void loadAttention(changed, () => {
-      // A newer reload of the same thread keeps it out until that one answers.
-      for (const { id } of changed) {
-        if (reloadingRef.current.get(id) === seq) reloadingRef.current.delete(id);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threads]);
-
-  useRealtime(ATTENTION_CHANNEL, (payload: unknown) => {
-    const threadIds = (payload as { threadIds?: unknown } | null)?.threadIds;
-    if (!Array.isArray(threadIds)) return;
-    const parentById = new Map(threads.map((thread) => [thread.id, thread.parentThreadId]));
-    void loadAttention(
-      threadIds
-        .filter((id): id is string => typeof id === "string")
-        .map((id) => ({ id, parentId: parentById.get(id) ?? null })),
-    );
-  });
-
-  const loadRules = async (): Promise<boolean> => {
-    try {
-      const { document, version } = await call("getAttentionRules", {});
-      setRulesState((current) =>
-        current && current.version === version && current.document === document ? current : { document, version },
-      );
-      return true;
-    } catch {
-      // Keep whatever state is already known; with none, cards use BB's own state.
-      return false;
-    }
-  };
-
-  useRealtime(ATTENTION_RULES_CHANNEL, () => {
-    void loadRules();
-  });
-
-  // The full load: every live thread's record plus the global rules state, on
-  // mount and after each realtime reconnect. Each settled attempt bumps
-  // loadGeneration (useChime takes its baseline from it); a failed one is
-  // retried every FULL_LOAD_RETRY_MS until one succeeds.
-  const connectionState = useRealtimeConnectionState();
+  const [composer, setComposer] = useState<Composer | null>(null);
+  const composerRef = useRef<Composer | null>(null);
+  composerRef.current = composer;
+  const [version, setVersion] = useState(0);
   const [loadGeneration, setLoadGeneration] = useState(0);
   const mountedRef = useRef(true);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fullLoadSeqRef = useRef(0);
-  const cancelRetry = () => {
-    if (retryTimerRef.current !== null) clearTimeout(retryTimerRef.current);
-    retryTimerRef.current = null;
-  };
-  const fullLoad = async () => {
-    cancelRetry();
-    const seq = ++fullLoadSeqRef.current;
-    const [recordsLoaded, settingsLoaded] = await Promise.all([
-      loadAttention(liveThreadIds()),
-      loadRules(),
-    ]);
-    if (!mountedRef.current) return;
-    setLoadGeneration((generation) => generation + 1);
-    // A newer full load (a reconnect) or a disconnect owns the retry now.
-    if (seq !== fullLoadSeqRef.current) return;
-    if (!recordsLoaded || !settingsLoaded) {
-      retryTimerRef.current = setTimeout(() => {
-        retryTimerRef.current = null;
-        void fullLoad();
-      }, FULL_LOAD_RETRY_MS);
-    }
+
+  const listenersRef = useRef(new Set<ChimeListener>());
+  const onChime = useMemo(
+    () => (listener: ChimeListener) => {
+      listenersRef.current.add(listener);
+      return () => {
+        listenersRef.current.delete(listener);
+      };
+    },
+    [],
+  );
+
+  const loadComposer = (c: Composer): void => {
+    void c.load().finally(() => {
+      if (mountedRef.current && composerRef.current === c) setLoadGeneration((generation) => generation + 1);
+    });
   };
 
   useEffect(() => {
     mountedRef.current = true;
-    void fullLoad();
+    const c = composeWorld({
+      callRpc: (method, input) => (callRef.current as (m: string, i?: unknown) => Promise<unknown>)(method, input),
+      chimePlayer: {
+        play: (sound, threadId) => {
+          for (const listener of [...listenersRef.current]) listener(sound, threadId);
+        },
+      },
+      overlay: (threadId) => ({ draft: draftRef.current.has(threadId) }),
+      onChange: () => {
+        if (mountedRef.current) setVersion((v) => v + 1);
+      },
+    });
+    composerRef.current = c;
+    setComposer(c);
+    loadComposer(c);
     return () => {
       mountedRef.current = false;
-      cancelRetry();
+      c.dispose();
     };
     // Runs once on mount; reconnects and channels cover later changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useRealtime(ATTENTION_CHANNEL, (payload: unknown) => {
+    const threadIds = (payload as { threadIds?: unknown } | null)?.threadIds;
+    if (!Array.isArray(threadIds)) return;
+    composerRef.current?.notify(threadIds.filter((id): id is string => typeof id === "string"));
+  });
+
+  const loadRules = async (): Promise<void> => {
+    try {
+      const { document, version: rulesVersion } = await call("getAttentionRules", {});
+      setRulesState((current) =>
+        current && current.version === rulesVersion && current.document === document ? current : { document, version: rulesVersion },
+      );
+    } catch {
+      // Keep whatever state is already known.
+    }
+  };
+  useEffect(() => {
+    void loadRules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useRealtime(ATTENTION_RULES_CHANNEL, () => {
+    void loadRules();
+  });
+
+  // A reconnect drops what changed while offline: the composer loads again and takes a new chime baseline.
+  const connectionState = useRealtimeConnectionState();
   const previousConnectionRef = useRef(connectionState);
   useEffect(() => {
     const previous = previousConnectionRef.current;
     previousConnectionRef.current = connectionState;
-    if (connectionState !== "connected") {
-      // The reload on the return to "connected" replaces a pending retry.
-      fullLoadSeqRef.current += 1;
-      cancelRetry();
-      return;
+    if (connectionState === "connected" && previous !== "connected" && composerRef.current) {
+      loadComposer(composerRef.current);
+      void loadRules();
     }
-    if (previous !== "connected") void fullLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionState]);
 
-  const [statusSince, setStatusSince] = useState<ReadonlyMap<string, StatusSinceEntry>>(
-    () => readStatusSince(),
+  const cards = useMemo(
+    () => composer?.cards() ?? EMPTY_CARDS,
+    // `version` is a fetch counter; the draft set and the clock change what `cards()` answers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [composer, version, draftThreadIds, options.now],
   );
-  const [failedAck, setFailedAck] = useState<ReadonlySet<string>>(() => readFailedAck());
-  const previousActiveThreadIdRef = useRef<string | null>(options.activeThreadId);
 
-  const resolved = useMemo(() => {
-    const byThreadId = new Map<string, ResolvedThread>();
-    const pending: { thread: (typeof threads)[number]; status: ResolvedStatus; build: (status: ResolvedStatus) => ResolvedThread; markerOnly: boolean }[] = [];
-    const now = options.now;
-    const wallNow = Date.now();
-    const threadsById = new Map(threads.map((t) => [t.id, t]));
-    // One global list for every project (title and branch matching alike).
+  const needsYouSinceRef = useRef(new Map<string, number>());
+  const views = useMemo(() => {
+    const out = new Map<string, AttentionView>();
     const ticketPrefixes = selectedTicketPrefixes(rulesState?.document);
-
-    for (const rawThread of threads) {
-      if (rawThread.isArchived) continue;
-      const thread = withDraft(rawThread, draftThreadIds.has(rawThread.id));
-
-      const observation = unavailable.has(thread.id) ? null : (observations.get(thread.id) ?? null);
-      // Only an outcome made under the active rules counts; a stale record is
-      // withheld until the server rebuilds it.
-      const activeVersion = rulesState?.version ?? null;
-      const verdict = verdictFor(observation?.rules, activeVersion);
-      const currentRules = activeVersion !== null && observation?.rules?.version === activeVersion ? observation.rules : null;
-
-      const liveBackground = {
+    const needsYouSince = needsYouSinceRef.current;
+    const wallNow = Date.now();
+    for (const thread of threads) {
+      if (thread.isArchived) continue;
+      const card = cards.get(thread.id) ?? IDLE_CARD;
+      const background = {
         workers: thread.activity.backgroundAgents,
         commands: thread.activity.backgroundCommands,
         workflows: thread.activity.workflows,
       };
-      const signature = backgroundSignature(liveBackground);
-      const previousSignature = backgroundSignatureRef.current.get(thread.id);
-      if (!previousSignature || previousSignature.signature !== signature) {
-        backgroundSignatureRef.current.set(thread.id, { signature, at: wallNow });
+      const ticket = parseTicketId(
+        {
+          title: thread.title ?? thread.titleFallback ?? "",
+          branchName: thread.environment?.branchName ?? null,
+          worktreeName: threadWorktreeName(thread),
+        },
+        ticketPrefixes,
+      );
+      const ageLabel = relativeTimeLabel(thread.updatedAt, options.now);
+      if (card.word !== null && NEEDS_YOU_WORDS.has(card.word)) {
+        if (!needsYouSince.has(thread.id)) needsYouSince.set(thread.id, wallNow);
+      } else {
+        needsYouSince.delete(thread.id);
       }
-      const countChangeAt = backgroundSignatureRef.current.get(thread.id)?.at ?? null;
-
-      if (!firstSeenRef.current.has(thread.id)) firstSeenRef.current.set(thread.id, wallNow);
-      const firstSeenAt = firstSeenRef.current.get(thread.id) as number;
-
-      const onInactiveShelf = isInactiveThread(thread, now, options.inactiveAfterHours);
-
-      const origin = silenceOrigin({
-        turnEndedAt: observation?.turnEndedAt ?? null,
-        lastActivityAt: later(observation?.lastActivityAt ?? null, countChangeAt),
-        firstSeenAt,
+      out.set(thread.id, {
+        status: statusOfCard(card),
+        label: card.word,
+        timeLabel: card.timeLabel,
+        since: null,
+        ruleLabel: null,
+        ticket,
+        background,
+        backgroundCount: backgroundWorkCount(background),
+        accessibleText:
+          card.text === null ? ageLabel : card.timeLabel !== null ? `${card.text}, ${card.timeLabel}` : card.text,
+        card,
       });
-      const silent = isSilentPastThreshold(origin, now, silenceThresholdMinutes);
-
-      const failureAcknowledged = failedAck.has(thread.id);
-      // A missing parent is no longer live work. It must not revive an old
-      // child's failure after its parent has gone away.
-      const parentOpen =
-        thread.parentThreadId != null &&
-        threadsById.get(thread.parentThreadId)?.isArchived === false;
-      const input = attentionInputFromThread(thread, {
-        verdict,
-        silent,
-        onInactiveShelf,
-        failureAcknowledged,
-        parentOpen,
-        now: wallNow,
-      });
-      const status = resolveAttentionStatus(input);
-      // An acknowledged failure is still a reported one; reading the
-      // post-acknowledgement flag would drop the acknowledgement next pass.
-      const failing = failureAcknowledged
-        ? attentionInputFromThread(thread, { verdict, silent, onInactiveShelf, failureAcknowledged: false, parentOpen, now: wallNow })
-            .failureReported
-        : input.failureReported;
-
-      const build = (finalStatus: ResolvedStatus): ResolvedThread => {
-        const since = statusSince.get(thread.id);
-        const statusSinceValue =
-          since && since.key === statusKey(finalStatus) ? since.since : wallNow;
-
-        const ticket = parseTicketId(
-          {
-            title: thread.title ?? thread.titleFallback ?? "",
-            branchName: thread.environment?.branchName ?? null,
-            worktreeName: threadWorktreeName(thread),
-          },
-          ticketPrefixes,
-        );
-
-        const view = buildAttentionView({
-          status: finalStatus,
-          statusSince: statusSinceValue,
-          silenceOrigin: origin,
-          ruleLabel: ruleLabelView(currentRules?.label, observation?.slices),
-          ticket,
-          background: liveBackground,
-          ageLabel: relativeTimeLabel(thread.updatedAt, now),
-          now,
-          // Placeholder until the composer (slice 07) supplies the server's card.
-          card: cardFor({ now }),
-        });
-
-        return { status: finalStatus, input, observation, view, failing };
-      };
-      // BB reports the thread idle and silent with no live work: only its last
-      // reply's marker still says running, so it must not hold a parent Waiting.
-      const markerOnly =
-        silent &&
-        !input.turnRunning &&
-        !input.hasPendingInteraction &&
-        input.background.workers + input.background.commands + input.background.workflows === 0;
-      pending.push({ thread, status, build, markerOnly });
     }
-    const statusOf = statusesWithWaitingParents(
-      pending.map((p) => ({ id: p.thread.id, parentId: p.thread.parentThreadId ?? null, status: p.status, markerOnly: p.markerOnly })),
-    );
-    for (const { thread, build } of pending) byThreadId.set(thread.id, build(statusOf.get(thread.id) as ResolvedStatus));
-    return byThreadId;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    threads,
-    draftThreadIds,
-    observations,
-    unavailable,
-    rulesState,
-    options.now,
-    options.activeThreadId,
-    options.openThreadIds,
-    options.inactiveAfterHours,
-    silenceThresholdMinutes,
-    statusSince,
-    failedAck,
-  ]);
+    return out;
+  }, [threads, cards, rulesState, options.now]);
 
-  useEffect(() => {
-    const currentKeys = new Map<string, string>();
-    for (const [threadId, entry] of resolved) currentKeys.set(threadId, statusKey(entry.status));
-    const nextSince = reconcileStatusSince(statusSince, currentKeys, Date.now(), (threadId) => {
-      const entry = resolved.get(threadId);
-      return entry ? historySince(entry.status, entry.input, entry.observation) : null;
-    });
-    if (nextSince !== statusSince) {
-      setStatusSince(nextSince);
-      writeStatusSince(nextSince);
-    }
-
-    const failing = new Set<string>();
-    for (const [threadId, entry] of resolved) {
-      if (entry.failing) failing.add(threadId);
-    }
-    const nextAck = reconcileFailedAck(
-      failedAck,
-      failing,
-      options.activeThreadId,
-      previousActiveThreadIdRef.current,
-    );
-    previousActiveThreadIdRef.current = options.activeThreadId;
-    // reconcileFailedAck always returns a fresh Set (it has no "unchanged"
-    // short-circuit the way reconcileStatusSince does), so a reference
-    // comparison here would setState — and re-render — every single time.
-    if (!setsEqual(nextAck, failedAck)) {
-      setFailedAck(nextAck);
-      writeFailedAck(nextAck);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolved]);
-
-  // The chime's status source: only threads whose record has loaded, and only
-  // once project settings have, so a first load never reads as a change. The
-  // previous Map is kept while nothing differs (useChime's snapshot identity).
-  // A thread whose record is reloading after a BB status change keeps the
-  // status it last had here until the reload answers, so its next status is
-  // compared with the last one useChime held (leaving it out would drop it
-  // from useChime's held statuses, and its return would not count as an
-  // entry). The render that first sees the change runs before the reload
-  // effect, so a signature that differs from the last one seen also counts
-  // as reloading.
   const chimeStatusesRef = useRef<ReadonlyMap<string, string>>(new Map());
-  /** Parents whose Done was silenced by a running child; they stay silent until they leave Done. */
-  const childHeldDoneRef = useRef<Set<string>>(new Set());
   const chimeStatuses = useMemo(() => {
     const next = new Map<string, string>();
-    if (rulesState !== null) {
-      const seen = bbStatusRef.current;
-      const reloading = new Set(reloadingRef.current.keys());
-      for (const thread of threads) {
-        const before = seen?.get(thread.id);
-        if (before !== undefined && before !== bbStatusSignature(thread)) reloading.add(thread.id);
-      }
-      // A parent still waiting on a running child is not the owner's turn yet.
-      const childRunning = new Set<string>();
-      for (const thread of threads) {
-        if (thread.isArchived || thread.parentThreadId == null) continue;
-        const kind = resolved.get(thread.id)?.status.kind;
-        if (kind === "working" || kind === "background" || kind === "check") childRunning.add(thread.parentThreadId);
-      }
-      // A child finishing wakes its parent with a new turn, so a parent that
-      // went Done while a child ran must not chime once the child settles.
-      const childHeld = childHeldDoneRef.current;
-      for (const threadId of childHeld) if (!resolved.has(threadId)) childHeld.delete(threadId);
-      for (const [threadId, entry] of resolved) {
-        if (entry.status.kind !== "done") childHeld.delete(threadId);
-        else if (childRunning.has(threadId)) childHeld.add(threadId);
-      }
-      for (const [threadId, entry] of resolved) {
-        if (reloading.has(threadId)) {
-          const held = chimeStatusesRef.current.get(threadId);
-          if (held !== undefined) next.set(threadId, held);
-          continue;
-        }
-        if (observations.has(threadId) || unavailable.has(threadId)) {
-          next.set(threadId, chimeStatusKey(entry.status, entry.input.verdict, childHeld.has(threadId), entry.input.unreadResult));
-        }
-      }
+    for (const thread of threads) {
+      if (thread.isArchived) continue;
+      const card = cards.get(thread.id);
+      if (card !== undefined) next.set(thread.id, card.word ?? "none");
     }
     if (sameStatuses(next, chimeStatusesRef.current)) return chimeStatusesRef.current;
     chimeStatusesRef.current = next;
     return next;
-  }, [threads, resolved, observations, unavailable, rulesState, reloadsSettled]);
+  }, [threads, cards]);
 
   return useMemo<AttentionModel>(
     () => ({
-      viewFor: (threadId) => resolved.get(threadId)?.view ?? null,
-      isNeedsYou: (threadId) => resolved.get(threadId)?.status.kind === "needs-you",
+      viewFor: (threadId) => views.get(threadId) ?? null,
+      isNeedsYou: (threadId) => {
+        const word = views.get(threadId)?.card.word ?? null;
+        return word !== null && NEEDS_YOU_WORDS.has(word);
+      },
       needsYouSince: (threadId) => {
-        const entry = resolved.get(threadId);
-        if (!entry || entry.status.kind !== "needs-you") return null;
-        return statusSince.get(threadId)?.since ?? null;
+        const word = views.get(threadId)?.card.word ?? null;
+        return word !== null && NEEDS_YOU_WORDS.has(word) ? (needsYouSinceRef.current.get(threadId) ?? null) : null;
       },
       silenceThresholdMinutes,
       chimeStatuses,
       loadGeneration,
+      onChime,
     }),
-    [resolved, statusSince, silenceThresholdMinutes, chimeStatuses, loadGeneration],
+    [views, silenceThresholdMinutes, chimeStatuses, loadGeneration, onChime],
   );
 }

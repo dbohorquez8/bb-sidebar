@@ -11,11 +11,9 @@ import {
   canStart,
   CUTOFF_MS,
   decidePlayback,
-  detectEntries,
   isAudibleEntry,
   scheduleEntries,
-  startListening,
-  type EntryTracker,
+  type ChimeEntry,
   type PlayRequest,
   type QuietPeriod,
   type ThreadSnapshot,
@@ -68,11 +66,8 @@ export function useChime({
   const current = useRef({ soundWindow, settings, windows, lifecycle, snapshot, rpc, childIds });
   current.current = { soundWindow, settings, windows, lifecycle, snapshot, rpc, childIds };
 
-  const trackerRef = useRef<EntryTracker | null>(null);
-  const processedRef = useRef<ThreadSnapshot["statuses"] | null>(null);
   const quietRef = useRef<QuietPeriod | null>(null);
   const pendingRef = useRef<PlayRequest[]>([]);
-  const baselineAfterRef = useRef(0);
   const previousActiveThreadIdRef = useRef(activeThreadId);
   const timerRef = useRef<{ clock: typeof soundWindow.clock; handle: unknown } | null>(null);
   const claimsRef = useRef(new Set<string>());
@@ -129,29 +124,27 @@ export function useChime({
     }
   };
 
-  // Entries: on every change of the resolved statuses while listening.
+  // Entries: the composer decides when a chime is due (class change, settled file, no baseline chime) and
+  // calls `play`; each play goes through the audible, quiet-period, and window pipeline below.
   useEffect(() => {
-    const tracker = trackerRef.current;
-    if (!tracker || processedRef.current === snapshot.statuses) return;
-    processedRef.current = snapshot.statuses;
-    const { soundWindow: w, settings: soundSettings, windows: soundWindows, lifecycle: life, childIds } = current.current;
-    const at = w.clock.now();
-    const detected = detectEntries(tracker, snapshot, at);
-    trackerRef.current = detected.tracker;
-    const audible = detected.entries.filter((entry) =>
-      isAudibleEntry(entry, {
+    if (!attention.onChime) return undefined;
+    return attention.onChime((sound, threadId) => {
+      const { soundWindow: w, settings: soundSettings, windows: soundWindows, lifecycle: life, childIds } = current.current;
+      const at = w.clock.now();
+      const entry: ChimeEntry = { threadId, status: sound, learnedAt: at };
+      const audible = isAudibleEntry(entry, {
         settings: soundSettings,
-        putAway: life.putAwayFor(entry.threadId, at),
+        putAway: life.putAwayFor(threadId, at),
         activeThreadId: soundWindows.activeThreadId,
-        isChild: childIds.has(entry.threadId),
-      }),
-    );
-    if (audible.length === 0) return;
-    const scheduled = scheduleEntries(quietRef.current, audible, soundSettings);
-    quietRef.current = scheduled.quiet;
-    pendingRef.current = [...pendingRef.current, ...scheduled.plays];
-    runPlaybackRef.current();
-  }, [snapshot]);
+        isChild: childIds.has(threadId),
+      });
+      if (!audible) return;
+      const scheduled = scheduleEntries(quietRef.current, [entry], soundSettings);
+      quietRef.current = scheduled.quiet;
+      pendingRef.current = [...pendingRef.current, ...scheduled.plays];
+      runPlaybackRef.current();
+    });
+  }, [attention.onChime]);
 
   // Playback: when this window is elected, the thread list changes, or a
   // thread is put away while its play waits.
@@ -159,21 +152,13 @@ export function useChime({
     runPlaybackRef.current();
   }, [windows.isPlayingWindow, snapshot, lifecycle.putAwayRecords]);
 
-  // Listening: the baseline is the first full load that settles while connected.
+  // A lost connection drops the plays still waiting.
   useEffect(() => {
     if (connectionState !== "connected") {
-      trackerRef.current = null;
       pendingRef.current = [];
       clearTimer();
-      baselineAfterRef.current = attention.loadGeneration;
-      return;
     }
-    if (trackerRef.current === null && attention.loadGeneration > baselineAfterRef.current) {
-      const { soundWindow: w, snapshot: snap } = current.current;
-      trackerRef.current = startListening(snap, w.clock.now());
-      processedRef.current = snap.statuses;
-    }
-  }, [attention.loadGeneration, connectionState]);
+  }, [connectionState]);
 
   // Opening a put-away thread in the focused pane takes it back. The first
   // route value this mount sees is not an opening.
