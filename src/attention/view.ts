@@ -5,6 +5,7 @@ import {
   isTimedStatus,
   STATUS_LABELS,
 } from "./format";
+import type { CardView } from "./card-view";
 import { LABEL_TONES } from "./rules";
 import type { AttentionView, BackgroundWork, ObservedRules, ResolvedStatus, RuleLabelView, SliceProgress, TicketMatch } from "./types";
 
@@ -42,8 +43,10 @@ export function buildAttentionView(args: {
   background: BackgroundWork;
   ageLabel: string; // today's relativeTimeLabel(thread.updatedAt, now), used for idle
   now: number;
+  /** The status-file card (WS-268) from `cardFor`; passed through to the view when given. */
+  card?: CardView;
 }): AttentionView {
-  const { status, statusSince, silenceOrigin, ruleLabel = null, ticket, background, ageLabel, now } =
+  const { status, statusSince, silenceOrigin, ruleLabel = null, ticket, background, ageLabel, now, card } =
     args;
 
   const label: string | null =
@@ -68,5 +71,6 @@ export function buildAttentionView(args: {
     background,
     backgroundCount,
     accessibleText,
+    ...(card ? { card } : {}),
   };
 }
