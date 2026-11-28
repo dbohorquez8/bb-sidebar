@@ -1841,7 +1841,7 @@ describe("ThreadInbox", () => {
     ]);
 
     const badge = screen.getByRole("button", {
-      name: "3 child threads, 1 failed, 1 done, 1 working",
+      name: "3 child threads, 1 failed, 1 working, 1 done",
     });
     expect(badge.getAttribute("data-child-status")).toBe("failed");
     expect(badge.className).toContain(
@@ -2287,7 +2287,7 @@ describe("ThreadInbox", () => {
     ], undefined, { getThreadCards: wireCards(cardRow("monitoring", WORKING, "parent")) });
 
     const badge = screen.getByRole("button", {
-      name: "7 child threads, 1 failed, 2 need you, 1 done, 2 working",
+      name: "7 child threads, 1 failed, 2 need you, 2 working, 1 done",
     });
     fireEvent.click(badge);
 

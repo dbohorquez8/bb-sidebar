@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
+import type { AttentionView } from "./attention";
 import {
   childStatusKind,
   childStatusPhrase,
@@ -40,7 +41,7 @@ function thread(
 }
 
 describe("childStatusKind", () => {
-  it("ranks failure over a raised hand over done over working", () => {
+  it("ranks failure over a raised hand, and maps done and working", () => {
     expect(
       childStatusKind(
         thread({ indicator: "unread-error", hasPendingInteraction: true }),
@@ -84,7 +85,47 @@ describe("childStatusSummary", () => {
       background: 0,
       dominant: "needs-you",
     });
-    expect(childStatusPhrase(summary)).toBe(", 1 need you, 1 done, 1 working");
+    expect(childStatusPhrase(summary)).toBe(", 1 need you, 1 working, 1 done");
+  });
+
+  it("ranks live work over done", () => {
+    const working = childStatusSummary([
+      thread({ id: "a", indicator: "unread-success" }),
+      thread({ id: "b", indicator: "runtime" }),
+    ]);
+    expect(working.dominant).toBe("working");
+    const views: Record<string, AttentionView> = {
+      a: { status: { kind: "done" } } as AttentionView,
+      b: { status: { kind: "background" } } as AttentionView,
+    };
+    const background = childStatusSummary(
+      [thread({ id: "a" }), thread({ id: "b" })],
+      (id) => views[id] ?? null,
+    );
+    expect(background.dominant).toBe("background");
+    expect(
+      childStatusSummary([thread({ id: "a", indicator: "unread-success" })])
+        .dominant,
+    ).toBe("done");
+  });
+
+  it("keeps failed, needs-you and check above working", () => {
+    const working = thread({ id: "w", indicator: "runtime" });
+    expect(
+      childStatusSummary([working, thread({ id: "f", indicator: "unread-error" })])
+        .dominant,
+    ).toBe("failed");
+    expect(
+      childStatusSummary([working, thread({ id: "n", hasPendingInteraction: true })])
+        .dominant,
+    ).toBe("needs-you");
+    const check = { status: { kind: "check" } } as AttentionView;
+    expect(
+      childStatusSummary(
+        [working, thread({ id: "c" })],
+        (id) => (id === "c" ? check : null),
+      ).dominant,
+    ).toBe("check");
   });
 
   it("has no dominant kind and an empty phrase for idle children", () => {
