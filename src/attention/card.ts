@@ -175,7 +175,9 @@ function resolve(input: CardInput): Resolved {
   let phase: string | null = null;
   let counts: string | null = null;
   let barTotals: { done: number; total: number } | null = null;
-  if (file !== null && kind !== null) {
+  // A file last written at or before the latest /clear is a reset file (AC-08, AC-41): nothing is taken from it.
+  const clearedFile = file !== null && !fileCountsAfter(file.updatedMs, hf.clearedAt);
+  if (file !== null && kind !== null && !clearedFile) {
     if (rawState !== null && STATE_WORDS[kind].includes(rawState)) state = rawState;
     if (file.stateCheck === "unchecked" && state !== null && CLOSING_DERIVED.has(state)) state = null;
     if (file.phase !== null && PHASE_WORDS[kind].includes(file.phase) && (file.phase !== "Running" || file.counts !== null)) {
@@ -186,7 +188,7 @@ function resolve(input: CardInput): Resolved {
       }
     }
   }
-  const reset = file !== null && file.phase === null && file.state === null && file.counts === null && file.stateCheck === "unchecked";
+  const reset = clearedFile || file !== null && file.phase === null && file.state === null && file.counts === null && file.stateCheck === "unchecked";
 
   // ---- children first (the lift, the hint and the bar read them)
   const kids = (input.children ?? []).map((child) =>
