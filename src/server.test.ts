@@ -564,14 +564,14 @@ describe("lifecycle RPC", () => {
       autoSettleAfterDays: 3,
       autoSettleOnMerge: true,
       childSortField: "created",
-      childSortDirection: "ascending",
+      childSortDirection: "descending", // WS-268 AC-73
       childIconStyle: "disc",
       compactWorkingThreads: false,
       workingShelf: false,
       dockShelves: false,
       projectColorsEnabled: false,
       projectColorDisplay: "all",
-      silenceThresholdMinutes: 15,
+      silenceThresholdMinutes: 40, // WS-268 AC-60
       machineIcon: "Computer",
     });
     await expect(
@@ -729,14 +729,14 @@ describe("lifecycle RPC", () => {
       autoSettleAfterDays: 14,
       autoSettleOnMerge: false,
       childSortField: "created",
-      childSortDirection: "ascending",
+      childSortDirection: "descending", // WS-268 AC-73
       childIconStyle: "disc",
       compactWorkingThreads: false,
       workingShelf: false,
       dockShelves: false,
       projectColorsEnabled: false,
       projectColorDisplay: "all",
-      silenceThresholdMinutes: 15,
+      silenceThresholdMinutes: 40, // WS-268 AC-60
       machineIcon: "Computer",
     });
   });

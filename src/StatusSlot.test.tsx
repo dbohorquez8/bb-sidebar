@@ -15,6 +15,7 @@ import { idleSidebarThreadFields } from "./test-fixtures";
 import { AttentionContext, type AttentionModel } from "./useAttention";
 import { StatusOrTime } from "./StatusSlot";
 import type { AttentionView } from "./attention";
+import type { CardView } from "./attention/card-view";
 
 // A one-slot harness app: a threadList whose only job is to render
 // StatusOrTime for the host's first thread, always under the SAME
@@ -30,7 +31,7 @@ const harnessModel: AttentionModel = {
   viewFor: () => currentView,
   isNeedsYou: () => false,
   needsYouSince: () => null,
-  silenceThresholdMinutes: 15,
+  silenceThresholdMinutes: 40, // WS-268 AC-60: the default threshold is 40
   chimeStatuses: new Map(),
   loadGeneration: 0,
 };
@@ -96,6 +97,12 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
   };
 }
 
+const idleCard: CardView = {
+  word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null, phase: null,
+};
+const cardOf = (overrides: Partial<CardView>): CardView => ({ ...idleCard, ...overrides });
+const workingCard = cardOf({ word: "Working", text: "Working", tone: "yellow", icon: "spinner" });
+
 const workingView: AttentionView = {
   status: { kind: "working" },
   label: "Working",
@@ -106,6 +113,7 @@ const workingView: AttentionView = {
   background: { workers: 0, commands: 0, workflows: 0 },
   backgroundCount: 0,
   accessibleText: "Working",
+  card: workingCard,
 };
 
 describe("StatusOrTime", () => {
@@ -148,12 +156,7 @@ describe("StatusOrTime", () => {
     cleanup();
   });
 
-  // WS-30 (AC-65, AC-66): the Building stage carries the finished/total slice count.
-  const buildLabel = (sliceProgress?: { done: number; total: number }): AttentionView["ruleLabel"] => ({
-    text: "Building",
-    progress: "slices",
-    ...(sliceProgress ? { sliceProgress } : {}),
-  });
+  // WS-268 AC-15: the phase word carries the file's count ("Building 2 / 5"); the slot renders view.card.
   const renderView = async (view: AttentionView) => {
     currentView = view;
     const rendered = renderSlot(harnessSlot, listProps, {
@@ -167,26 +170,33 @@ describe("StatusOrTime", () => {
     return rendered;
   };
 
-  it("shows 'Building 2/5' with the time while Working (AC-65)", async () => {
-    await renderView({ ...workingView, ruleLabel: buildLabel({ done: 2, total: 5 }), timeLabel: "3m" });
-    expect(await screen.findByText("Building 2/5")).toBeTruthy();
+  it("shows 'Building 2 / 5' with the time while Working (AC-15, was AC-65)", async () => {
+    await renderView({
+      ...workingView,
+      card: cardOf({ word: "Building", count: "2 / 5", text: "Building 2 / 5", tone: "yellow", icon: "spinner", timeLabel: "3m" }),
+      timeLabel: "3m",
+    });
+    expect(await screen.findByText("Building 2 / 5")).toBeTruthy();
     expect(screen.getByText("3m")).toBeTruthy();
     cleanup();
   });
 
-  it("shows plain 'Building' when no slice count is known (AC-66)", async () => {
-    await renderView({ ...workingView, ruleLabel: buildLabel() });
+  it("shows plain 'Building' when no count is known (AC-15, was AC-66)", async () => {
+    await renderView({
+      ...workingView,
+      card: cardOf({ word: "Building", text: "Building", tone: "yellow", icon: "spinner" }),
+    });
     expect(await screen.findByText("Building")).toBeTruthy();
     expect(screen.queryByText(/Building \d/)).toBeNull();
     cleanup();
   });
 
-  it("shows no stage or count for Needs you and Done (AC-26)", async () => {
+  it("shows no stage or count for Needs you and Done (AC-25, AC-37)", async () => {
     await renderView({
       ...workingView,
       status: { kind: "needs-you" },
       label: "Needs you",
-      ruleLabel: buildLabel({ done: 2, total: 5 }),
+      card: cardOf({ word: "Needs you", text: "Needs you", tone: "red", icon: "bell", pill: true }),
     });
     expect(await screen.findByText("Needs you")).toBeTruthy();
     expect(screen.queryByText(/Building/)).toBeNull();
@@ -195,46 +205,50 @@ describe("StatusOrTime", () => {
       ...workingView,
       status: { kind: "done" },
       label: "Done",
-      ruleLabel: buildLabel({ done: 5, total: 5 }),
+      card: cardOf({ word: "Done", text: "Done", tone: "white", icon: "check-in-circle", pill: true }),
     });
     expect(await screen.findByText("Done")).toBeTruthy();
     expect(screen.queryByText(/Building/)).toBeNull();
     cleanup();
   });
 
-  // WS-206: Finalized is violet text with a flag and no pill background.
-  it("shows Finalized as violet text with a flag and no pill fill (WS-206)", async () => {
-    const { container } = await renderView({ ...workingView, status: { kind: "finalized" }, label: "Finalized" });
+  // WS-268 AC-31: Finalized is violet text with a rocket and no pill background (was WS-206's flag).
+  it("shows Finalized as violet text with a rocket and no pill fill (AC-31)", async () => {
+    const { container } = await renderView({
+      ...workingView,
+      status: { kind: "finalized" },
+      label: "Finalized",
+      card: cardOf({ word: "Finalized", text: "Finalized", tone: "violet", icon: "rocket" }),
+    });
     const label = await screen.findByText("Finalized");
     const root = label.parentElement as HTMLElement;
     expect(root.className).toContain("--bb-sidebar-status-finalized");
     expect(root.className).not.toContain("pill-finalized");
     expect(root.className).not.toContain("rounded-full");
     expect(root.className).not.toMatch(/\bbg-/);
-    expect(container.querySelector("svg")).toBeTruthy();
+    expect(container.querySelector('svg[data-icon="Rocket"]')).toBeTruthy();
     cleanup();
   });
 
-  // WS-67 (AC-27, AC-30, AC-32): a rule label renders through the view only.
-  it("shows a rule label with its palette tone while Working (AC-27)", async () => {
+  // WS-268 AC-71: a rule label never renders on a card, with or without a tone (was WS-67 AC-27, AC-30, AC-32).
+  it("never shows a rule label, toned or not, while Working (AC-71)", async () => {
     await renderView({ ...workingView, ruleLabel: { text: "Finalizing", tone: "success" } });
-    const label = await screen.findByText("Finalizing");
-    expect((label as HTMLElement).style.color).toBe("var(--ws-green-text)");
+    expect(await screen.findByText("Working")).toBeTruthy();
+    expect(screen.queryByText("Finalizing")).toBeNull();
     cleanup();
-  });
-
-  it("shows a toneless rule label in the normal status colour (AC-27)", async () => {
     await renderView({ ...workingView, ruleLabel: { text: "Finalizing" } });
-    expect(((await screen.findByText("Finalizing")) as HTMLElement).style.color).toBe("");
+    expect(await screen.findByText("Working")).toBeTruthy();
+    expect(screen.queryByText("Finalizing")).toBeNull();
     cleanup();
   });
 
-  it("never shows a rule label over Needs you (AC-32)", async () => {
+  it("never shows a rule label over Needs you (AC-71)", async () => {
     await renderView({
       ...workingView,
       status: { kind: "needs-you" },
       label: "Needs you",
       ruleLabel: { text: "Finalizing", tone: "danger" },
+      card: cardOf({ word: "Needs you", text: "Needs you", tone: "red", icon: "bell", pill: true }),
     });
     expect(await screen.findByText("Needs you")).toBeTruthy();
     expect(screen.queryByText("Finalizing")).toBeNull();

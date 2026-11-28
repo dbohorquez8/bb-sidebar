@@ -182,7 +182,7 @@ it("shows direct subthreads in the hover card and opens them by keyboard or clic
   const list = within(details).getByRole("list", { name: "Subthreads" });
   const items = within(list).getAllByRole("button");
   expect(items.map((item) => item.getAttribute("aria-label"))).toEqual([
-    "Open subthread: Implementation", "Open subthread: Review",
+    "Open subthread: Review", "Open subthread: Implementation", // WS-268 AC-73: newest first by default
   ]);
   expect(list.textContent).toContain("Codex · Working");
   expect(list.textContent).toContain("Claude Code · Needs you");
@@ -440,16 +440,29 @@ it("marks only the owning thread without a count and clears its icon when the po
 function render(
   threads: PluginSidebarThread[],
   projects = [{ id: "proj_1", name: "bb", isPersonal: false, href: "", settingsHref: "" }],
+  extraRpc: Record<string, () => unknown> = {},
 ) {
   return renderSlot(inbox, listProps, {
     sidebarThreads: { status: "ready", threads, projects },
     providers: { status: "ready", providers: defaultProviders },
     // The lifecycle store is the plugin's own backend; an empty one means
     // every thread is active, which is what these list tests are about.
-    rpc: { listLifecycle: () => ({ rows: [] }) },
+    rpc: { listLifecycle: () => ({ rows: [] }), ...extraRpc },
   });
 }
 
+/**
+ * WS-268: the status slot draws a card the server resolved (`getThreadCards`, LC-10). A test that pins
+ * a card's word, icon, or colour wires the card here; with none wired the row keeps bb's own indicator
+ * wording (AC-04, AC-24).
+ */
+const NO_CARD = { word: null, count: null, text: null, tone: null, icon: "none", pill: false, hint: null, bar: null, timeLabel: null, phase: null };
+const cardRow = (threadId: string, card: Record<string, unknown>, parentThreadId: string | null = null) => ({
+  threadId, parentThreadId, card: { ...NO_CARD, ...card }, since: null, chime: "none", isChild: parentThreadId !== null,
+  fileState: "none", settled: true,
+});
+const wireCards = (...rows: ReturnType<typeof cardRow>[]) => () => ({ cards: rows });
+const WORKING = { word: "Working", text: "Working", tone: "yellow", icon: "spinner" };
 
 /**
  * The card's trailing slot and the two spans beside each other in it: the
@@ -1828,7 +1841,7 @@ describe("ThreadInbox", () => {
     ]);
 
     const badge = screen.getByRole("button", {
-      name: "3 child threads, 1 failed, 1 done, 1 working",
+      name: "3 child threads, 1 failed, 1 working, 1 done",
     });
     expect(badge.getAttribute("data-child-status")).toBe("failed");
     expect(badge.className).toContain(
@@ -2271,10 +2284,10 @@ describe("ThreadInbox", () => {
         parentThreadId: "parent",
         updatedAt: minute - 31 * 60_000,
       }),
-    ]);
+    ], undefined, { getThreadCards: wireCards(cardRow("monitoring", WORKING, "parent")) });
 
     const badge = screen.getByRole("button", {
-      name: "7 child threads, 1 failed, 2 need you, 1 done, 2 working",
+      name: "7 child threads, 1 failed, 2 need you, 2 working, 1 done",
     });
     fireEvent.click(badge);
 
@@ -2282,10 +2295,10 @@ describe("ThreadInbox", () => {
     expect(badge.querySelector('[data-icon="ChevronUp"]')).not.toBeNull();
     const childList = screen.getByRole("list", { name: "Child threads" });
     expect(childList.getAttribute("data-child-thread-list")).toBe("sidebar");
-    // The attention resolver collapses bb's own Monitoring/Planning wording
-    // into its canonical words (AC-01, AC-10, AC-14); the accessible name
-    // below still carries bb's own wording, unaffected by StatusOrTime.
-    for (const label of ["Failed", "Done", "Working", "Planning"]) {
+    // WS-268 AC-04, AC-24: only the monitoring child has a server card (Working); every other row has none
+    // and keeps bb's own indicator wording.
+    await waitFor(() => expect(within(childList).getByText("Working")).toBeDefined());
+    for (const label of ["Failed", "Done", "Planning · 5m"]) {
       expect(within(childList).getByText(label)).toBeDefined();
     }
     expect(within(childList).getAllByText("Needs you")).toHaveLength(2);
@@ -2296,7 +2309,7 @@ describe("ThreadInbox", () => {
       "Open child thread: Failed child, Failed",
       "Open child thread: Unread child, Done",
       "Open child thread: Waiting child, Needs you",
-      "Open child thread: Monitoring child, Monitoring · 5m",
+      "Open child thread: Monitoring child, Monitoring · 5m", // the accessible name keeps bb's own wording
       "Open child thread: Planning child, Planning · 5m",
       "Open child thread: Pending runtime child, Needs you",
       "Open child thread: Idle child",
@@ -2449,7 +2462,8 @@ describe("ThreadInbox", () => {
     const disclosure = within(childRow).getByRole("button", {
       name: "Show 2 grandchild threads for Busy child",
     });
-    expect(within(childRow).getByText("Working")).toBeDefined();
+    // WS-268 AC-04: no card is wired here, so the row keeps bb's own wording.
+    expect(within(childRow).getByText("Working · 5m")).toBeDefined();
     fireEvent.click(disclosure);
 
     const grandchildList = screen.getByRole("list", {
@@ -4664,6 +4678,7 @@ describe("ThreadInbox", () => {
               snoozedAt: now - 60_000,
             })),
           }),
+          getThreadCards: wireCards(cardRow("search_runtime", WORKING)), // WS-268: Working comes from a server card
           acknowledgeWake: (input) => {
             acknowledged.push((input as { threadId: string }).threadId);
             return { ok: true };
@@ -4671,6 +4686,7 @@ describe("ThreadInbox", () => {
         },
       },
     );
+    await screen.findByText("Working");
 
     // "Match runtime"'s time no longer reads a fixed "5m": the attention
     // resolver times Working from the server's own history (none stubbed
@@ -5518,11 +5534,13 @@ describe("parking threads", () => {
             compactWorkingThreads,
           }),
           listLifecycle: () => ({ rows: [] }),
+          getThreadCards: wireCards(cardRow("busy", WORKING)),
         },
       });
       const card = (title: string) =>
         screen.getByRole("link", { name: title }).closest("[data-parent-card]")!;
       await screen.findByRole("link", { name: "Busy work" });
+      await waitFor(() => expect(card("Busy work").querySelector('[data-icon="Loading"]')).not.toBeNull());
 
       await waitFor(() =>
         expect(card("Busy work").classList.contains("h-8")).toBe(compactWorkingThreads),
@@ -5907,10 +5925,11 @@ describe("parking threads", () => {
         ],
         projects: [{ id: "proj_1", name: "bb", isPersonal: false, href: "", settingsHref: "" }],
       },
-      rpc: { listLifecycle: () => ({ rows: [] }) },
+      rpc: { listLifecycle: () => ({ rows: [] }), getThreadCards: wireCards(cardRow("thr_working", WORKING)) },
     });
 
     await screen.findByText("Still working");
+    await screen.findByText("Working"); // WS-268: the word comes from the server card
     for (const [title, statusText] of [
       ["Still working", "Working"],
       ["Still asking", "Needs you"],
@@ -6077,15 +6096,15 @@ describe("parking threads", () => {
             },
           ],
         }),
+        getThreadCards: wireCards(cardRow("thr_settled", { word: "Failed", text: "Failed", tone: "red", icon: "X-in-circle" })),
       },
     });
 
     const shelf = await screen.findByRole("region", { name: "Settled" });
     fireEvent.click(within(shelf).getByRole("button", { expanded: false }));
     const row = within(shelf).getByText("Settled failure").closest("li")!;
-    expect(within(row).getByText("Failed").className).toContain(
-      "text-[color:var(--bb-sidebar-status-failed)]",
-    );
+    await waitFor(() => expect(within(row).getByText("Failed")).toBeDefined());
+    expect(within(row).getByText("Failed").closest('[class*="--bb-sidebar-status-failed"]')).not.toBeNull();
     expect(within(row).queryByText("3h")).toBeNull();
     expect(
       within(row).getByRole("button", { name: "Un-settle thread" }),
@@ -6425,6 +6444,7 @@ describe("parking threads", () => {
       },
       rpc: {
         listLifecycle: () => ({ rows: lifecycleRows }),
+        getThreadCards: wireCards(cardRow("runtime", WORKING)), // WS-268: Working comes from a server card
         acknowledgeWake: (input) => {
           const threadId = (input as { threadId: string }).threadId;
           acknowledged.push(threadId);
@@ -6433,6 +6453,7 @@ describe("parking threads", () => {
         },
       },
     });
+    await screen.findByText("Working");
 
     const expected = [
       ["Pending wake", "Needs you"],
@@ -7781,12 +7802,12 @@ describe("card metadata", () => {
         indicatorLabel: "Agent is working",
         updatedAt: Date.now() - (3 * 3_600_000 + 60_000),
       }),
-    ]);
+    ], undefined, { getThreadCards: wireCards(cardRow("thr_run", WORKING)) });
     expect(await screen.findByLabelText("Agent is working")).toBeDefined();
     // The colour lives on the status element (icon, stage or word, and time),
-    // not on the word's own span.
+    // not on the word's own span. WS-268: the word comes from the server card.
     expect(
-      screen.getByText("Working").closest('[class*="--bb-sidebar-status-working"]'),
+      (await screen.findByText("Working")).closest('[class*="--bb-sidebar-status-working"]'),
     ).not.toBeNull();
     expect(screen.queryByText("3h")).toBeNull();
   });
@@ -7800,14 +7821,14 @@ describe("card metadata", () => {
       "bb-sidebar:working-since:v1",
       JSON.stringify({ thr_run: Date.now() - 5 * 60_000 - 60_000 }),
     );
-    render([thread({ id: "thr_run", indicator: "runtime" })]);
+    render([thread({ id: "thr_run", indicator: "runtime" })], undefined, { getThreadCards: wireCards(cardRow("thr_run", WORKING)) });
     expect(await screen.findByText("Working")).toBeDefined();
   });
 
   // Locked contract (AC-10, AC-14): a monitoring runtime still counts as
   // turnRunning, so it resolves to the same canonical Working word — the
   // Monitoring distinction is retired; bb's own label survives only as the
-  // accessible name.
+  // accessible name. WS-268: the word comes from the server card.
   it("shows the canonical Working word for a monitoring runtime", async () => {
     render([
       thread({
@@ -7815,7 +7836,7 @@ describe("card metadata", () => {
         indicator: "runtime",
         indicatorLabel: "Thread monitoring",
       }),
-    ]);
+    ], undefined, { getThreadCards: wireCards(cardRow("thr_monitor", WORKING)) });
     expect(await screen.findByText("Working")).toBeDefined();
     expect(screen.getByLabelText("Thread monitoring")).toBeDefined();
   });
@@ -7861,9 +7882,15 @@ describe("card metadata", () => {
         hasPendingInteraction: true,
         queuedWork: "failed",
       }),
-    ]);
+    ], undefined, {
+      getThreadCards: wireCards(
+        cardRow("thr_failed", { word: "Failed", text: "Failed", tone: "red", icon: "X-in-circle" }),
+        cardRow("thr_asking", { word: "Needs you", text: "Needs you", tone: "red", icon: "bell", pill: true }),
+      ),
+    });
     // Locked contract (AC-09): a failed send resolves to the canonical
     // "Failed" word; bb's own "Send failed" / custom aria text are retired.
+    // WS-268: the words come from the server cards.
     expect(await screen.findByText("Failed")).toBeDefined();
     expect(screen.getByLabelText("Failed")).toBeDefined();
     expect(screen.getByText("Needs you")).toBeDefined();
@@ -7879,9 +7906,14 @@ describe("card metadata", () => {
         indicator: "runtime",
         queuedWork: "waiting",
       }),
-    ]);
+    ], undefined, {
+      getThreadCards: wireCards(
+        cardRow("thr_scheduled", { word: "Queued", text: "Queued", tone: "orange", icon: "none" }),
+        cardRow("thr_behind", WORKING),
+      ),
+    });
     // Locked contract (AC-14): Queued keeps its wording, but the custom aria
-    // text is retired in favor of the canonical word itself.
+    // text is retired in favor of the canonical word itself. WS-268: from the server cards.
     expect(await screen.findByText("Queued")).toBeDefined();
     expect(screen.getByLabelText("Queued")).toBeDefined();
     expect(screen.getAllByText("Queued")).toHaveLength(1);
@@ -7917,7 +7949,16 @@ describe("card metadata", () => {
         projects: [{ id: "proj_1", name: "bb", isPersonal: false, href: "", settingsHref: "" }],
       },
       providers: { status: "ready", providers: defaultProviders },
-      rpc: { listLifecycle: () => ({ rows: [] }) },
+      rpc: {
+        listLifecycle: () => ({ rows: [] }),
+        // WS-268: the words come from the server cards; the composer adds Draft over an idle card (AC-24).
+        getThreadCards: wireCards(
+          cardRow("thr_idle", {}),
+          cardRow("thr_busy", WORKING),
+          cardRow("thr_unread", { word: "Done", text: "Done", tone: "white", icon: "check-in-circle", pill: true }),
+          cardRow("thr_clean", {}),
+        ),
+      },
       sidebarDraftThreadIds: ["thr_idle", "thr_busy", "thr_unread"],
     });
     // bb's own custom draft aria text is retired; the canonical word (itself
@@ -7925,7 +7966,8 @@ describe("card metadata", () => {
     // useAttention's own draft fold) is both the visible text and the
     // fallback aria-label when bb gives no indicatorLabel of its own.
     expect(await screen.findByLabelText("Draft")).toBeDefined();
-    expect(screen.getByText("Draft").className).toContain("text-[color:var(--ws-orange-text)]");
+    // WS-268 LC-7: Draft takes BB's own tone, orange, from the status-check token.
+    expect(screen.getByText("Draft").closest('[class*="--bb-sidebar-status-check"]')).not.toBeNull();
     // Locked contract (AC-14): working-draft counts as turnRunning, so it
     // resolves to the canonical Working word, not bb's own "Drafting".
     expect(screen.getByLabelText("Thread working")).toBeDefined();
@@ -7975,7 +8017,15 @@ describe("attention states", () => {
           indicatorLabel: ariaLabel,
           updatedAt: Date.now() - (3 * 3_600_000 + 60_000),
         }),
-      ]);
+      ], undefined, {
+        // WS-268: the word and tone come from the server card (LC-7).
+        getThreadCards: wireCards(cardRow(`thr_${indicator}`, {
+          word: shortLabel, text: shortLabel,
+          tone: shortLabel === "Done" ? "white" : "red",
+          icon: shortLabel === "Needs you" ? "bell" : shortLabel === "Done" ? "check-in-circle" : "X-in-circle",
+          pill: shortLabel !== "Failed",
+        })),
+      });
       // The Needs you shelf's own section also carries aria-label="Needs you"
       // (Locked contract), so a plain screen-wide label query is ambiguous
       // for that one case; scope to the card's row instead.
@@ -8535,7 +8585,7 @@ it("guards cyclic child DTOs while expanding and retains deep sibling sort", asy
   const disclosure = screen.getByRole("button", { name: "Show 2 great-grandchild threads for Grandchild" });
   fireEvent.click(disclosure);
   const names = screen.getAllByRole("button", { name: /^Open / }).map(row => row.getAttribute("aria-label"));
-  expect(names).toEqual(["Open child thread: Child", "Open grandchild thread: Grandchild", "Open great-grandchild thread: Earlier", "Open great-grandchild thread: Later"]);
+  expect(names).toEqual(["Open child thread: Child", "Open grandchild thread: Grandchild", "Open great-grandchild thread: Later", "Open great-grandchild thread: Earlier"]); // WS-268 AC-73: newest first by default
   expect(screen.queryByRole("button", { name: /^Open descendant/ })).toBeNull();
 });
 
