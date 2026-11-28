@@ -28,7 +28,7 @@ export interface LiveFacts {
 export interface SavedMemory {
   /** Remembered end word (AC-44, OQ-7 A). */
   endWord?: string | null;
-  /** A sticky Needs you seen from a pending interaction or a file (AC-48, AC-49). */
+  /** A sticky Needs you seen from a file (AC-48). A pending interaction is not saved: answering it in BB's panel clears it (AC-49, OA-6). */
   needsYouAt?: number | null;
 }
 
@@ -333,10 +333,7 @@ export function nextMemory(input: CardInput, card: CardView): SavedMemory {
   let needsYouAt: number | null = input.saved?.needsYouAt ?? null;
   if (needsYouAt !== null && needsYouAt <= cutoff) needsYouAt = null;
   if (r.isChild) needsYouAt = null;
-  else if (needsYouAt === null) {
-    if (input.facts?.pending === true) needsYouAt = input.now ?? Date.now();
-    else if (r.fileNeedsYouAt !== null) needsYouAt = r.fileNeedsYouAt;
-  }
+  else if (needsYouAt === null && r.fileNeedsYouAt !== null) needsYouAt = r.fileNeedsYouAt;
   return { endWord: card.word === "Handing over" ? null : r.endWord, needsYouAt };
 }
 

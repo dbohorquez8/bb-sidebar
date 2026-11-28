@@ -102,10 +102,10 @@ function CardSlot({
       ) : null}
       <span className="truncate">{card.text}</span>
       {card.hint !== null ? (
-        <span className="truncate font-normal text-muted-foreground">{card.hint}</span>
+        <span className={cn("truncate font-normal", card.pill ? "opacity-80" : "text-muted-foreground")}>{card.hint}</span>
       ) : null}
       {card.timeLabel !== null ? (
-        <span className="font-normal tabular-nums text-muted-foreground">{card.timeLabel}</span>
+        <span className={cn("font-normal tabular-nums", card.pill ? "opacity-80" : "text-muted-foreground")}>{card.timeLabel}</span>
       ) : null}
       {description}
     </span>
