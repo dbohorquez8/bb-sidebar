@@ -76,9 +76,15 @@ interface MemoryRow {
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
-const isMissingFile = (error: unknown): boolean => {
-  const e = error as { code?: unknown; message?: unknown } | null;
-  return e?.code === "ENOENT" || (typeof e?.message === "string" && /ENOENT|no such file/i.test(e.message));
+/** A missing file is not a failure (D-8 (e)). The SDK reports it as "HTTP 404: Path does not exist: <path>". */
+export const isMissingFile = (error: unknown): boolean => {
+  const e = error as { code?: unknown; message?: unknown; status?: unknown; statusCode?: unknown } | null;
+  return (
+    e?.code === "ENOENT" ||
+    e?.status === 404 ||
+    e?.statusCode === 404 ||
+    (typeof e?.message === "string" && /ENOENT|no such file|HTTP 404|Path does not exist/i.test(e.message))
+  );
 };
 
 const EMPTY_HISTORY: HistoryFacts = {
