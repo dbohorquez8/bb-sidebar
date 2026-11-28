@@ -9,18 +9,20 @@ import { childFailureReported, type ChildFailureContext } from "./child-failure"
  * What a parent card says about its subtree when the list is collapsed.
  *
  * One kind per thread, most urgent first: a failure beats a raised hand,
- * which beats finished work you have not read, which beats live work. The
- * same order picks the glyph the badge draws when children disagree.
+ * which beats a result to check, which beats live work, which beats
+ * finished work. Live work outranks done so a group never reads settled
+ * while a child still works. The same order picks the glyph the badge draws
+ * when children disagree.
  */
-export type ChildStatusKind = "failed" | "needs-you" | "check" | "done" | "working" | "background";
+export type ChildStatusKind = "failed" | "needs-you" | "check" | "working" | "background" | "done";
 
 export const CHILD_STATUS_KINDS: readonly ChildStatusKind[] = [
   "failed",
   "needs-you",
   "check",
-  "done",
   "working",
   "background",
+  "done",
 ];
 
 export interface ChildStatusSummary {
@@ -151,9 +153,9 @@ export function childStatusPhrase(summary: ChildStatusSummary): string {
   if (summary.failed > 0) parts.push(`${summary.failed} failed`);
   if (summary.needsYou > 0) parts.push(`${summary.needsYou} need you`);
   if (summary.check > 0) parts.push(`${summary.check} check`);
-  if (summary.done > 0) parts.push(`${summary.done} done`);
   if (summary.working > 0) parts.push(`${summary.working} working`);
   if (summary.background > 0) parts.push(`${summary.background} background`);
+  if (summary.done > 0) parts.push(`${summary.done} done`);
   return parts.length > 0 ? `, ${parts.join(", ")}` : "";
 }
 
